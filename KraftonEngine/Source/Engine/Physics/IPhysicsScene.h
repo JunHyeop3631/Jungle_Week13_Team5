@@ -10,6 +10,22 @@ class AActor;
 class UPrimitiveComponent;
 struct FHitResult;
 
+
+
+
+
+
+
+/*절대 보지 마셈*/
+/*IPhysicsScene 말고 IPhysicsRuntime 보면 됨*/
+/*이건 Nuget용, IPhysicsRuntime이 이번에 들어온거*/
+
+
+
+
+
+
+
 // 물리 백엔드 선택
 enum class EPhysicsBackend : uint8
 {
