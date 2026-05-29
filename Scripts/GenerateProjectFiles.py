@@ -57,6 +57,12 @@ CONFIG_PROPS = {
 # Directories to recursively scan for source files
 SCAN_DIRS = ["Source", "ThirdParty"]
 
+# SDK-style ThirdParty folders can be used through include/lib paths without
+# listing every external header in the Visual Studio project.
+EXCLUDED_SCAN_DIRS = {
+    "ThirdParty\\PhysX41",
+}
+
 # Directories to scan for shader files
 SHADER_DIRS = ["Shaders"]
 
@@ -97,9 +103,8 @@ INCLUDE_PATHS = [
     "ThirdParty\\sol2\\include",
     "ThirdParty\\fmod\\include",
     "ThirdParty\\fbx\\include",
-    # PhysX(NuGet) — vcpkg.targets 가 조건부 Import 라 첫 clone 직후 IntelliSense 파싱 시점엔
-    # Exists()=false 로 include 경로가 안 잡힘. 직접 박아 restore 타이밍과 무관하게 잡히게 함.
-    "packages\\NVIDIA.PhysX.4.1.2\\installed\\x64-windows\\include",
+    "ThirdParty\\PhysX41\\include\\physx",
+    "ThirdParty\\PhysX41\\include\\pxshared",
     ".",
 ]
 
@@ -116,12 +121,23 @@ FMOD_RELEASE_LIB = "fmod_vc.lib"
 FMOD_DEBUG_DLL = "fmodL.dll"
 FMOD_RELEASE_DLL = "fmod.dll"
 
-# PhysX (NuGet, 4.1.2) — vcpkg auto applocal-deps가 일부 환경에서 동작하지 않아
-# PostBuildEvent 에서 명시적으로 *.dll 을 OutDir 로 복사한다.
-# Debug 구성은 debug\\bin, 그 외(Release/Game/ObjViewDebug/Demo)는 release bin 사용.
-# (Include 경로는 INCLUDE_PATHS 에 직접 추가됨 — 위 주석 참고.)
-PHYSX_DEBUG_BIN   = "packages\\NVIDIA.PhysX.4.1.2\\installed\\x64-windows\\debug\\bin"
-PHYSX_RELEASE_BIN = "packages\\NVIDIA.PhysX.4.1.2\\installed\\x64-windows\\bin"
+# PhysX 4.1 source build — checked/release 산출물을 엔진 ThirdParty 경로에 고정한다.
+# Debug 구성은 checked, 그 외(Release/Game/ObjViewDebug/Demo)는 release 사용.
+PHYSX_CHECKED_LIB_DIR = "ThirdParty\\PhysX41\\lib\\checked"
+PHYSX_RELEASE_LIB_DIR = "ThirdParty\\PhysX41\\lib\\release"
+PHYSX_CHECKED_BIN_DIR = "ThirdParty\\PhysX41\\bin\\checked"
+PHYSX_RELEASE_BIN_DIR = "ThirdParty\\PhysX41\\bin\\release"
+PHYSX_DEPENDENCIES = [
+    "PhysX_64.lib",
+    "PhysXCommon_64.lib",
+    "PhysXFoundation_64.lib",
+    "PhysXCooking_64.lib",
+    "PhysXExtensions_static_64.lib",
+    "PhysXPvdSDK_static_64.lib",
+    "PhysXVehicle_static_64.lib",
+    "PhysXCharacterKinematic_static_64.lib",
+    "PhysXTask_static_64.lib",
+]
 
 # Reflection — UCLASS/UPROPERTY 매크로 → *.generated.h/.cpp 자동 생성.
 # 빌드 시작 직전(PreBuildEvent)과 ClCompile 직전(GenerateReflectionHeaders target)
@@ -155,7 +171,6 @@ ADDITIONAL_DEPENDENCIES = [
 # NuGet packages (id, version) — restored via packages.config
 NUGET_PACKAGES = [
     ("directxtk_desktop_win10", "2025.10.28.2"),
-    ("NVIDIA.PhysX", "4.1.2"),
 ]
 
 NS = "http://schemas.microsoft.com/developer/msbuild/2003"
@@ -174,6 +189,9 @@ def scan_files(project_dir: Path) -> dict[str, list[str]]:
         if not full_dir.exists():
             continue
         for dirpath, _, filenames in os.walk(full_dir):
+            rel_dir = str(Path(dirpath).relative_to(project_dir)).replace("/", "\\")
+            if any(rel_dir == excluded or rel_dir.startswith(excluded + "\\") for excluded in EXCLUDED_SCAN_DIRS):
+                continue
             for fname in sorted(filenames):
                 full = Path(dirpath) / fname
                 rel = full.relative_to(project_dir)
@@ -397,9 +415,15 @@ def generate_vcxproj(files: dict[str, list[str]]):
         subsystem = props.get("subsystem", "Windows" if is_x64 else "Console")
         ET.SubElement(link, "SubSystem").text = subsystem
         ET.SubElement(link, "GenerateDebugInformation").text = "true"
-        if ADDITIONAL_LIB_DIRS:
+        additional_lib_dirs = list(ADDITIONAL_LIB_DIRS)
+        if is_x64:
+            additional_lib_dirs.insert(
+                0,
+                f"$(ProjectDir){PHYSX_CHECKED_LIB_DIR if cfg == 'Debug' else PHYSX_RELEASE_LIB_DIR}",
+            )
+        if additional_lib_dirs:
             ET.SubElement(link, "AdditionalLibraryDirectories").text = (
-                ";".join(ADDITIONAL_LIB_DIRS) + ";%(AdditionalLibraryDirectories)"
+                ";".join(additional_lib_dirs) + ";%(AdditionalLibraryDirectories)"
             )
         all_deps = list(ADDITIONAL_DEPENDENCIES)
         if is_x64:
@@ -407,6 +431,7 @@ def generate_vcxproj(files: dict[str, list[str]]):
             # fmod: Debug면 logging 버전(fmodL_vc.lib), 그 외 release 버전(fmod_vc.lib)
             all_deps.append(FMOD_DEBUG_LIB if cfg == "Debug" else FMOD_RELEASE_LIB)
             all_deps.append(FBX_LIB)
+            all_deps.extend(PHYSX_DEPENDENCIES)
         if all_deps:
             ET.SubElement(link, "AdditionalDependencies").text = (
                 ";".join(all_deps) + ";%(AdditionalDependencies)"
@@ -415,7 +440,7 @@ def generate_vcxproj(files: dict[str, list[str]]):
         if is_x64:
             rmlui_dir = RMLUI_DEBUG_DIR if cfg == "Debug" else RMLUI_RELEASE_DIR
             fmod_dll = FMOD_DEBUG_DLL if cfg == "Debug" else FMOD_RELEASE_DLL
-            physx_bin = PHYSX_DEBUG_BIN if cfg == "Debug" else PHYSX_RELEASE_BIN
+            physx_bin = PHYSX_CHECKED_BIN_DIR if cfg == "Debug" else PHYSX_RELEASE_BIN_DIR
             fbx_lib_dir = FBX_DEBUG_LIB_DIR if cfg == "Debug" else FBX_RELEASE_LIB_DIR
             post_build = ET.SubElement(idg, "PostBuildEvent")
             ET.SubElement(post_build, "Command").text = (

@@ -1,4 +1,6 @@
 ﻿#include "Physics/PhysXPhysicsScene.h"
+#include "Physics/PhysXCore.h"
+#include "Physics/PhysXSceneLock.h"
 #include "Component/PrimitiveComponent.h"
 #include "Component/ShapeComponent.h"
 #include "Component/Shape/BoxComponent.h"
@@ -14,65 +16,6 @@
 #include <PxPhysicsAPI.h>
 
 using namespace physx;
-
-// ============================================================
-// PhysX Error Callback
-// ============================================================
-class FPhysXErrorCallback : public PxErrorCallback
-{
-public:
-	void reportError(PxErrorCode::Enum code, const char* message,
-		const char* file, int line) override
-	{
-		const char* severity = "Info";
-		if (code == PxErrorCode::eABORT || code == PxErrorCode::eOUT_OF_MEMORY)
-			severity = "Fatal";
-		else if (code == PxErrorCode::eINTERNAL_ERROR || code == PxErrorCode::eINVALID_OPERATION)
-			severity = "Error";
-		else if (code == PxErrorCode::eINVALID_PARAMETER || code == PxErrorCode::ePERF_WARNING)
-			severity = "Warning";
-		else if (code == PxErrorCode::eDEBUG_WARNING)
-			severity = "Warning";
-
-		UE_LOG("[PhysX %s] %s (%s:%d)", severity, message, file, line);
-	}
-};
-
-static FPhysXErrorCallback GPhysXErrorCallback;
-static PxDefaultAllocator GPhysXAllocator;
-
-// ============================================================
-// PhysX Foundation/Physics 싱글턴
-// PxCreateFoundation은 프로세스당 1회만 허용 — 복수 Scene에서 공유
-// ============================================================
-static PxFoundation* GSharedFoundation = nullptr;
-static PxPhysics* GSharedPhysics = nullptr;
-static int32 GSharedRefCount = 0;
-
-static void AcquireSharedPhysX(PxFoundation*& OutFoundation, PxPhysics*& OutPhysics)
-{
-	if (GSharedRefCount == 0)
-	{
-		GSharedFoundation = PxCreateFoundation(PX_PHYSICS_VERSION, GPhysXAllocator, GPhysXErrorCallback);
-		if (GSharedFoundation)
-		{
-			GSharedPhysics = PxCreatePhysics(PX_PHYSICS_VERSION, *GSharedFoundation, PxTolerancesScale());
-		}
-	}
-	++GSharedRefCount;
-	OutFoundation = GSharedFoundation;
-	OutPhysics = GSharedPhysics;
-}
-
-static void ReleaseSharedPhysX()
-{
-	if (--GSharedRefCount <= 0)
-	{
-		if (GSharedPhysics) { GSharedPhysics->release(); GSharedPhysics = nullptr; }
-		if (GSharedFoundation) { GSharedFoundation->release(); GSharedFoundation = nullptr; }
-		GSharedRefCount = 0;
-	}
-}
 
 // ============================================================
 // PhysX Simulation Event Callback
@@ -369,6 +312,7 @@ static PxFilterFlags KraftonFilterShader(
 	if (bABlocksB && bBBlocksA)
 	{
 		pairFlags = PxPairFlag::eCONTACT_DEFAULT
+			| PxPairFlag::eDETECT_CCD_CONTACT
 			| PxPairFlag::eNOTIFY_TOUCH_FOUND
 			| PxPairFlag::eNOTIFY_TOUCH_LOST
 			| PxPairFlag::eNOTIFY_CONTACT_POINTS;
@@ -402,8 +346,9 @@ void FPhysXPhysicsScene::Initialize(UWorld* InWorld)
 {
 	World = InWorld;
 
-	// Foundation / Physics — 프로세스 싱글턴 공유
-	AcquireSharedPhysX(Foundation, Physics);
+	FPhysXCoreHandles Core = AcquireSharedPhysXCore();
+	Foundation = Core.Foundation;
+	Physics = Core.Physics;
 	if (!Foundation || !Physics)
 	{
 		UE_LOG("[PhysX] Failed to create Foundation or Physics");
@@ -412,6 +357,14 @@ void FPhysXPhysicsScene::Initialize(UWorld* InWorld)
 
 	// CPU Dispatcher
 	Dispatcher = PxDefaultCpuDispatcherCreate(2);
+	if (!Dispatcher)
+	{
+		UE_LOG("[PhysX] Failed to create CPU dispatcher");
+		Foundation = nullptr;
+		Physics = nullptr;
+		ReleaseSharedPhysXCore();
+		return;
+	}
 
 	// Event callback
 	EventCallback = new FPhysXSimulationCallback();
@@ -422,29 +375,46 @@ void FPhysXPhysicsScene::Initialize(UWorld* InWorld)
 	SceneDesc.cpuDispatcher = Dispatcher;
 	SceneDesc.filterShader = KraftonFilterShader;
 	SceneDesc.simulationEventCallback = EventCallback;
+	ConfigurePhysXSceneDesc(SceneDesc);
 	Scene = Physics->createScene(SceneDesc);
 
 	if (!Scene)
 	{
 		UE_LOG("[PhysX] Failed to create Scene");
+		if (EventCallback) { delete EventCallback; EventCallback = nullptr; }
+		if (Dispatcher) { Dispatcher->release(); Dispatcher = nullptr; }
+		Foundation = nullptr;
+		Physics = nullptr;
+		ReleaseSharedPhysXCore();
 		return;
 	}
+	ConfigurePhysXPvdSceneClient(Scene);
 
 	// Default material (static friction, dynamic friction, restitution)
 	DefaultMaterial = Physics->createMaterial(0.5f, 0.5f, 0.3f);
+	if (!DefaultMaterial)
+	{
+		UE_LOG("[PhysX] Failed to create default material");
+		Shutdown();
+		return;
+	}
 
 	UE_LOG("[PhysX] Initialized successfully (Scene=%p)", Scene);
 }
 
 void FPhysXPhysicsScene::Shutdown()
 {
-	// Body 정리
-	for (auto& Mapping : BodyMappings)
+	if (Scene)
 	{
-		if (Mapping.Actor)
+		PHYSX_SCENE_WRITE_LOCK(Scene);
+		// Body 정리
+		for (auto& Mapping : BodyMappings)
 		{
-			Mapping.Actor->release();
-			Mapping.Actor = nullptr;
+			if (Mapping.Actor)
+			{
+				Mapping.Actor->release();
+				Mapping.Actor = nullptr;
+			}
 		}
 	}
 	BodyMappings.clear();
@@ -457,7 +427,7 @@ void FPhysXPhysicsScene::Shutdown()
 	// Foundation/Physics는 공유 싱글턴 — release 카운트 감소만
 	Foundation = nullptr;
 	Physics = nullptr;
-	ReleaseSharedPhysX();
+	ReleaseSharedPhysXCore();
 
 	World = nullptr;
 }
@@ -478,6 +448,7 @@ void FPhysXPhysicsScene::RegisterComponent(UPrimitiveComponent* Comp)
 	AActor* OwnerActor = Comp->GetOwner();
 	if (!OwnerActor) return;
 
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	FBodyMapping* Mapping = FindMappingByActor(OwnerActor);
 
 	if (!Mapping)
@@ -492,6 +463,11 @@ void FPhysXPhysicsScene::RegisterComponent(UPrimitiveComponent* Comp)
 			? static_cast<PxRigidActor*>(Physics->createRigidDynamic(BodyXf))
 			: static_cast<PxRigidActor*>(Physics->createRigidStatic(BodyXf));
 		if (!Body) return;
+
+		if (PxRigidDynamic* Dyn = Body->is<PxRigidDynamic>())
+		{
+			Dyn->setRigidBodyFlag(PxRigidBodyFlag::eENABLE_CCD, true);
+		}
 
 		Body->userData = OwnerActor;
 		Scene->addActor(*Body);
@@ -523,6 +499,7 @@ void FPhysXPhysicsScene::UnregisterComponent(UPrimitiveComponent* Comp)
 	FBodyMapping* Mapping = FindMappingByComponent(Comp);
 	if (!Mapping) return;
 
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	// 해당 컴포넌트의 shape detach
 	DetachShapeForComponent(*Mapping, Comp);
 
@@ -612,61 +589,90 @@ void FPhysXPhysicsScene::Tick(float DeltaTime)
 	constexpr float TeleportPosThresholdSq = 1.0f;   // 1m² (1m 이상 차이 시만 teleport)
 	constexpr float TeleportRotThreshold = 0.99f;    // ~8° 차이 시만 teleport
 
-	for (auto& Mapping : BodyMappings)
 	{
-		if (!Mapping.RootComp || !Mapping.Actor) continue;
+		PHYSX_SCENE_WRITE_LOCK(Scene);
 
-		PxTransform NewPose = GetPxTransform(Mapping.RootComp);
-
-		if (PxRigidDynamic* Dynamic = Mapping.Actor->is<PxRigidDynamic>())
+		for (auto& Mapping : BodyMappings)
 		{
-			if (Dynamic->getRigidBodyFlags() & PxRigidBodyFlag::eKINEMATIC)
-			{
-				Dynamic->setKinematicTarget(NewPose);
-			}
-			else
-			{
-				PxTransform PxPose = Dynamic->getGlobalPose();
-				PxVec3 dp = NewPose.p - PxPose.p;
-				const float DistSq = dp.x * dp.x + dp.y * dp.y + dp.z * dp.z;
-				const float QDot = std::abs(
-					NewPose.q.x * PxPose.q.x + NewPose.q.y * PxPose.q.y +
-					NewPose.q.z * PxPose.q.z + NewPose.q.w * PxPose.q.w);
+			if (!Mapping.RootComp || !Mapping.Actor) continue;
 
-				if (DistSq > TeleportPosThresholdSq || QDot < TeleportRotThreshold)
+			PxTransform NewPose = GetPxTransform(Mapping.RootComp);
+
+			if (PxRigidDynamic* Dynamic = Mapping.Actor->is<PxRigidDynamic>())
+			{
+				if (Dynamic->getRigidBodyFlags() & PxRigidBodyFlag::eKINEMATIC)
 				{
-					// 큰 외부 변경 → teleport. velocity는 보존.
-					Dynamic->setGlobalPose(NewPose);
+					Dynamic->setKinematicTarget(NewPose);
+				}
+				else
+				{
+					PxTransform PxPose = Dynamic->getGlobalPose();
+					PxVec3 dp = NewPose.p - PxPose.p;
+					const float DistSq = dp.x * dp.x + dp.y * dp.y + dp.z * dp.z;
+					const float QDot = std::abs(
+						NewPose.q.x * PxPose.q.x + NewPose.q.y * PxPose.q.y +
+						NewPose.q.z * PxPose.q.z + NewPose.q.w * PxPose.q.w);
+
+					if (DistSq > TeleportPosThresholdSq || QDot < TeleportRotThreshold)
+					{
+						// 큰 외부 변경 → teleport. velocity는 보존.
+						Dynamic->setGlobalPose(NewPose);
+					}
 				}
 			}
+			else if (Mapping.Actor->is<PxRigidStatic>())
+			{
+				Mapping.Actor->setGlobalPose(NewPose);
+			}
 		}
-		else if (Mapping.Actor->is<PxRigidStatic>())
+
+		// ── Simulate ──
+		Scene->simulate(DeltaTime);
+		Scene->fetchResults(true);
+	}
+
+	struct FPendingRootTransform
+	{
+		UPrimitiveComponent* RootComp = nullptr;
+		FVector Location{ 0, 0, 0 };
+		FQuat Rotation;
+	};
+
+	std::vector<FPendingRootTransform> PendingRootTransforms;
+
+	// ── Post-simulate readback: PhysX → temporary data ──
+	// RootComp에만 transform 적용 → 자식 컴포넌트는 attach로 자동 따라감.
+	// PhysX lock 안에서는 pose만 복사하고, 엔진 컴포넌트 갱신은 lock 밖에서 처리한다.
+	{
+		PHYSX_SCENE_READ_LOCK(Scene);
+
+		for (auto& Mapping : BodyMappings)
 		{
-			Mapping.Actor->setGlobalPose(NewPose);
+			if (!Mapping.RootComp || !Mapping.Actor) continue;
+
+			PxRigidDynamic* Dynamic = Mapping.Actor->is<PxRigidDynamic>();
+			if (!Dynamic) continue;
+			if (Dynamic->getRigidBodyFlags() & PxRigidBodyFlag::eKINEMATIC) continue;
+			if (Dynamic->isSleeping()) continue;
+
+			PxTransform Pose = Dynamic->getGlobalPose();
+
+			FPendingRootTransform Result;
+			Result.RootComp = Mapping.RootComp;
+			Result.Location = ToFVector(Pose.p);
+			Result.Rotation = ToFQuat(Pose.q);
+			PendingRootTransforms.push_back(Result);
 		}
 	}
 
-	// ── Simulate ──
-	Scene->simulate(DeltaTime);
-	Scene->fetchResults(true);
-
-	// ── Post-simulate: PhysX → Engine Transform 동기화 ──
-	// RootComp에만 transform 적용 → 자식 컴포넌트는 attach로 자동 따라감.
-	for (auto& Mapping : BodyMappings)
+	// ── Apply readback to engine objects outside PhysX scene locks ──
+	// SetWorldLocation/SetRelativeRotation can trigger engine-side work, so keep it out of
+	// PhysX locks to avoid callback/rebuild re-entry issues.
+	for (const FPendingRootTransform& Result : PendingRootTransforms)
 	{
-		if (!Mapping.RootComp || !Mapping.Actor) continue;
-
-		PxRigidDynamic* Dynamic = Mapping.Actor->is<PxRigidDynamic>();
-		if (!Dynamic) continue;
-		if (Dynamic->getRigidBodyFlags() & PxRigidBodyFlag::eKINEMATIC) continue;
-		if (Dynamic->isSleeping()) continue;
-
-		PxTransform Pose = Dynamic->getGlobalPose();
-		FVector NewPos = ToFVector(Pose.p);
-		FQuat NewRot = ToFQuat(Pose.q);
-
-		Mapping.RootComp->SetWorldLocation(NewPos);
-		Mapping.RootComp->SetRelativeRotation(NewRot);
+		if (!IsAliveObject(Result.RootComp)) continue;
+		Result.RootComp->SetWorldLocation(Result.Location);
+		Result.RootComp->SetRelativeRotation(Result.Rotation);
 	}
 
 	// ── Dispatch deferred contact/trigger events ──
@@ -853,7 +859,8 @@ const FPhysXPhysicsScene::FBodyMapping* FPhysXPhysicsScene::FindMappingByCompone
 void FPhysXPhysicsScene::AddForce(UPrimitiveComponent* Comp, const FVector& Force)
 {
 	FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return;
+	if (!M || !M->Actor || !Scene) return;
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return;
 	Dyn->addForce(ToPxVec3(Force));
@@ -862,7 +869,8 @@ void FPhysXPhysicsScene::AddForce(UPrimitiveComponent* Comp, const FVector& Forc
 void FPhysXPhysicsScene::AddForceAtLocation(UPrimitiveComponent* Comp, const FVector& Force, const FVector& WorldLocation)
 {
 	FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return;
+	if (!M || !M->Actor || !Scene) return;
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return;
 	PxRigidBodyExt::addForceAtPos(*Dyn, ToPxVec3(Force), ToPxVec3(WorldLocation));
@@ -871,7 +879,8 @@ void FPhysXPhysicsScene::AddForceAtLocation(UPrimitiveComponent* Comp, const FVe
 void FPhysXPhysicsScene::AddTorque(UPrimitiveComponent* Comp, const FVector& Torque)
 {
 	FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return;
+	if (!M || !M->Actor || !Scene) return;
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return;
 	Dyn->addTorque(ToPxVec3(Torque));
@@ -884,7 +893,8 @@ void FPhysXPhysicsScene::AddTorque(UPrimitiveComponent* Comp, const FVector& Tor
 FVector FPhysXPhysicsScene::GetLinearVelocity(UPrimitiveComponent* Comp) const
 {
 	const FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return { 0, 0, 0 };
+	if (!M || !M->Actor || !Scene) return { 0, 0, 0 };
+	PHYSX_SCENE_READ_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return { 0, 0, 0 };
 	return ToFVector(Dyn->getLinearVelocity());
@@ -893,7 +903,8 @@ FVector FPhysXPhysicsScene::GetLinearVelocity(UPrimitiveComponent* Comp) const
 void FPhysXPhysicsScene::SetLinearVelocity(UPrimitiveComponent* Comp, const FVector& Vel)
 {
 	FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return;
+	if (!M || !M->Actor || !Scene) return;
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return;
 	Dyn->setLinearVelocity(ToPxVec3(Vel));
@@ -902,7 +913,8 @@ void FPhysXPhysicsScene::SetLinearVelocity(UPrimitiveComponent* Comp, const FVec
 FVector FPhysXPhysicsScene::GetAngularVelocity(UPrimitiveComponent* Comp) const
 {
 	const FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return { 0, 0, 0 };
+	if (!M || !M->Actor || !Scene) return { 0, 0, 0 };
+	PHYSX_SCENE_READ_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return { 0, 0, 0 };
 	return ToFVector(Dyn->getAngularVelocity());
@@ -911,7 +923,8 @@ FVector FPhysXPhysicsScene::GetAngularVelocity(UPrimitiveComponent* Comp) const
 void FPhysXPhysicsScene::SetAngularVelocity(UPrimitiveComponent* Comp, const FVector& Vel)
 {
 	FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return;
+	if (!M || !M->Actor || !Scene) return;
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return;
 	Dyn->setAngularVelocity(ToPxVec3(Vel));
@@ -924,7 +937,8 @@ void FPhysXPhysicsScene::SetAngularVelocity(UPrimitiveComponent* Comp, const FVe
 void FPhysXPhysicsScene::SetMass(UPrimitiveComponent* Comp, float NewMass)
 {
 	FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return;
+	if (!M || !M->Actor || !Scene) return;
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return;
 
@@ -938,7 +952,8 @@ void FPhysXPhysicsScene::SetMass(UPrimitiveComponent* Comp, float NewMass)
 float FPhysXPhysicsScene::GetMass(UPrimitiveComponent* Comp) const
 {
 	const FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return 1.0f;
+	if (!M || !M->Actor || !Scene) return 1.0f;
+	PHYSX_SCENE_READ_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return 1.0f;
 	return Dyn->getMass();
@@ -947,7 +962,8 @@ float FPhysXPhysicsScene::GetMass(UPrimitiveComponent* Comp) const
 void FPhysXPhysicsScene::SetCenterOfMass(UPrimitiveComponent* Comp, const FVector& LocalOffset)
 {
 	FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return;
+	if (!M || !M->Actor || !Scene) return;
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return;
 	Dyn->setCMassLocalPose(PxTransform(ToPxVec3(LocalOffset)));
@@ -956,7 +972,8 @@ void FPhysXPhysicsScene::SetCenterOfMass(UPrimitiveComponent* Comp, const FVecto
 FVector FPhysXPhysicsScene::GetCenterOfMass(UPrimitiveComponent* Comp) const
 {
 	const FBodyMapping* M = FindMappingByComponent(Comp);
-	if (!M || !M->Actor) return { 0, 0, 0 };
+	if (!M || !M->Actor || !Scene) return { 0, 0, 0 };
+	PHYSX_SCENE_READ_LOCK(Scene);
 	PxRigidDynamic* Dyn = M->Actor->is<PxRigidDynamic>();
 	if (!Dyn) return { 0, 0, 0 };
 	return ToFVector(Dyn->getCMassLocalPose().p);
@@ -970,6 +987,7 @@ bool FPhysXPhysicsScene::Raycast(const FVector& Start, const FVector& Dir, float
 	ECollisionChannel TraceChannel, const AActor* IgnoreActor) const
 {
 	if (!Scene) return false;
+	PHYSX_SCENE_READ_LOCK(Scene);
 
 	// Channel + IgnoreActor 통합 filter.
 	// shape의 queryFilterData는 SetupFilterData에서 word0=ObjectType, word1=Block 마스크.
@@ -1045,6 +1063,7 @@ bool FPhysXPhysicsScene::RaycastByObjectTypes(const FVector& Start, const FVecto
 	uint32 ObjectTypeMask, const AActor* IgnoreActor) const
 {
 	if (!Scene || ObjectTypeMask == 0) return false;
+	PHYSX_SCENE_READ_LOCK(Scene);
 
 	// SetupFilterData (line ~322) 에서 word0 = ObjectType (채널 enum 값) 으로 set.
 	// ObjectType 마스크 비트 검사로 hit 후보 필터.
@@ -1116,6 +1135,7 @@ bool FPhysXPhysicsScene::SphereSweepShapeComponents(const FVector& Start, const 
 	FHitResult& OutHit, ECollisionChannel TraceChannel, const AActor* IgnoreActor) const
 {
 	if (!Scene || MaxDist <= 0.0f) return false;
+	PHYSX_SCENE_READ_LOCK(Scene);
 
 	struct FShapeChannelSweepFilter : PxQueryFilterCallback
 	{
