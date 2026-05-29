@@ -9,7 +9,7 @@
 #include "Core/Delegate.h"
 #include "Render/Types/VertexTypes.h"
 #include "Render/Proxy/DirtyFlag.h"
-#include "Physics/Asset/PhysicsInstance.h"
+#include "Physics/BodyInstance.h"
 
 #include "Source/Engine/Component/PrimitiveComponent.generated.h"
 class FPrimitiveSceneProxy;

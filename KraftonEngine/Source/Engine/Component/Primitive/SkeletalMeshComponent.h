@@ -3,6 +3,7 @@
 #include "Component/Primitive/SkinnedMeshComponent.h"
 #include "Animation/AnimationMode.h"
 #include "Object/Ptr/SubclassOf.h"
+#include "Physics/ConstraintInstance.h"
 
 #include "Source/Engine/Component/Primitive/SkeletalMeshComponent.generated.h"
 
