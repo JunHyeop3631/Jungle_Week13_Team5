@@ -17,14 +17,103 @@
 #include "Object/Object.h"
 #include "Object/Reflection/ObjectFactory.h"
 #include "Object/Reflection/UClass.h"
+#include "Physics/Asset/BodySetup.h"
+#include "Physics/Asset/PhysicsAsset.h"
+#include "Physics/Asset/PhysicsConstraintSetup.h"
+#include "Physics/IPhysicsRuntime.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 #include "Serialization/Archive.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+
+namespace
+{
+    constexpr float DegreesToRadians(float Degrees)
+    {
+        return Degrees * PhysicsPi / 180.0f;
+    }
+
+    EPhysicsMotionType ToPhysicsMotion(EConstraintMotion Motion)
+    {
+        switch (Motion)
+        {
+        case EConstraintMotion::Free:
+            return EPhysicsMotionType::Free;
+        case EConstraintMotion::Limited:
+            return EPhysicsMotionType::Limited;
+        case EConstraintMotion::Locked:
+        default:
+            return EPhysicsMotionType::Locked;
+        }
+    }
+
+    FTransform MakeUnitScaleTransform(const FVector& Location, const FQuat& Rotation = FQuat::Identity)
+    {
+        return FTransform(Location, Rotation, FVector(1.0f, 1.0f, 1.0f));
+    }
+
+    FTransform MakeRelativeTransform(const FTransform& WorldTransform, const FTransform& ParentWorldTransform)
+    {
+        return FTransform(WorldTransform.ToMatrix() * ParentWorldTransform.ToMatrix().GetInverse());
+    }
+
+    FTransform MakeWorldTransform(const FTransform& LocalTransform, const FTransform& ParentWorldTransform)
+    {
+        return FTransform(LocalTransform.ToMatrix() * ParentWorldTransform.ToMatrix());
+    }
+
+    void ApplyBodyMaterial(const UBodySetup& BodySetup, FPhysicsShapeDesc& ShapeDesc)
+    {
+        ShapeDesc.Material.StaticFriction = BodySetup.Friction;
+        ShapeDesc.Material.DynamicFriction = BodySetup.Friction;
+        ShapeDesc.Material.Restitution = BodySetup.Restitution;
+        ShapeDesc.Material.Density = 1.0f;
+    }
+
+    void AppendPhysicsShapes(const UBodySetup& BodySetup, FPhysicsBodyDesc& BodyDesc)
+    {
+        for (const FKSphereElem& Sphere : BodySetup.AggregateGeom.SphereElems)
+        {
+            FPhysicsShapeDesc ShapeDesc;
+            ShapeDesc.Name = BodySetup.BoneName + "_Sphere";
+            ShapeDesc.ShapeType = EPhysicsShapeType::Sphere;
+            ShapeDesc.LocalTransform = MakeUnitScaleTransform(Sphere.Center);
+            ShapeDesc.Radius = Sphere.Radius;
+            ApplyBodyMaterial(BodySetup, ShapeDesc);
+            BodyDesc.Shapes.push_back(ShapeDesc);
+        }
+
+        for (const FKBoxElem& Box : BodySetup.AggregateGeom.BoxElems)
+        {
+            FPhysicsShapeDesc ShapeDesc;
+            ShapeDesc.Name = BodySetup.BoneName + "_Box";
+            ShapeDesc.ShapeType = EPhysicsShapeType::Box;
+            ShapeDesc.LocalTransform = MakeUnitScaleTransform(Box.Center, Box.Rotation);
+            ShapeDesc.HalfExtent = FVector(Box.HalfX, Box.HalfY, Box.HalfZ);
+            ApplyBodyMaterial(BodySetup, ShapeDesc);
+            BodyDesc.Shapes.push_back(ShapeDesc);
+        }
+
+        for (const FKCapsuleElem& Capsule : BodySetup.AggregateGeom.CapsuleElems)
+        {
+            FPhysicsShapeDesc ShapeDesc;
+            ShapeDesc.Name = BodySetup.BoneName + "_Capsule";
+            ShapeDesc.ShapeType = EPhysicsShapeType::Capsule;
+            ShapeDesc.LocalTransform = MakeUnitScaleTransform(Capsule.Center, Capsule.Rotation);
+            ShapeDesc.Radius = Capsule.Radius;
+            // PhysX PxCapsuleGeometry expects the half distance between the two sphere centers.
+            ShapeDesc.HalfHeight = std::max(0.0f, Capsule.HalfHeight - Capsule.Radius);
+            ApplyBodyMaterial(BodySetup, ShapeDesc);
+            BodyDesc.Shapes.push_back(ShapeDesc);
+        }
+    }
+}
 
 USkeletalMeshComponent::~USkeletalMeshComponent()
 {
+    DestroyPhysicsAssetBodies();
     ClearAnimInstance();
 }
 
@@ -35,6 +124,7 @@ FPrimitiveSceneProxy* USkeletalMeshComponent::CreateSceneProxy()
 
 void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InMesh)
 {
+    DestroyPhysicsAssetBodies();
     Super::SetSkeletalMesh(InMesh);
     // Mesh 가 바뀌면 이전 AnimInstance 가 가리키던 본 인덱스/카운트가 무의미해진다.
     // 새 SkeletalMesh 기준으로 AnimInstance 를 재인스턴스화한다.
@@ -288,6 +378,199 @@ void USkeletalMeshComponent::ClearAnimInstance()
         UObjectManager::Get().DestroyObject(AnimInstance);
         AnimInstance = nullptr;
     }
+}
+
+bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runtime)
+{
+    USkeletalMesh* Mesh = GetSkeletalMesh();
+    return Mesh ? InstantiatePhysicsAssetBodies(Runtime, Mesh->PhysicsAsset) : false;
+}
+
+bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runtime, UPhysicsAsset* PhysicsAsset)
+{
+    DestroyPhysicsAssetBodies();
+
+    USkeletalMesh* Mesh = GetSkeletalMesh();
+    FSkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+    if (!PhysicsAsset || !Asset || Asset->Bones.empty())
+    {
+        return false;
+    }
+
+    PhysicsRuntimeOwner = &Runtime;
+    Bodies.assign(Asset->Bones.size(), nullptr);
+    Constraints.clear();
+
+    bool bCreatedAnyBody = false;
+
+    for (UBodySetup* BodySetup : PhysicsAsset->GetBodySetups())
+    {
+        if (!BodySetup || BodySetup->AggregateGeom.IsEmpty())
+        {
+            continue;
+        }
+
+        const int32 BoneIndex = FindBoneIndex(BodySetup->BoneName);
+        if (BoneIndex < 0 || BoneIndex >= static_cast<int32>(Bodies.size()))
+        {
+            UE_LOG("PhysicsAsset body skipped: bone not found. Bone=%s", BodySetup->BoneName.c_str());
+            continue;
+        }
+
+        FTransform BoneWorldTransform;
+        if (!GetBoneWorldTransformByIndex(BoneIndex, BoneWorldTransform))
+        {
+            UE_LOG("PhysicsAsset body skipped: could not resolve bone transform. Bone=%s", BodySetup->BoneName.c_str());
+            continue;
+        }
+
+        FPhysicsBodyDesc BodyDesc;
+        BodyDesc.OwnerComponent = this;
+        BodyDesc.BodyName = BodySetup->BoneName;
+        BodyDesc.BoneName = BodySetup->BoneName;
+        BodyDesc.BoneIndex = BoneIndex;
+        BodyDesc.BodyType = BodySetup->bSimulatePhysics ? EPhysicsBodyType::Dynamic : EPhysicsBodyType::Kinematic;
+        BodyDesc.WorldTransform = BoneWorldTransform;
+        BodyDesc.Mass = std::max(0.001f, BodySetup->Mass);
+        BodyDesc.LinearDamping = BodySetup->LinearDamping;
+        BodyDesc.AngularDamping = BodySetup->AngularDamping;
+        BodyDesc.bUseGravity = true;
+        BodyDesc.bEnableCCD = true;
+        BodyDesc.bStartAwake = true;
+
+        AppendPhysicsShapes(*BodySetup, BodyDesc);
+        if (BodyDesc.Shapes.empty())
+        {
+            continue;
+        }
+
+        FBodyInstance* Body = Runtime.CreateRigidBody(BodyDesc);
+        if (!Body)
+        {
+            UE_LOG("PhysicsAsset body creation failed. Bone=%s", BodySetup->BoneName.c_str());
+            continue;
+        }
+
+        Bodies[BoneIndex] = Body;
+        bCreatedAnyBody = true;
+    }
+
+    if (!bCreatedAnyBody)
+    {
+        Bodies.clear();
+        PhysicsRuntimeOwner = nullptr;
+        return false;
+    }
+
+    for (UPhysicsConstraintSetup* Setup : PhysicsAsset->GetConstraints())
+    {
+        if (!Setup)
+        {
+            continue;
+        }
+
+        const int32 ParentBoneIndex = FindBoneIndex(Setup->ParentBoneName);
+        const int32 ChildBoneIndex = FindBoneIndex(Setup->ChildBoneName);
+        FBodyInstance* ParentBody = GetBodyInstanceByBoneIndex(ParentBoneIndex);
+        FBodyInstance* ChildBody = GetBodyInstanceByBoneIndex(ChildBoneIndex);
+        if (!ParentBody || !ChildBody)
+        {
+            UE_LOG("PhysicsAsset constraint skipped: body not found. Parent=%s Child=%s",
+                Setup->ParentBoneName.c_str(),
+                Setup->ChildBoneName.c_str());
+            continue;
+        }
+
+        FTransform ParentBodyWorld;
+        FTransform ChildBodyWorld;
+        if (!Runtime.GetBodyTransform(ParentBody, ParentBodyWorld) ||
+            !Runtime.GetBodyTransform(ChildBody, ChildBodyWorld))
+        {
+            UE_LOG("PhysicsAsset constraint skipped: body transform unavailable. Parent=%s Child=%s",
+                Setup->ParentBoneName.c_str(),
+                Setup->ChildBoneName.c_str());
+            continue;
+        }
+
+        const FTransform ParentLocalFrame = MakeUnitScaleTransform(Setup->ParentAnchorPos, Setup->ParentAnchorRot);
+        const FTransform JointWorldFrame = MakeWorldTransform(ParentLocalFrame, ParentBodyWorld);
+
+        FPhysicsConstraintDesc ConstraintDesc;
+        ConstraintDesc.ConstraintName = Setup->ParentBoneName + "_" + Setup->ChildBoneName;
+        ConstraintDesc.ParentBody = ParentBody;
+        ConstraintDesc.ChildBody = ChildBody;
+        ConstraintDesc.ParentLocalFrame = ParentLocalFrame;
+        ConstraintDesc.ChildLocalFrame = MakeRelativeTransform(JointWorldFrame, ChildBodyWorld);
+
+        const EPhysicsMotionType LinearMotion = Setup->bLockLinearMotion
+            ? EPhysicsMotionType::Locked
+            : EPhysicsMotionType::Free;
+        ConstraintDesc.LinearX = LinearMotion;
+        ConstraintDesc.LinearY = LinearMotion;
+        ConstraintDesc.LinearZ = LinearMotion;
+
+        ConstraintDesc.Twist = ToPhysicsMotion(Setup->TwistMotion);
+        ConstraintDesc.Swing1 = ToPhysicsMotion(Setup->Swing1Motion);
+        ConstraintDesc.Swing2 = ToPhysicsMotion(Setup->Swing2Motion);
+        ConstraintDesc.TwistLimitRadiansMin = -DegreesToRadians(Setup->TwistLimitAngle);
+        ConstraintDesc.TwistLimitRadiansMax = DegreesToRadians(Setup->TwistLimitAngle);
+        ConstraintDesc.Swing1LimitRadians = DegreesToRadians(Setup->Swing1LimitAngle);
+        ConstraintDesc.Swing2LimitRadians = DegreesToRadians(Setup->Swing2LimitAngle);
+
+        FConstraintInstance* Constraint = Runtime.CreateD6Joint(ConstraintDesc);
+        if (!Constraint)
+        {
+            UE_LOG("PhysicsAsset constraint creation failed. Parent=%s Child=%s",
+                Setup->ParentBoneName.c_str(),
+                Setup->ChildBoneName.c_str());
+            continue;
+        }
+
+        Constraints.push_back(Constraint);
+    }
+
+    return true;
+}
+
+void USkeletalMeshComponent::DestroyPhysicsAssetBodies()
+{
+    if (PhysicsRuntimeOwner)
+    {
+        for (FConstraintInstance* Constraint : Constraints)
+        {
+            if (Constraint)
+            {
+                PhysicsRuntimeOwner->DestroyJoint(Constraint);
+            }
+        }
+
+        for (FBodyInstance* Body : Bodies)
+        {
+            if (Body)
+            {
+                PhysicsRuntimeOwner->DestroyRigidBody(Body);
+            }
+        }
+    }
+
+    Constraints.clear();
+    Bodies.clear();
+    PhysicsRuntimeOwner = nullptr;
+}
+
+FBodyInstance* USkeletalMeshComponent::GetBodyInstanceByBoneIndex(int32 BoneIndex) const
+{
+    if (BoneIndex < 0 || BoneIndex >= static_cast<int32>(Bodies.size()))
+    {
+        return nullptr;
+    }
+
+    return Bodies[BoneIndex];
+}
+
+FBodyInstance* USkeletalMeshComponent::GetBodyInstanceByBoneName(const FString& BoneName) const
+{
+    return GetBodyInstanceByBoneIndex(FindBoneIndex(BoneName));
 }
 
 void USkeletalMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction& ThisTickFunction)

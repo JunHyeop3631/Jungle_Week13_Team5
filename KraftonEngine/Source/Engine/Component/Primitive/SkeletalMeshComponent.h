@@ -11,6 +11,8 @@ class UAnimInstance;
 class UAnimSingleNodeInstance;
 class UAnimSequenceBase;
 class UClass;
+class IPhysicsRuntime;
+class UPhysicsAsset;
 
 // SkeletalMesh 전용 render proxy만 제공하는 얇은 wrapper.
 // Skinning/bone/material/bounds 상태는 모두 USkinnedMeshComponent가 소유한다.
@@ -69,6 +71,16 @@ public:
     void PostEditProperty(const char* PropertyName) override;
     void Serialize(FArchive& Ar) override;
 
+    // PhysicsAsset/Ragdoll runtime instancing. Bodies are indexed by skeleton bone index
+    // so ragdoll write-back can cheaply map physics poses back to bones.
+    bool InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runtime);
+    bool InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runtime, UPhysicsAsset* PhysicsAsset);
+    void DestroyPhysicsAssetBodies();
+    FBodyInstance* GetBodyInstanceByBoneIndex(int32 BoneIndex) const;
+    FBodyInstance* GetBodyInstanceByBoneName(const FString& BoneName) const;
+    const TArray<FBodyInstance*>& GetPhysicsBodies() const { return Bodies; }
+    const TArray<FConstraintInstance*>& GetPhysicsConstraints() const { return Constraints; }
+
 protected:
     // 매 프레임 AnimInstance 평가 → 결과 포즈를 SetBoneLocalTransforms 로 푸시.
     // 이 경로가 CPU skinning 과 bounds dirty 를 한 번에 처리한다.
@@ -92,4 +104,5 @@ protected:
 
 	TArray<FBodyInstance*> Bodies;
 	TArray<FConstraintInstance*> Constraints;
+    IPhysicsRuntime* PhysicsRuntimeOwner = nullptr;
 };
