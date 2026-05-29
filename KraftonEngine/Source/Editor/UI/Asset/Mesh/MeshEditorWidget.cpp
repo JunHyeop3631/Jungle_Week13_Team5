@@ -191,6 +191,7 @@ namespace
 }
 
 static uint32 GNextMeshEditorInstanceId = 0;
+bool FMeshEditorWidget::s_bOpenInPhysicsTab = false;
 
 void FMeshEditorWidget::RecordImportDurationForAsset(const FString& AssetPath, double Seconds)
 {
@@ -294,7 +295,10 @@ void FMeshEditorWidget::Open(UObject* Object)
 	// 디스크의 기존 AnimSequence .uasset 들을 목록에 채워 둔다(런타임 Load/Save 만으론 안 잡힘).
 	FAnimationManager::Get().RefreshAvailableAnimations();
 
-	ActiveTab         = EMeshEditorTab::Skeleton;
+	// ContentBrowser에서 Physics 에셋을 더블클릭하면 Physics 탭으로 바로 진입
+	ActiveTab = s_bOpenInPhysicsTab ? EMeshEditorTab::Physics : EMeshEditorTab::Skeleton;
+	s_bOpenInPhysicsTab = false;
+
 	AnimTabState      = FAnimationTabState {};
 	SelectedBoneIndex = -1;
 }

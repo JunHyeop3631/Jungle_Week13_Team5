@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Component/Primitive/SkinnedMeshComponent.h"
 #include "Animation/AnimationMode.h"
@@ -88,4 +88,7 @@ protected:
     TSubclassOf<UAnimInstance> AnimInstanceClass;
     UPROPERTY(Save, Instanced, Category="Animation", DisplayName="Anim Instance", Type=ObjectRef, AllowedClass=UAnimInstance)
     UAnimInstance*             AnimInstance  = nullptr;
+
+	TArray<FBodyInstance*> Bodies;
+	TArray<FConstraintInstance*> Constraints;
 };

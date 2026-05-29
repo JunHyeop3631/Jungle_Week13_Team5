@@ -94,6 +94,9 @@ public:
 	static void RecordImportDurationForAsset(const FString& AssetPath, double Seconds);
 	static void ClearImportDurationForAsset(const FString& AssetPath);
 
+	// ContentBrowser에서 Physics 탭으로 바로 열고 싶을 때 Open() 전에 true로 세팅
+	static bool s_bOpenInPhysicsTab;
+
 private:
 	// Tab bar
 	void RenderTabBar();

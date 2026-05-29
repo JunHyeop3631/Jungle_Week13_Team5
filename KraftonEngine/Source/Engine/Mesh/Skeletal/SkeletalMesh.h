@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Object/Object.h"
 #include "Mesh/Skeletal/SkeletalMeshAsset.h"
@@ -6,7 +6,6 @@
 
 class USkeleton;
 class UPhysicsAsset;
-
 
 #include "Source/Engine/Mesh/Skeletal/SkeletalMesh.generated.h"
 
@@ -55,8 +54,8 @@ private:
     TArray<FSkeletalMaterial> SkeletalMaterials;
 
     FSkeletonBinding SkeletonBinding;
-    USkeleton*       Skeleton       = nullptr;
+    USkeleton*       Skeleton = nullptr;
 
 public:
-    UPhysicsAsset* PhysicsAsset = nullptr;
+	UPhysicsAsset* PhysicsAsset = nullptr;
 };

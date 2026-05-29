@@ -436,6 +436,9 @@ void FEditorContentBrowserWidget::RefreshContent()
 				case EAssetPackageType::ParticleSystem:
 					Element = std::make_shared<ParticleSystemElement>();
 					break;
+				case EAssetPackageType::PhysicsAsset:
+					Element = std::make_shared<PhysicsAssetElement>();
+					break;
 				default:
 					Element = std::make_shared<ContentBrowserElement>();
 					break;

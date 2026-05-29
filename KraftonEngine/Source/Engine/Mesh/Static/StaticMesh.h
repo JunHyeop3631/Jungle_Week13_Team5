@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Object/Object.h"
 #include "Collision/BVH/MeshTriangleBVH.h"
@@ -9,6 +9,7 @@
 #include <memory>
 
 struct ID3D11Device;
+class UBodySetup;
 
 // LOD 단계별 GPU 리소스
 struct FLODMeshData
@@ -59,4 +60,6 @@ private:
 	// LOD1 (70%), LOD2 (50%), LOD3 (25%) — LOD0 is the original StaticMeshAsset
 	FLODMeshData AdditionalLODs[3];
 	bool bHasLOD = false;
+
+	UBodySetup* BodyInstance;
 };
