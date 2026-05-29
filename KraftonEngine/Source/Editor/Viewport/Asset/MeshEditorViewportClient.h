@@ -53,10 +53,16 @@ public:
 	void Tick(float DeltaTime);
 
 	void SetSelectedBone(USkeletalMesh* Mesh, int32 BoneIndex);
+	// 본을 디버그 하이라이트만 한다 (기즈모는 본에 붙이지 않음).
+	// Physics 탭에서 셰이프 기즈모를 유지한 채 선택 본 위치만 보여줄 때 사용.
+	void HighlightBone(USkeletalMesh* Mesh, int32 BoneIndex);
 	const FBone* GetSelectedBone() const;
 
 	EBoneDebugDrawMode GetBoneDebugDrawMode() const;
 	void SetBoneDebugDrawMode(EBoneDebugDrawMode InDrawMode);
+
+	// 본 디버그 라인 표시 여부 (Physics 탭에서는 끈다)
+	void SetBoneDebugVisible(bool bVisible);
 
 	void ApplyTransformSettingsToGizmo();
 

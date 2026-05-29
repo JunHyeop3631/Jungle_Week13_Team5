@@ -1,11 +1,11 @@
-#pragma once
+﻿#pragma once
 
 #include "Object/Object.h"
 #include "Mesh/Skeletal/SkeletalMeshAsset.h"
 #include "Animation/Skeleton/SkeletonTypes.h"
 
 class USkeleton;
-
+class UPhysicsAsset;
 
 #include "Source/Engine/Mesh/Skeletal/SkeletalMesh.generated.h"
 
@@ -55,4 +55,7 @@ private:
 
     FSkeletonBinding SkeletonBinding;
     USkeleton*       Skeleton = nullptr;
+
+public:
+	UPhysicsAsset* PhysicsAsset = nullptr;
 };

@@ -1,4 +1,11 @@
-#include "MeshEditorWidget.h"
+﻿#include "MeshEditorWidget.h"
+#include "Physics/Asset/PhysicsAsset.h"
+#include "Physics/Asset/BodySetup.h"
+#include "Physics/Asset/PhysicsConstraintSetup.h"
+#include "Asset/AssetPackage.h"
+#include "Serialization/WindowsArchive.h"
+
+#include <filesystem>
 
 #ifdef GetCurrentTime
 #undef GetCurrentTime
@@ -31,6 +38,10 @@
 #include "Editor/UI/Util/EditorTextureManager.h"
 #include "Platform/Paths.h"
 #include "Object/Object.h"
+#include "Core/Logging/Log.h"
+#include "Render/Types/MinimalViewInfo.h"
+#include "Math/Quat.h"
+#include "Component/Debug/GizmoComponent.h"
 
 #include <imgui.h>
 #include <algorithm>
@@ -76,6 +87,35 @@ namespace
 	}
 
 	TMap<FString, double> GMeshImportDurationsByAssetPath;
+
+	// MyCar.uasset  →  MyCar_Physics.uasset (같은 디렉토리)
+	FString MakePhysicsAssetPath(const FString& MeshPath)
+	{
+		const size_t DotPos = MeshPath.find_last_of('.');
+		if (DotPos != FString::npos)
+			return MeshPath.substr(0, DotPos) + "_Physics" + MeshPath.substr(DotPos);
+		return MeshPath + "_Physics.uasset";
+	}
+
+	// 파일에서 PhysicsAsset 로드. 실패 시 nullptr 반환.
+	UPhysicsAsset* LoadPhysicsAssetFromFile(const FString& Path)
+	{
+		const FString NormalizedPath = FPaths::MakeProjectRelative(Path);
+
+		FWindowsBinReader Reader(NormalizedPath);
+		if (!Reader.IsValid()) return nullptr;
+
+		FAssetPackageHeader Header;
+		Reader << Header;
+		if (!Header.IsValid(EAssetPackageType::PhysicsAsset)) return nullptr;
+
+		FAssetImportMetadata Metadata;
+		Reader << Metadata;
+
+		UPhysicsAsset* Asset = new UPhysicsAsset();
+		Asset->Serialize(Reader);
+		return Asset;
+	}
 
 	double GetRecordedImportDurationSeconds(const USkeletalMesh* Mesh)
 	{
@@ -151,6 +191,7 @@ namespace
 }
 
 static uint32 GNextMeshEditorInstanceId = 0;
+bool FMeshEditorWidget::s_bOpenInPhysicsTab = false;
 
 void FMeshEditorWidget::RecordImportDurationForAsset(const FString& AssetPath, double Seconds)
 {
@@ -254,13 +295,29 @@ void FMeshEditorWidget::Open(UObject* Object)
 	// 디스크의 기존 AnimSequence .uasset 들을 목록에 채워 둔다(런타임 Load/Save 만으론 안 잡힘).
 	FAnimationManager::Get().RefreshAvailableAnimations();
 
-	ActiveTab         = EMeshEditorTab::Skeleton;
+	// ContentBrowser에서 Physics 에셋을 더블클릭하면 Physics 탭으로 바로 진입
+	ActiveTab = s_bOpenInPhysicsTab ? EMeshEditorTab::Physics : EMeshEditorTab::Skeleton;
+	s_bOpenInPhysicsTab = false;
+
 	AnimTabState      = FAnimationTabState {};
 	SelectedBoneIndex = -1;
 }
 
 void FMeshEditorWidget::Close()
 {
+	// Physics 정리: FAssetEditorWidget::Close() 전에 해야 EditedObject 가 살아있음
+	{
+		USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(EditedObject);
+		// 저장된 적 있으면 USkeletalMesh 가 소유 → delete 금지 (dangling pointer 방지)
+		// 저장 안 한 채로 닫으면 편집 위젯이 소유 → delete
+		bool bMeshOwns = SkeletalMesh
+			&& PhysicsTabState.PhysicsAsset != nullptr
+			&& SkeletalMesh->PhysicsAsset == PhysicsTabState.PhysicsAsset;
+		if (!bMeshOwns)
+			delete PhysicsTabState.PhysicsAsset;
+		PhysicsTabState.PhysicsAsset = nullptr;
+	}
+
 	FAssetEditorWidget::Close();
 
 	if (UWorld* PreviewWorld = ViewportClient.GetPreviewWorld())
@@ -284,6 +341,31 @@ void FMeshEditorWidget::Tick(float DeltaTime)
 	if (ViewportClient.IsRenderable())
 	{
 		ViewportClient.Tick(DeltaTime);
+	}
+
+	if (ActiveTab == EMeshEditorTab::Physics)
+	{
+		// Physics 탭: 선택된 본만 하이라이트해 셰이프를 어디에 붙이는지 보이게 한다.
+		// (전체 골격은 셰이프 편집에 방해되므로 SelectedOnly 모드의 선택 본 한 개만 표시)
+		// 본에 기즈모를 붙이지 않도록 SetSelectedBone 대신 HighlightBone 을 쓴다.
+		ViewportClient.HighlightBone(Cast<USkeletalMesh>(EditedObject), SelectedBoneIndex);
+		ViewportClient.SetBoneDebugVisible(SelectedBoneIndex >= 0);
+
+		if (ViewportClient.IsGizmoHolding())
+		{
+			MarkDirty();
+		}
+		else
+		{
+			// 셰이프가 선택돼 있는 동안 매 프레임 바인딩/위치/가시성을 유지한다.
+			// (단발성 클릭만으로는 본 포즈 갱신·타겟 전환에 따라 기즈모가 사라지므로)
+			// 드래그 중에는 SetTarget 재호출로 위치가 흔들리지 않도록 건드리지 않는다.
+			UpdatePhysicsShapeGizmo();
+		}
+	}
+	else
+	{
+		ViewportClient.SetBoneDebugVisible(true);
 	}
 
 	if (ActiveTab == EMeshEditorTab::Animation)
@@ -398,6 +480,9 @@ void FMeshEditorWidget::Render(float DeltaTime)
 	case EMeshEditorTab::Animation:
 		RenderAnimationLayout(AvailableHeight);
 		break;
+	case EMeshEditorTab::Physics:
+		RenderPhysicsLayout();
+		break;
 	}
 
 	ImGui::End();
@@ -439,11 +524,30 @@ void FMeshEditorWidget::RenderTabBar()
 		{
 			const EMeshEditorTab PreviousTab = ActiveTab;
 			ActiveTab = Tab;
-			if (PreviousTab != ActiveTab && ActiveTab == EMeshEditorTab::Skeleton)
+			if (PreviousTab != ActiveTab)
 			{
-				if (USkeletalMeshComponent* Comp = ViewportClient.GetPreviewMeshComponent())
+				if (ActiveTab == EMeshEditorTab::Skeleton)
 				{
-					Comp->ApplyBoneEditBasePose();
+					if (USkeletalMeshComponent* Comp = ViewportClient.GetPreviewMeshComponent())
+					{
+						Comp->ApplyBoneEditBasePose();
+					}
+				}
+				if (PreviousTab == EMeshEditorTab::Physics)
+				{
+					PhysicsTabState.ShapeGizmoTarget.Unbind();
+					if (UGizmoComponent* Gizmo = ViewportClient.GetGizmo())
+						Gizmo->Deactivate();
+				}
+				// Physics 탭 진입: 직전 스켈레탈 본 기즈모가 남아 있으면 끄고,
+				// 셰이프를 선택하기 전까지는 기즈모를 띄우지 않는다.
+				if (ActiveTab == EMeshEditorTab::Physics)
+				{
+					PhysicsTabState.SelectedShapeType      = FPhysicsEditTabState::EShapeType::None;
+					PhysicsTabState.SelectedShapeElemIndex = -1;
+					PhysicsTabState.ShapeGizmoTarget.Unbind();
+					if (UGizmoComponent* Gizmo = ViewportClient.GetGizmo())
+						Gizmo->Deactivate();
 				}
 			}
 		}
@@ -478,6 +582,7 @@ void FMeshEditorWidget::RenderTabBar()
 	TabButton("Skeleton", L"Skeleton.png", EMeshEditorTab::Skeleton);
 	TabButton("Mesh", L"SkeletalMesh.png", EMeshEditorTab::Mesh);
 	TabButton("Animation", L"Animation.png", EMeshEditorTab::Animation);
+	TabButton("Physics", L"Sphere_64x.png", EMeshEditorTab::Physics);
 
 	ImGui::NewLine();
 }
@@ -503,6 +608,13 @@ void FMeshEditorWidget::RenderViewportPanel(ImVec2 Size)
 	if (VP->GetSRV())
 	{
 		ImGui::Image((ImTextureID)VP->GetSRV(), Size);
+
+		// Physics 탭: 콜리전 셰이프 와이어프레임 오버레이
+		if (ActiveTab == EMeshEditorTab::Physics)
+		{
+			ImDrawList* OverlayDL = ImGui::GetWindowDrawList();
+			DrawPhysicsShapeOverlays(OverlayDL, ViewportPos, Size);
+		}
 	}
 	else
 	{
@@ -1380,4 +1492,774 @@ void FMeshEditorWidget::RenderBoneTree(const FSkeletalMesh* Asset, int32 Index)
 		}
 		ImGui::TreePop();
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Physics tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+void FMeshEditorWidget::RenderPhysicsLayout()
+{
+	USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(EditedObject);
+	const FSkeletalMesh* Asset = SkeletalMesh ? SkeletalMesh->GetSkeletalMeshAsset() : nullptr;
+
+	// PhysicsAsset 로드 우선순위:
+	//   1) 메시에 이미 연결된 포인터 (이번 세션에서 Save 한 것)
+	//   2) 파일에서 로드 (이전 세션에서 저장된 것)
+	//   3) 없으면 빈 것 새로 생성
+	if (!PhysicsTabState.PhysicsAsset)
+	{
+		if (SkeletalMesh && SkeletalMesh->PhysicsAsset)
+		{
+			PhysicsTabState.PhysicsAsset = SkeletalMesh->PhysicsAsset;
+		}
+		else if (SkeletalMesh)
+		{
+			const FString MeshPath = SkeletalMesh->GetAssetPathFileName();
+			if (!MeshPath.empty() && MeshPath != "None")
+			{
+				const FString PhysicsPath = MakePhysicsAssetPath(MeshPath);
+				if (UPhysicsAsset* Loaded = LoadPhysicsAssetFromFile(PhysicsPath))
+				{
+					PhysicsTabState.PhysicsAsset    = Loaded;
+					SkeletalMesh->PhysicsAsset = Loaded;
+				}
+			}
+		}
+
+		if (!PhysicsTabState.PhysicsAsset)
+			PhysicsTabState.PhysicsAsset = new UPhysicsAsset();
+	}
+	UPhysicsAsset* PhysicsAsset = PhysicsTabState.PhysicsAsset;
+
+	// ── 툴바 ─────────────────────────────────────────────────
+	if (IsDirty()) ImGui::TextColored(ImVec4(1.f, 0.8f, 0.f, 1.f), "●");
+	else           ImGui::TextDisabled("●");
+	ImGui::SameLine();
+	if (ImGui::SmallButton("Save")) SavePhysicsAsset();
+	ImGui::SameLine();
+	ImGui::TextDisabled("Ctrl+S");
+
+	// ── 왼쪽: 본 트리 ────────────────────────────────────────
+	ImGui::BeginChild("##PhysBoneTree", ImVec2(PhysicsTabState.BoneTreeWidth, 0), true);
+	ImGui::Text("Skeleton");
+	ImGui::Separator();
+
+	if (Asset)
+	{
+		for (int32 i = 0; i < (int32)Asset->Bones.size(); ++i)
+		{
+			if (Asset->Bones[i].ParentIndex == -1)
+			{
+				RenderPhysicsBoneTree(Asset, i);
+			}
+		}
+	}
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Text("Constraints (%d)", (int32)PhysicsAsset->GetConstraints().size());
+	ImGui::Separator();
+
+	const auto& Constraints = PhysicsAsset->GetConstraints();
+	for (int32 i = 0; i < (int32)Constraints.size(); ++i)
+	{
+		UPhysicsConstraintSetup* CS = Constraints[i];
+		FString Label = CS->ParentBoneName + " -> " + CS->ChildBoneName;
+		bool bSelected = (PhysicsTabState.SelectedConstraintIndex == i);
+		ImGui::PushID(i + 10000);
+		if (ImGui::Selectable(Label.c_str(), bSelected))
+		{
+			PhysicsTabState.SelectedConstraintIndex = i;
+			PhysicsTabState.SelectedBodySetupIndex  = -1;
+		}
+		// Constraint 항목 우클릭 → 삭제 메뉴
+		if (ImGui::BeginPopupContextItem("##ConstraintCtx"))
+		{
+			if (ImGui::MenuItem("Delete Constraint"))
+			{
+				PhysicsAsset->RemoveConstraintSetup(CS->ParentBoneName, CS->ChildBoneName);
+				if (PhysicsTabState.SelectedConstraintIndex >= (int32)PhysicsAsset->GetConstraints().size())
+					PhysicsTabState.SelectedConstraintIndex = -1;
+				MarkDirty();
+				ImGui::EndPopup();
+				ImGui::PopID();
+				break;
+			}
+			ImGui::EndPopup();
+		}
+		ImGui::PopID();
+	}
+	ImGui::EndChild();
+
+	ImGui::SameLine();
+
+	// ── 중앙: 뷰포트 ─────────────────────────────────────────
+	ImGui::BeginGroup();
+	{
+		float ViewportWidth = ImGui::GetContentRegionAvail().x - PhysicsTabState.DetailsWidth - ImGui::GetStyle().ItemSpacing.x;
+		RenderViewportPanel(ImVec2(ViewportWidth, ImGui::GetContentRegionAvail().y));
+	}
+	ImGui::EndGroup();
+
+	ImGui::SameLine();
+
+	// ── 오른쪽: 디테일 패널 ──────────────────────────────────
+	ImGui::BeginChild("##PhysDetails", ImVec2(PhysicsTabState.DetailsWidth, 0), true);
+	RenderPhysicsDetailsPanel();
+	ImGui::EndChild();
+}
+
+void FMeshEditorWidget::RenderPhysicsBoneTree(const FSkeletalMesh* Asset, int32 BoneIndex)
+{
+	if (!Asset) return;
+
+	const FBone& Bone       = Asset->Bones[BoneIndex];
+	UPhysicsAsset* PhysicsAsset = PhysicsTabState.PhysicsAsset;
+	const bool bHasBody     = PhysicsAsset && PhysicsAsset->FindBodySetup(Bone.Name) != nullptr;
+	const bool bHasParent   = Bone.ParentIndex >= 0;
+
+	// BodySetup 있는 본 → 초록, 없는 본 → 기본색
+	if (bHasBody) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.f, 0.4f, 1.f));
+
+	bool bHasChildren = false;
+	for (int32 i = BoneIndex + 1; i < (int32)Asset->Bones.size(); ++i)
+	{
+		if (Asset->Bones[i].ParentIndex == BoneIndex) { bHasChildren = true; break; }
+	}
+
+	ImGuiTreeNodeFlags Flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
+	if (SelectedBoneIndex == BoneIndex) Flags |= ImGuiTreeNodeFlags_Selected;
+	if (!bHasChildren)                  Flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+
+	ImGui::PushID(BoneIndex);
+	bool bOpen = ImGui::TreeNodeEx(Bone.Name.c_str(), Flags);
+	if (bHasBody) ImGui::PopStyleColor();
+
+	// ── 좌클릭: 본 선택 ────────────────────────────────────────
+	if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+	{
+		SelectedBoneIndex = BoneIndex;
+		// Physics 탭에서는 기즈모를 본에 붙이지 않음 (셰이프 선택 시에만 활성화)
+		ViewportClient.SetSelectedBone(Cast<USkeletalMesh>(EditedObject), -1);
+
+		PhysicsTabState.SelectedBodySetupIndex  = -1;
+		PhysicsTabState.SelectedConstraintIndex = -1;
+		PhysicsTabState.SelectedShapeType       = FPhysicsEditTabState::EShapeType::None;
+		PhysicsTabState.SelectedShapeElemIndex  = -1;
+		PhysicsTabState.ShapeGizmoTarget.Unbind();
+
+		if (PhysicsAsset)
+		{
+			const auto& Bodies = PhysicsAsset->GetBodySetups();
+			for (int32 i = 0; i < (int32)Bodies.size(); ++i)
+			{
+				if (Bodies[i] && Bodies[i]->BoneName == Bone.Name)
+				{
+					PhysicsTabState.SelectedBodySetupIndex = i;
+					break;
+				}
+			}
+		}
+	}
+
+	// ── 우클릭: 컨텍스트 메뉴 ────────────────────────────────
+	if (ImGui::BeginPopupContextItem("##BoneCtx"))
+	{
+		// 이 메뉴를 열면 해당 본도 선택
+		SelectedBoneIndex = BoneIndex;
+
+		// ── Add Body (서브메뉴로 모양 선택) ──────────────────
+		if (ImGui::BeginMenu(bHasBody ? "Add Shape to Body" : "Add Body"))
+		{
+			using EShapeType = FPhysicsEditTabState::EShapeType;
+			// AddShapeFn 으로 셰이프를 추가하고, 방금 추가한 요소를 곧바로 선택해
+			// 그 중심에 기즈모가 뜨도록 한다.
+			auto AddBodyWithShape = [&](EShapeType ShapeType, auto AddShapeFn, auto ElemCountFn)
+			{
+				UBodySetup* Setup = PhysicsAsset->GetOrCreateBodySetup(Bone.Name);
+				AddShapeFn(Setup->AggregateGeom);
+				// 선택 상태 갱신
+				const auto& Bodies = PhysicsAsset->GetBodySetups();
+				for (int32 i = 0; i < (int32)Bodies.size(); ++i)
+				{
+					if (Bodies[i] && Bodies[i]->BoneName == Bone.Name)
+					{
+						PhysicsTabState.SelectedBodySetupIndex  = i;
+						PhysicsTabState.SelectedConstraintIndex = -1;
+						break;
+					}
+				}
+				// 방금 추가한 셰이프 요소를 선택 → 중심에 기즈모 표시
+				PhysicsTabState.SelectedShapeType      = ShapeType;
+				PhysicsTabState.SelectedShapeElemIndex = ElemCountFn(Setup->AggregateGeom) - 1;
+				UpdatePhysicsShapeGizmo();
+			};
+
+			if (ImGui::MenuItem("  Sphere"))
+			{
+				AddBodyWithShape(EShapeType::Sphere,
+					[](FKAggregateGeom& G) { G.SphereElems.push_back(FKSphereElem{}); },
+					[](FKAggregateGeom& G) { return (int32)G.SphereElems.size(); });
+				MarkDirty();
+			}
+			if (ImGui::MenuItem("  Box"))
+			{
+				AddBodyWithShape(EShapeType::Box,
+					[](FKAggregateGeom& G) { G.BoxElems.push_back(FKBoxElem{}); },
+					[](FKAggregateGeom& G) { return (int32)G.BoxElems.size(); });
+				MarkDirty();
+			}
+			if (ImGui::MenuItem("  Capsule"))
+			{
+				AddBodyWithShape(EShapeType::Capsule,
+					[](FKAggregateGeom& G) { G.CapsuleElems.push_back(FKCapsuleElem{}); },
+					[](FKAggregateGeom& G) { return (int32)G.CapsuleElems.size(); });
+				MarkDirty();
+			}
+			ImGui::EndMenu();
+		}
+
+		// ── Add Constraint to Parent ──────────────────────────
+		if (bHasParent)
+		{
+			const FString& ParentName = Asset->Bones[Bone.ParentIndex].Name;
+			FString ConstraintLabel   = "Add Constraint  (" + ParentName + " -> " + Bone.Name + ")";
+			if (ImGui::MenuItem(ConstraintLabel.c_str()))
+			{
+				PhysicsAsset->GetOrCreateConstraintSetup(ParentName, Bone.Name);
+				PhysicsTabState.SelectedConstraintIndex = (int32)PhysicsAsset->GetConstraints().size() - 1;
+				PhysicsTabState.SelectedBodySetupIndex  = -1;
+				MarkDirty();
+			}
+		}
+
+		// ── Delete Body ───────────────────────────────────────
+		if (bHasBody)
+		{
+			ImGui::Separator();
+			if (ImGui::MenuItem("Delete Body"))
+			{
+				PhysicsAsset->RemoveBodySetup(Bone.Name);
+				PhysicsTabState.SelectedBodySetupIndex = -1;
+				MarkDirty();
+			}
+		}
+
+		ImGui::EndPopup();
+	}
+
+	ImGui::PopID();
+
+	if (bOpen && bHasChildren)
+	{
+		for (int32 i = BoneIndex + 1; i < (int32)Asset->Bones.size(); ++i)
+		{
+			if (Asset->Bones[i].ParentIndex == BoneIndex)
+			{
+				RenderPhysicsBoneTree(Asset, i);
+			}
+		}
+		ImGui::TreePop();
+	}
+}
+
+void FMeshEditorWidget::RenderPhysicsDetailsPanel()
+{
+	UPhysicsAsset* PhysicsAsset = PhysicsTabState.PhysicsAsset;
+	if (!PhysicsAsset) { ImGui::TextDisabled("No PhysicsAsset."); return; }
+
+	if (PhysicsTabState.SelectedBodySetupIndex >= 0 &&
+		PhysicsTabState.SelectedBodySetupIndex < (int32)PhysicsAsset->GetBodySetups().size())
+	{
+		RenderBodySetupDetails(PhysicsAsset->GetBodySetupsMutable()[PhysicsTabState.SelectedBodySetupIndex]);
+	}
+	else if (PhysicsTabState.SelectedConstraintIndex >= 0 &&
+		PhysicsTabState.SelectedConstraintIndex < (int32)PhysicsAsset->GetConstraints().size())
+	{
+		RenderConstraintDetails(PhysicsAsset->GetConstraintsMutable()[PhysicsTabState.SelectedConstraintIndex]);
+	}
+	else
+	{
+		ImGui::TextDisabled("Select a bone or constraint.");
+	}
+}
+
+void FMeshEditorWidget::RenderBodySetupDetails(UBodySetup* Setup)
+{
+	if (!Setup) return;
+
+	ImGui::Text("Body: %s", Setup->BoneName.c_str());
+	ImGui::Separator();
+
+	if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		if (ImGui::DragFloat("Mass (kg)",       &Setup->Mass,           0.01f, 0.001f, 1000.f)) MarkDirty();
+		if (ImGui::DragFloat("Linear Damping",  &Setup->LinearDamping,  0.001f, 0.f, 10.f))    MarkDirty();
+		if (ImGui::DragFloat("Angular Damping", &Setup->AngularDamping, 0.001f, 0.f, 10.f))    MarkDirty();
+		if (ImGui::DragFloat("Friction",        &Setup->Friction,       0.01f, 0.f, 1.f))      MarkDirty();
+		if (ImGui::DragFloat("Restitution",     &Setup->Restitution,    0.01f, 0.f, 1.f))      MarkDirty();
+		if (ImGui::Checkbox("Simulate Physics", &Setup->bSimulatePhysics))                      MarkDirty();
+	}
+
+	if (ImGui::CollapsingHeader("Collision Shapes", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		using EShapeType = FPhysicsEditTabState::EShapeType;
+
+		// ── Sphere ────────────────────────────────────────────
+		for (int32 i = 0; i < (int32)Setup->AggregateGeom.SphereElems.size(); ++i)
+		{
+			FKSphereElem& E = Setup->AggregateGeom.SphereElems[i];
+			ImGui::PushID(i + 0);
+			const bool bSel = (PhysicsTabState.SelectedShapeType == EShapeType::Sphere && PhysicsTabState.SelectedShapeElemIndex == i);
+			if (bSel) ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.7f, 0.55f, 0.f, 1.f));
+			const bool bOpen = ImGui::TreeNodeEx("Sphere", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow);
+			if (bSel) ImGui::PopStyleColor();
+			if (ImGui::IsItemClicked())
+			{
+				PhysicsTabState.SelectedShapeType      = EShapeType::Sphere;
+				PhysicsTabState.SelectedShapeElemIndex = i;
+				UpdatePhysicsShapeGizmo();
+			}
+			if (bOpen)
+			{
+				if (ImGui::DragFloat3("Center", &E.Center.X, 0.1f)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
+				if (ImGui::DragFloat("Radius",  &E.Radius,   0.01f, 0.01f, 500.f)) MarkDirty();
+				if (ImGui::SmallButton("Remove"))
+				{
+					if (bSel) { PhysicsTabState.SelectedShapeType = EShapeType::None; PhysicsTabState.SelectedShapeElemIndex = -1; UpdatePhysicsShapeGizmo(); }
+					Setup->AggregateGeom.SphereElems.erase(Setup->AggregateGeom.SphereElems.begin() + i);
+					MarkDirty(); ImGui::TreePop(); ImGui::PopID(); return;
+				}
+				ImGui::TreePop();
+			}
+			ImGui::PopID();
+		}
+		// ── Box ───────────────────────────────────────────────
+		for (int32 i = 0; i < (int32)Setup->AggregateGeom.BoxElems.size(); ++i)
+		{
+			FKBoxElem& E = Setup->AggregateGeom.BoxElems[i];
+			ImGui::PushID(i + 100);
+			const bool bSel = (PhysicsTabState.SelectedShapeType == EShapeType::Box && PhysicsTabState.SelectedShapeElemIndex == i);
+			if (bSel) ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.7f, 0.55f, 0.f, 1.f));
+			const bool bOpen = ImGui::TreeNodeEx("Box", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow);
+			if (bSel) ImGui::PopStyleColor();
+			if (ImGui::IsItemClicked())
+			{
+				PhysicsTabState.SelectedShapeType      = EShapeType::Box;
+				PhysicsTabState.SelectedShapeElemIndex = i;
+				UpdatePhysicsShapeGizmo();
+			}
+			if (bOpen)
+			{
+				if (ImGui::DragFloat3("Center", &E.Center.X, 0.1f)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
+				if (ImGui::DragFloat("Half X",  &E.HalfX, 0.01f, 0.01f, 500.f)) MarkDirty();
+				if (ImGui::DragFloat("Half Y",  &E.HalfY, 0.01f, 0.01f, 500.f)) MarkDirty();
+				if (ImGui::DragFloat("Half Z",  &E.HalfZ, 0.01f, 0.01f, 500.f)) MarkDirty();
+				if (ImGui::SmallButton("Remove"))
+				{
+					if (bSel) { PhysicsTabState.SelectedShapeType = EShapeType::None; PhysicsTabState.SelectedShapeElemIndex = -1; UpdatePhysicsShapeGizmo(); }
+					Setup->AggregateGeom.BoxElems.erase(Setup->AggregateGeom.BoxElems.begin() + i);
+					MarkDirty(); ImGui::TreePop(); ImGui::PopID(); return;
+				}
+				ImGui::TreePop();
+			}
+			ImGui::PopID();
+		}
+		// ── Capsule ───────────────────────────────────────────
+		for (int32 i = 0; i < (int32)Setup->AggregateGeom.CapsuleElems.size(); ++i)
+		{
+			FKCapsuleElem& E = Setup->AggregateGeom.CapsuleElems[i];
+			ImGui::PushID(i + 200);
+			const bool bSel = (PhysicsTabState.SelectedShapeType == EShapeType::Capsule && PhysicsTabState.SelectedShapeElemIndex == i);
+			if (bSel) ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.7f, 0.55f, 0.f, 1.f));
+			const bool bOpen = ImGui::TreeNodeEx("Capsule", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_OpenOnArrow);
+			if (bSel) ImGui::PopStyleColor();
+			if (ImGui::IsItemClicked())
+			{
+				PhysicsTabState.SelectedShapeType      = EShapeType::Capsule;
+				PhysicsTabState.SelectedShapeElemIndex = i;
+				UpdatePhysicsShapeGizmo();
+			}
+			if (bOpen)
+			{
+				if (ImGui::DragFloat3("Center", &E.Center.X, 0.1f)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
+				if (ImGui::DragFloat("Radius",      &E.Radius, 0.01f, 0.01f, 500.f)) MarkDirty();
+				if (ImGui::DragFloat("Half Height", &E.HalfHeight, 0.01f, 0.01f, 500.f)) MarkDirty();
+				if (ImGui::SmallButton("Remove"))
+				{
+					if (bSel) { PhysicsTabState.SelectedShapeType = EShapeType::None; PhysicsTabState.SelectedShapeElemIndex = -1; UpdatePhysicsShapeGizmo(); }
+					Setup->AggregateGeom.CapsuleElems.erase(Setup->AggregateGeom.CapsuleElems.begin() + i);
+					MarkDirty(); ImGui::TreePop(); ImGui::PopID(); return;
+				}
+				ImGui::TreePop();
+			}
+			ImGui::PopID();
+		}
+
+		ImGui::Spacing();
+		if (ImGui::Button("+ Sphere"))  { Setup->AggregateGeom.SphereElems.push_back({});  MarkDirty(); }
+		ImGui::SameLine();
+		if (ImGui::Button("+ Box"))     { Setup->AggregateGeom.BoxElems.push_back({});     MarkDirty(); }
+		ImGui::SameLine();
+		if (ImGui::Button("+ Capsule")) { Setup->AggregateGeom.CapsuleElems.push_back({}); MarkDirty(); }
+	}
+}
+
+void FMeshEditorWidget::RenderConstraintDetails(UPhysicsConstraintSetup* Constraint)
+{
+	if (!Constraint) return;
+
+	ImGui::Text("%s -> %s", Constraint->ParentBoneName.c_str(), Constraint->ChildBoneName.c_str());
+	ImGui::Separator();
+
+	if (ImGui::CollapsingHeader("Constraint Frame", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		if (ImGui::DragFloat3("Anchor Pos",      &Constraint->ParentAnchorPos.X, 0.1f))               MarkDirty();
+		if (ImGui::DragFloat4("Anchor Rot XYZW", &Constraint->ParentAnchorRot.X, 0.01f, -1.f, 1.f))  MarkDirty();
+	}
+
+	if (ImGui::CollapsingHeader("Angular Limits", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		static const char* Modes[] = { "Locked", "Limited", "Free" };
+		auto RenderAxis = [&](const char* Label, EConstraintMotion& Motion, float& Angle)
+		{
+			int32 Idx = (int32)Motion;
+			if (ImGui::Combo(Label, &Idx, Modes, 3)) { Motion = (EConstraintMotion)Idx; MarkDirty(); }
+			if (Motion == EConstraintMotion::Limited)
+			{
+				FString AngleLabel = FString("  Limit##") + Label;
+				if (ImGui::SliderFloat(AngleLabel.c_str(), &Angle, 0.f, 180.f, "%.1f deg")) MarkDirty();
+			}
+		};
+		RenderAxis("Twist (X)",  Constraint->TwistMotion,  Constraint->TwistLimitAngle);
+		RenderAxis("Swing1 (Y)", Constraint->Swing1Motion, Constraint->Swing1LimitAngle);
+		RenderAxis("Swing2 (Z)", Constraint->Swing2Motion, Constraint->Swing2LimitAngle);
+	}
+
+	if (ImGui::CollapsingHeader("Linear Limits"))
+	{
+		if (ImGui::Checkbox("Lock Linear Motion", &Constraint->bLockLinearMotion)) MarkDirty();
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Physics 셰이프 기즈모
+// ─────────────────────────────────────────────────────────────────────────────
+
+void FMeshEditorWidget::UpdatePhysicsShapeGizmo()
+{
+    UGizmoComponent* Gizmo = ViewportClient.GetGizmo();
+    if (!Gizmo) return;
+
+    using EShapeType = FPhysicsEditTabState::EShapeType;
+    UPhysicsAsset* PA = PhysicsTabState.PhysicsAsset;
+
+    if (!PA
+        || PhysicsTabState.SelectedBodySetupIndex < 0
+        || PhysicsTabState.SelectedShapeType      == EShapeType::None
+        || PhysicsTabState.SelectedShapeElemIndex < 0)
+    {
+        PhysicsTabState.ShapeGizmoTarget.Unbind();
+        Gizmo->Deactivate();
+        return;
+    }
+
+    UBodySetup* BS = PA->GetBodySetupsMutable()[PhysicsTabState.SelectedBodySetupIndex];
+    const int32 ElemIdx = PhysicsTabState.SelectedShapeElemIndex;
+
+    FKSphereElem*  SphereElem  = nullptr;
+    FKBoxElem*     BoxElem     = nullptr;
+    FKCapsuleElem* CapsuleElem = nullptr;
+
+    switch (PhysicsTabState.SelectedShapeType)
+    {
+    case EShapeType::Sphere:
+        if (ElemIdx < (int32)BS->AggregateGeom.SphereElems.size())
+            SphereElem = &BS->AggregateGeom.SphereElems[ElemIdx];
+        break;
+    case EShapeType::Box:
+        if (ElemIdx < (int32)BS->AggregateGeom.BoxElems.size())
+            BoxElem = &BS->AggregateGeom.BoxElems[ElemIdx];
+        break;
+    case EShapeType::Capsule:
+        if (ElemIdx < (int32)BS->AggregateGeom.CapsuleElems.size())
+            CapsuleElem = &BS->AggregateGeom.CapsuleElems[ElemIdx];
+        break;
+    default: break;
+    }
+
+    if (SphereElem || BoxElem || CapsuleElem)
+    {
+        // 본 이름으로 인덱스 찾아 월드 트랜스폼 가져오기
+        FVector BoneWorldPos  = FVector(0,0,0);
+        FQuat   BoneWorldQuat = FQuat::Identity;
+        if (USkeletalMeshComponent* MeshComp = ViewportClient.GetPreviewMeshComponent())
+        {
+            const FSkeletalMesh* MeshAsset = MeshComp->GetSkeletalMesh()
+                ? MeshComp->GetSkeletalMesh()->GetSkeletalMeshAsset() : nullptr;
+            if (MeshAsset)
+            {
+                for (int32 i = 0; i < (int32)MeshAsset->Bones.size(); ++i)
+                {
+                    if (MeshAsset->Bones[i].Name == BS->BoneName)
+                    {
+                        BoneWorldPos  = MeshComp->GetBoneLocationByIndex(i);
+                        BoneWorldQuat = MeshComp->GetBoneQuatByIndex(i);
+                        break;
+                    }
+                }
+            }
+        }
+
+        UWorld* PreviewWorld = ViewportClient.GetPreviewWorld();
+        if (SphereElem)
+            PhysicsTabState.ShapeGizmoTarget.BindSphere(SphereElem, PreviewWorld, BoneWorldPos, BoneWorldQuat);
+        else if (BoxElem)
+            PhysicsTabState.ShapeGizmoTarget.BindBox(BoxElem, PreviewWorld, BoneWorldPos, BoneWorldQuat);
+        else
+            PhysicsTabState.ShapeGizmoTarget.BindCapsule(CapsuleElem, PreviewWorld, BoneWorldPos, BoneWorldQuat);
+        Gizmo->SetTarget(&PhysicsTabState.ShapeGizmoTarget);
+    }
+    else
+    {
+        PhysicsTabState.ShapeGizmoTarget.Unbind();
+        Gizmo->Deactivate();
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Physics 콜리전 셰이프 오버레이
+// ─────────────────────────────────────────────────────────────────────────────
+
+static constexpr float kPhPi  = 3.14159265f;
+static constexpr float kPhPi2 = kPhPi * 2.f;
+
+bool FMeshEditorWidget::WorldToScreenPhysics(
+    const FMatrix& VP, FVector World, ImVec2 VPMin, ImVec2 VPSize, ImVec2& Out) const
+{
+    float W = World.X * VP.M[0][3] + World.Y * VP.M[1][3]
+            + World.Z * VP.M[2][3] + VP.M[3][3];
+    if (W < 0.001f) return false;
+
+    FVector NDC = VP.TransformPositionWithW(World);
+    if (NDC.X < -1.f || NDC.X > 1.f || NDC.Y < -1.f || NDC.Y > 1.f) return false;
+
+    Out.x = VPMin.x + (NDC.X *  0.5f + 0.5f) * VPSize.x;
+    Out.y = VPMin.y + (NDC.Y * -0.5f + 0.5f) * VPSize.y;
+    return true;
+}
+
+void FMeshEditorWidget::DrawWireSpherePh(
+    ImDrawList* DL, FVector C, float R,
+    unsigned int Col, const FMatrix& VP, ImVec2 VPMin, ImVec2 VPSize) const
+{
+    constexpr int32 Segs = 24;
+    const float Step = kPhPi2 / Segs;
+    for (int32 i = 0; i < Segs; ++i)
+    {
+        const float A0 = i * Step, A1 = (i + 1) * Step;
+        ImVec2 S0, S1;
+        if (WorldToScreenPhysics(VP, FVector(C.X + R*cosf(A0), C.Y + R*sinf(A0), C.Z), VPMin, VPSize, S0) &&
+            WorldToScreenPhysics(VP, FVector(C.X + R*cosf(A1), C.Y + R*sinf(A1), C.Z), VPMin, VPSize, S1))
+            DL->AddLine(S0, S1, Col, 1.5f);
+        if (WorldToScreenPhysics(VP, FVector(C.X + R*cosf(A0), C.Y, C.Z + R*sinf(A0)), VPMin, VPSize, S0) &&
+            WorldToScreenPhysics(VP, FVector(C.X + R*cosf(A1), C.Y, C.Z + R*sinf(A1)), VPMin, VPSize, S1))
+            DL->AddLine(S0, S1, Col, 1.5f);
+        if (WorldToScreenPhysics(VP, FVector(C.X, C.Y + R*cosf(A0), C.Z + R*sinf(A0)), VPMin, VPSize, S0) &&
+            WorldToScreenPhysics(VP, FVector(C.X, C.Y + R*cosf(A1), C.Z + R*sinf(A1)), VPMin, VPSize, S1))
+            DL->AddLine(S0, S1, Col, 1.5f);
+    }
+}
+
+void FMeshEditorWidget::DrawWireBoxPh(
+    ImDrawList* DL, FVector C, FQuat Rot,
+    float HX, float HY, float HZ,
+    unsigned int Col, const FMatrix& VP, ImVec2 VPMin, ImVec2 VPSize) const
+{
+    const FVector Local[8] = {
+        {-HX,-HY,-HZ},{HX,-HY,-HZ},{HX,HY,-HZ},{-HX,HY,-HZ},
+        {-HX,-HY, HZ},{HX,-HY, HZ},{HX,HY, HZ},{-HX,HY, HZ},
+    };
+    ImVec2 S[8]; bool V[8];
+    for (int32 i = 0; i < 8; ++i)
+        V[i] = WorldToScreenPhysics(VP, C + Rot.RotateVector(Local[i]), VPMin, VPSize, S[i]);
+    static constexpr int32 E[12][2] = {{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};
+    for (const auto& e : E)
+        if (V[e[0]] && V[e[1]]) DL->AddLine(S[e[0]], S[e[1]], Col, 1.5f);
+}
+
+void FMeshEditorWidget::DrawWireCapsulePh(
+    ImDrawList* DL, FVector C, FQuat Rot,
+    float Radius, float HalfH,
+    unsigned int Col, const FMatrix& VP, ImVec2 VPMin, ImVec2 VPSize) const
+{
+    const FVector Up      = Rot.RotateVector(FVector(0,0,1));
+    const FVector Right   = Rot.RotateVector(FVector(1,0,0));
+    const FVector Forward = Rot.RotateVector(FVector(0,1,0));
+    const FVector TopC = C + Up * HalfH, BotC = C - Up * HalfH;
+    const float   Step = kPhPi2 / 24;
+
+    for (int32 Ring = 0; Ring < 2; ++Ring)
+    {
+        const FVector O = Ring ? BotC : TopC;
+        for (int32 i = 0; i < 24; ++i)
+        {
+            const float A0 = i*Step, A1=(i+1)*Step;
+            ImVec2 S0,S1;
+            if (WorldToScreenPhysics(VP, O+Right*(Radius*cosf(A0))+Forward*(Radius*sinf(A0)), VPMin,VPSize,S0) &&
+                WorldToScreenPhysics(VP, O+Right*(Radius*cosf(A1))+Forward*(Radius*sinf(A1)), VPMin,VPSize,S1))
+                DL->AddLine(S0,S1,Col,1.5f);
+        }
+    }
+    for (int32 i = 0; i < 4; ++i)
+    {
+        const float A = i*(kPhPi/2.f);
+        const FVector Off = Right*(Radius*cosf(A))+Forward*(Radius*sinf(A));
+        ImVec2 S0,S1;
+        if (WorldToScreenPhysics(VP,TopC+Off,VPMin,VPSize,S0) && WorldToScreenPhysics(VP,BotC+Off,VPMin,VPSize,S1))
+            DL->AddLine(S0,S1,Col,1.5f);
+    }
+    const float HStep = (kPhPi/2.f)/10;
+    for (int32 Hemi = 0; Hemi < 2; ++Hemi)
+    {
+        const FVector O = Hemi ? BotC : TopC;
+        const float Sign = Hemi ? -1.f : 1.f;
+        for (int32 d = 0; d < 4; ++d)
+        {
+            const FVector Dir = Right*cosf(d*kPhPi/2.f)+Forward*sinf(d*kPhPi/2.f);
+            for (int32 i = 0; i < 10; ++i)
+            {
+                const float A0=i*HStep, A1=(i+1)*HStep;
+                ImVec2 S0,S1;
+                if (WorldToScreenPhysics(VP, O+Dir*(Radius*cosf(A0))+Up*(Sign*Radius*sinf(A0)), VPMin,VPSize,S0) &&
+                    WorldToScreenPhysics(VP, O+Dir*(Radius*cosf(A1))+Up*(Sign*Radius*sinf(A1)), VPMin,VPSize,S1))
+                    DL->AddLine(S0,S1,Col,1.5f);
+            }
+        }
+    }
+}
+
+void FMeshEditorWidget::DrawPhysicsShapeOverlays(ImDrawList* DL, ImVec2 VPMin, ImVec2 VPSize) const
+{
+    UPhysicsAsset* PA = PhysicsTabState.PhysicsAsset;
+    if (!PA) return;
+
+    FMinimalViewInfo POV;
+    if (!ViewportClient.GetCameraView(POV)) return;
+    const FMatrix VP = POV.CalculateViewProjectionMatrix();
+
+    using EShapeType = FPhysicsEditTabState::EShapeType;
+    const auto& Setups = PA->GetBodySetups();
+
+    USkeletalMeshComponent* MeshComp = ViewportClient.GetPreviewMeshComponent();
+    const FSkeletalMesh* MeshAsset = MeshComp && MeshComp->GetSkeletalMesh()
+        ? MeshComp->GetSkeletalMesh()->GetSkeletalMeshAsset() : nullptr;
+
+    for (int32 Idx = 0; Idx < (int32)Setups.size(); ++Idx)
+    {
+        UBodySetup* BS = Setups[Idx];
+        if (!BS) continue;
+        const bool bBodySel = (Idx == PhysicsTabState.SelectedBodySetupIndex);
+
+        // 본 월드 트랜스폼 조회
+        FVector BoneWorldPos  = FVector(0,0,0);
+        FQuat   BoneWorldQuat = FQuat::Identity;
+        if (MeshAsset && MeshComp)
+        {
+            for (int32 i = 0; i < (int32)MeshAsset->Bones.size(); ++i)
+            {
+                if (MeshAsset->Bones[i].Name == BS->BoneName)
+                {
+                    BoneWorldPos  = MeshComp->GetBoneLocationByIndex(i);
+                    BoneWorldQuat = MeshComp->GetBoneQuatByIndex(i);
+                    break;
+                }
+            }
+        }
+
+        for (int32 Si = 0; Si < (int32)BS->AggregateGeom.SphereElems.size(); ++Si)
+        {
+            const FKSphereElem& E = BS->AggregateGeom.SphereElems[Si];
+            const bool bSel = bBodySel && PhysicsTabState.SelectedShapeType == EShapeType::Sphere && PhysicsTabState.SelectedShapeElemIndex == Si;
+            const unsigned int Col = bSel ? IM_COL32(255,220,0,255) : bBodySel ? IM_COL32(0,220,100,200) : IM_COL32(0,180,80,120);
+            const FVector WorldCenter = BoneWorldPos + BoneWorldQuat.RotateVector(E.Center);
+            DrawWireSpherePh(DL, WorldCenter, E.Radius, Col, VP, VPMin, VPSize);
+        }
+        for (int32 Bi = 0; Bi < (int32)BS->AggregateGeom.BoxElems.size(); ++Bi)
+        {
+            const FKBoxElem& E = BS->AggregateGeom.BoxElems[Bi];
+            const bool bSel = bBodySel && PhysicsTabState.SelectedShapeType == EShapeType::Box && PhysicsTabState.SelectedShapeElemIndex == Bi;
+            const unsigned int Col = bSel ? IM_COL32(255,220,0,255) : bBodySel ? IM_COL32(0,220,100,200) : IM_COL32(0,180,80,120);
+            const FVector WorldCenter = BoneWorldPos + BoneWorldQuat.RotateVector(E.Center);
+            const FQuat   WorldRot    = BoneWorldQuat * E.Rotation;
+            DrawWireBoxPh(DL, WorldCenter, WorldRot, E.HalfX, E.HalfY, E.HalfZ, Col, VP, VPMin, VPSize);
+        }
+        for (int32 Ci = 0; Ci < (int32)BS->AggregateGeom.CapsuleElems.size(); ++Ci)
+        {
+            const FKCapsuleElem& E = BS->AggregateGeom.CapsuleElems[Ci];
+            const bool bSel = bBodySel && PhysicsTabState.SelectedShapeType == EShapeType::Capsule && PhysicsTabState.SelectedShapeElemIndex == Ci;
+            const unsigned int Col = bSel ? IM_COL32(255,220,0,255) : bBodySel ? IM_COL32(0,220,100,200) : IM_COL32(0,180,80,120);
+            const FVector WorldCenter = BoneWorldPos + BoneWorldQuat.RotateVector(E.Center);
+            const FQuat   WorldRot    = BoneWorldQuat * E.Rotation;
+            DrawWireCapsulePh(DL, WorldCenter, WorldRot, E.Radius, E.HalfHeight, Col, VP, VPMin, VPSize);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Physics 저장
+// ─────────────────────────────────────────────────────────────────────────────
+
+void FMeshEditorWidget::SavePhysicsAsset()
+{
+    UPhysicsAsset* PhysicsAsset = PhysicsTabState.PhysicsAsset;
+    if (!PhysicsAsset) return;
+
+    USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(EditedObject);
+    if (!SkeletalMesh) return;
+
+    const FString MeshPath = SkeletalMesh->GetAssetPathFileName();
+    if (MeshPath.empty() || MeshPath == "None")
+    {
+        UE_LOG("PhysicsAsset save failed: mesh has no path.");
+        return;
+    }
+
+    const FString PhysicsPath = FPaths::MakeProjectRelative(MakePhysicsAssetPath(MeshPath));
+    PhysicsAsset->AssetPathFileName = PhysicsPath;
+
+    // 저장 디렉토리 자동 생성
+    {
+        std::filesystem::path FullPath =
+            std::filesystem::path(FPaths::RootDir()) / FPaths::ToWide(PhysicsPath);
+        FPaths::CreateDir(FullPath.parent_path().wstring());
+    }
+
+    FWindowsBinWriter Writer(PhysicsPath);
+    if (!Writer.IsValid())
+    {
+        UE_LOG("PhysicsAsset save failed: could not open file. Path=%s", PhysicsPath.c_str());
+        return;
+    }
+
+    FAssetPackageHeader Header;
+    Header.Type = static_cast<uint32>(EAssetPackageType::PhysicsAsset);
+
+    FAssetImportMetadata Metadata; // PhysicsAsset은 별도 소스 파일 없음
+
+    Writer << Header;
+    Writer << Metadata;
+    PhysicsAsset->Serialize(Writer);
+
+    if (!Writer.IsValid())
+    {
+        UE_LOG("PhysicsAsset save failed: write error. Path=%s", PhysicsPath.c_str());
+        return;
+    }
+
+    // 저장 성공 → 메시에 포인터 연결 (이후 Close 시 delete 안 함)
+    SkeletalMesh->PhysicsAsset = PhysicsAsset;
+
+    ClearDirty();
 }

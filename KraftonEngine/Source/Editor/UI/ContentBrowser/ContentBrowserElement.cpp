@@ -833,6 +833,36 @@ void ParticleSystemElement::OnDoubleLeftClicked(ContentBrowserContext& Context)
 	}
 }
 
+void PhysicsAssetElement::OnDoubleLeftClicked(ContentBrowserContext& Context)
+{
+	if (!Context.EditorEngine)
+	{
+		return;
+	}
+
+	// MyCar_Physics.uasset → MyCar.uasset 역산
+	std::wstring Stem = ContentItem.Path.stem().wstring();
+	const std::wstring Suffix = L"_Physics";
+	if (Stem.size() > Suffix.size()
+		&& Stem.substr(Stem.size() - Suffix.size()) == Suffix)
+	{
+		Stem = Stem.substr(0, Stem.size() - Suffix.size());
+	}
+
+	const std::filesystem::path MeshPath =
+		ContentItem.Path.parent_path() / (Stem + L".uasset");
+	const FString MeshFilePath = FPaths::ToUtf8(MeshPath.wstring());
+
+	ID3D11Device* Device = Context.EditorEngine->GetRenderer().GetFD3DDevice().GetDevice();
+	if (USkeletalMesh* MeshAsset = FMeshManager::LoadSkeletalMesh(MeshFilePath, Device))
+	{
+		// 메시 에디터가 Physics 탭으로 바로 열리도록 플래그 세팅
+		FMeshEditorWidget::s_bOpenInPhysicsTab = true;
+		FMeshEditorWidget::ClearImportDurationForAsset(MeshAsset->GetAssetPathFileName());
+		Context.EditorEngine->OpenAssetEditorForObject(MeshAsset);
+	}
+}
+
 void MaterialElement::OnDoubleLeftClicked(ContentBrowserContext& Context)
 {
 	if (!Context.EditorEngine)
