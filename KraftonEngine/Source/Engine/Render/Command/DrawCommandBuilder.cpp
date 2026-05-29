@@ -46,6 +46,8 @@ void FDrawCommandBuilder::Create(ID3D11Device* InDevice, ID3D11DeviceContext* In
 	CameraVignetteCB.Create(InDevice, sizeof(FCameraVignetteConstants), "CameraVignetteCB");
 	CameraLetterboxCB.Create(InDevice, sizeof(FCameraLetterboxConstants), "CameraLetterboxCB");
 	BoneHeatMapCB.Create(InDevice, sizeof(FBoneHeatMapConstants), "BoneHeatMapCB");
+
+	DepthOfFieldCB.Create(InDevice, sizeof(FDepthOfFieldConstants), "DepthOfFieldCB");
 }
 
 void FDrawCommandBuilder::Release()
@@ -75,6 +77,8 @@ void FDrawCommandBuilder::Release()
 	CameraVignetteCB.Release();
 	CameraLetterboxCB.Release();
 	BoneHeatMapCB.Release();
+
+	DepthOfFieldCB.Release();
 }
 
 // ============================================================
