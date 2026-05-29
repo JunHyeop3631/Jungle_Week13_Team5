@@ -214,6 +214,14 @@ void FMeshEditorViewportClient::SetBoneDebugDrawMode(EBoneDebugDrawMode InDrawMo
 	}
 }
 
+void FMeshEditorViewportClient::SetBoneDebugVisible(bool bVisible)
+{
+	if (BoneDebugComponent)
+	{
+		BoneDebugComponent->SetVisibility(bVisible);
+	}
+}
+
 void FMeshEditorViewportClient::TickShortcuts()
 {
 	if (!FSlateApplication::Get().DoesClientOwnKeyboardInput(this)) return;

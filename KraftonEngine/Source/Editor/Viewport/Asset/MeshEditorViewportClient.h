@@ -58,6 +58,9 @@ public:
 	EBoneDebugDrawMode GetBoneDebugDrawMode() const;
 	void SetBoneDebugDrawMode(EBoneDebugDrawMode InDrawMode);
 
+	// 본 디버그 라인 표시 여부 (Physics 탭에서는 끈다)
+	void SetBoneDebugVisible(bool bVisible);
+
 	void ApplyTransformSettingsToGizmo();
 
 private:
