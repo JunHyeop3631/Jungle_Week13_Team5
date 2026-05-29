@@ -189,6 +189,21 @@ void FMeshEditorViewportClient::SetSelectedBone(USkeletalMesh* Mesh, int32 BoneI
 	}
 }
 
+void FMeshEditorViewportClient::HighlightBone(USkeletalMesh* Mesh, int32 BoneIndex)
+{
+	SelectedMesh = Mesh;
+	if (SelectedBoneIndex == BoneIndex) return; // 이미 같은 본이면 갱신 생략
+
+	SelectedBoneIndex = BoneIndex;
+	RenderOptions.WeightBoneHeatMapBoneIndex = BoneIndex;
+
+	if (BoneDebugComponent)
+	{
+		BoneDebugComponent->SetTargetMeshComponent(PreviewMeshComponent);
+		BoneDebugComponent->SetSelectedBoneIndex(BoneIndex);
+	}
+}
+
 const FBone* FMeshEditorViewportClient::GetSelectedBone() const
 {
 	if (!SelectedMesh) return nullptr;

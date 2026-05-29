@@ -1,4 +1,4 @@
-#include "MeshEditorWidget.h"
+﻿#include "MeshEditorWidget.h"
 #include "Physics/Asset/PhysicsAsset.h"
 #include "Physics/Asset/BodySetup.h"
 #include "Physics/Asset/PhysicsConstraintSetup.h"
@@ -343,11 +343,14 @@ void FMeshEditorWidget::Tick(float DeltaTime)
 		ViewportClient.Tick(DeltaTime);
 	}
 
-	// 본 디버그 라인은 Physics 탭에서는 숨긴다 (콜리전 셰이프 편집에 방해됨)
-	ViewportClient.SetBoneDebugVisible(ActiveTab != EMeshEditorTab::Physics);
-
 	if (ActiveTab == EMeshEditorTab::Physics)
 	{
+		// Physics 탭: 선택된 본만 하이라이트해 셰이프를 어디에 붙이는지 보이게 한다.
+		// (전체 골격은 셰이프 편집에 방해되므로 SelectedOnly 모드의 선택 본 한 개만 표시)
+		// 본에 기즈모를 붙이지 않도록 SetSelectedBone 대신 HighlightBone 을 쓴다.
+		ViewportClient.HighlightBone(Cast<USkeletalMesh>(EditedObject), SelectedBoneIndex);
+		ViewportClient.SetBoneDebugVisible(SelectedBoneIndex >= 0);
+
 		if (ViewportClient.IsGizmoHolding())
 		{
 			MarkDirty();
@@ -359,6 +362,10 @@ void FMeshEditorWidget::Tick(float DeltaTime)
 			// 드래그 중에는 SetTarget 재호출로 위치가 흔들리지 않도록 건드리지 않는다.
 			UpdatePhysicsShapeGizmo();
 		}
+	}
+	else
+	{
+		ViewportClient.SetBoneDebugVisible(true);
 	}
 
 	if (ActiveTab == EMeshEditorTab::Animation)
@@ -1817,7 +1824,7 @@ void FMeshEditorWidget::RenderBodySetupDetails(UBodySetup* Setup)
 			if (bOpen)
 			{
 				if (ImGui::DragFloat3("Center", &E.Center.X, 0.1f)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
-				if (ImGui::DragFloat("Radius",  &E.Radius,   0.1f, 0.1f, 500.f)) MarkDirty();
+				if (ImGui::DragFloat("Radius",  &E.Radius,   0.01f, 0.01f, 500.f)) MarkDirty();
 				if (ImGui::SmallButton("Remove"))
 				{
 					if (bSel) { PhysicsTabState.SelectedShapeType = EShapeType::None; PhysicsTabState.SelectedShapeElemIndex = -1; UpdatePhysicsShapeGizmo(); }
@@ -1846,9 +1853,9 @@ void FMeshEditorWidget::RenderBodySetupDetails(UBodySetup* Setup)
 			if (bOpen)
 			{
 				if (ImGui::DragFloat3("Center", &E.Center.X, 0.1f)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
-				if (ImGui::DragFloat("Half X",  &E.HalfX,   0.1f, 0.1f, 500.f)) MarkDirty();
-				if (ImGui::DragFloat("Half Y",  &E.HalfY,   0.1f, 0.1f, 500.f)) MarkDirty();
-				if (ImGui::DragFloat("Half Z",  &E.HalfZ,   0.1f, 0.1f, 500.f)) MarkDirty();
+				if (ImGui::DragFloat("Half X",  &E.HalfX, 0.01f, 0.01f, 500.f)) MarkDirty();
+				if (ImGui::DragFloat("Half Y",  &E.HalfY, 0.01f, 0.01f, 500.f)) MarkDirty();
+				if (ImGui::DragFloat("Half Z",  &E.HalfZ, 0.01f, 0.01f, 500.f)) MarkDirty();
 				if (ImGui::SmallButton("Remove"))
 				{
 					if (bSel) { PhysicsTabState.SelectedShapeType = EShapeType::None; PhysicsTabState.SelectedShapeElemIndex = -1; UpdatePhysicsShapeGizmo(); }
@@ -1877,8 +1884,8 @@ void FMeshEditorWidget::RenderBodySetupDetails(UBodySetup* Setup)
 			if (bOpen)
 			{
 				if (ImGui::DragFloat3("Center", &E.Center.X, 0.1f)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
-				if (ImGui::DragFloat("Radius",      &E.Radius,     0.1f, 0.1f, 500.f)) MarkDirty();
-				if (ImGui::DragFloat("Half Height", &E.HalfHeight, 0.1f, 0.1f, 500.f)) MarkDirty();
+				if (ImGui::DragFloat("Radius",      &E.Radius, 0.01f, 0.01f, 500.f)) MarkDirty();
+				if (ImGui::DragFloat("Half Height", &E.HalfHeight, 0.01f, 0.01f, 500.f)) MarkDirty();
 				if (ImGui::SmallButton("Remove"))
 				{
 					if (bSel) { PhysicsTabState.SelectedShapeType = EShapeType::None; PhysicsTabState.SelectedShapeElemIndex = -1; UpdatePhysicsShapeGizmo(); }
@@ -1959,26 +1966,30 @@ void FMeshEditorWidget::UpdatePhysicsShapeGizmo()
     }
 
     UBodySetup* BS = PA->GetBodySetupsMutable()[PhysicsTabState.SelectedBodySetupIndex];
-    FVector* CenterPtr = nullptr;
+    const int32 ElemIdx = PhysicsTabState.SelectedShapeElemIndex;
+
+    FKSphereElem*  SphereElem  = nullptr;
+    FKBoxElem*     BoxElem     = nullptr;
+    FKCapsuleElem* CapsuleElem = nullptr;
 
     switch (PhysicsTabState.SelectedShapeType)
     {
     case EShapeType::Sphere:
-        if (PhysicsTabState.SelectedShapeElemIndex < (int32)BS->AggregateGeom.SphereElems.size())
-            CenterPtr = &BS->AggregateGeom.SphereElems[PhysicsTabState.SelectedShapeElemIndex].Center;
+        if (ElemIdx < (int32)BS->AggregateGeom.SphereElems.size())
+            SphereElem = &BS->AggregateGeom.SphereElems[ElemIdx];
         break;
     case EShapeType::Box:
-        if (PhysicsTabState.SelectedShapeElemIndex < (int32)BS->AggregateGeom.BoxElems.size())
-            CenterPtr = &BS->AggregateGeom.BoxElems[PhysicsTabState.SelectedShapeElemIndex].Center;
+        if (ElemIdx < (int32)BS->AggregateGeom.BoxElems.size())
+            BoxElem = &BS->AggregateGeom.BoxElems[ElemIdx];
         break;
     case EShapeType::Capsule:
-        if (PhysicsTabState.SelectedShapeElemIndex < (int32)BS->AggregateGeom.CapsuleElems.size())
-            CenterPtr = &BS->AggregateGeom.CapsuleElems[PhysicsTabState.SelectedShapeElemIndex].Center;
+        if (ElemIdx < (int32)BS->AggregateGeom.CapsuleElems.size())
+            CapsuleElem = &BS->AggregateGeom.CapsuleElems[ElemIdx];
         break;
     default: break;
     }
 
-    if (CenterPtr)
+    if (SphereElem || BoxElem || CapsuleElem)
     {
         // 본 이름으로 인덱스 찾아 월드 트랜스폼 가져오기
         FVector BoneWorldPos  = FVector(0,0,0);
@@ -2001,7 +2012,13 @@ void FMeshEditorWidget::UpdatePhysicsShapeGizmo()
             }
         }
 
-        PhysicsTabState.ShapeGizmoTarget.Bind(CenterPtr, ViewportClient.GetPreviewWorld(), BoneWorldPos, BoneWorldQuat);
+        UWorld* PreviewWorld = ViewportClient.GetPreviewWorld();
+        if (SphereElem)
+            PhysicsTabState.ShapeGizmoTarget.BindSphere(SphereElem, PreviewWorld, BoneWorldPos, BoneWorldQuat);
+        else if (BoxElem)
+            PhysicsTabState.ShapeGizmoTarget.BindBox(BoxElem, PreviewWorld, BoneWorldPos, BoneWorldQuat);
+        else
+            PhysicsTabState.ShapeGizmoTarget.BindCapsule(CapsuleElem, PreviewWorld, BoneWorldPos, BoneWorldQuat);
         Gizmo->SetTarget(&PhysicsTabState.ShapeGizmoTarget);
     }
     else

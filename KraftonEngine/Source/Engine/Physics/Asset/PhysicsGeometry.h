@@ -10,7 +10,7 @@
 struct FKSphereElem
 {
     FVector Center = FVector(0.f, 0.f, 0.f);
-    float   Radius = 15.f;
+    float   Radius = 0.1f;
 
     void Serialize(FArchive& Ar)
     {
@@ -23,9 +23,9 @@ struct FKBoxElem
 {
     FVector Center   = FVector(0.f, 0.f, 0.f);
     FQuat   Rotation = FQuat();
-    float   HalfX    = 10.f;
-    float   HalfY    = 10.f;
-    float   HalfZ    = 10.f;
+    float   HalfX    = 0.1f;
+    float   HalfY    = 0.1f;
+    float   HalfZ    = 0.1f;
 
     void Serialize(FArchive& Ar)
     {
@@ -41,8 +41,8 @@ struct FKCapsuleElem
 {
     FVector Center     = FVector(0.f, 0.f, 0.f);
     FQuat   Rotation   = FQuat();
-    float   Radius     = 10.f;
-    float   HalfHeight = 20.f;
+    float   Radius     = 0.1f;
+    float   HalfHeight = 0.1f;
 
     void Serialize(FArchive& Ar)
     {
