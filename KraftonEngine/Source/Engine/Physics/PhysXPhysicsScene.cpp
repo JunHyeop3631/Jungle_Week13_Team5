@@ -1,5 +1,6 @@
 ﻿#include "Physics/PhysXPhysicsScene.h"
 #include "Physics/PhysXCore.h"
+#include "Physics/PhysXSceneLock.h"
 #include "Component/PrimitiveComponent.h"
 #include "Component/ShapeComponent.h"
 #include "Component/Shape/BoxComponent.h"
@@ -15,9 +16,6 @@
 #include <PxPhysicsAPI.h>
 
 using namespace physx;
-
-#define PHYSX_SCENE_READ_LOCK(ScenePtr)  PxSceneReadLock ScopedPhysXReadLock(*(ScenePtr))
-#define PHYSX_SCENE_WRITE_LOCK(ScenePtr) PxSceneWriteLock ScopedPhysXWriteLock(*(ScenePtr))
 
 // ============================================================
 // PhysX Simulation Event Callback
@@ -631,9 +629,23 @@ void FPhysXPhysicsScene::Tick(float DeltaTime)
 		// ── Simulate ──
 		Scene->simulate(DeltaTime);
 		Scene->fetchResults(true);
+	}
 
-		// ── Post-simulate: PhysX → Engine Transform 동기화 ──
-		// RootComp에만 transform 적용 → 자식 컴포넌트는 attach로 자동 따라감.
+	struct FPendingRootTransform
+	{
+		UPrimitiveComponent* RootComp = nullptr;
+		FVector Location{ 0, 0, 0 };
+		FQuat Rotation;
+	};
+
+	std::vector<FPendingRootTransform> PendingRootTransforms;
+
+	// ── Post-simulate readback: PhysX → temporary data ──
+	// RootComp에만 transform 적용 → 자식 컴포넌트는 attach로 자동 따라감.
+	// PhysX lock 안에서는 pose만 복사하고, 엔진 컴포넌트 갱신은 lock 밖에서 처리한다.
+	{
+		PHYSX_SCENE_READ_LOCK(Scene);
+
 		for (auto& Mapping : BodyMappings)
 		{
 			if (!Mapping.RootComp || !Mapping.Actor) continue;
@@ -644,12 +656,23 @@ void FPhysXPhysicsScene::Tick(float DeltaTime)
 			if (Dynamic->isSleeping()) continue;
 
 			PxTransform Pose = Dynamic->getGlobalPose();
-			FVector NewPos = ToFVector(Pose.p);
-			FQuat NewRot = ToFQuat(Pose.q);
 
-			Mapping.RootComp->SetWorldLocation(NewPos);
-			Mapping.RootComp->SetRelativeRotation(NewRot);
+			FPendingRootTransform Result;
+			Result.RootComp = Mapping.RootComp;
+			Result.Location = ToFVector(Pose.p);
+			Result.Rotation = ToFQuat(Pose.q);
+			PendingRootTransforms.push_back(Result);
 		}
+	}
+
+	// ── Apply readback to engine objects outside PhysX scene locks ──
+	// SetWorldLocation/SetRelativeRotation can trigger engine-side work, so keep it out of
+	// PhysX locks to avoid callback/rebuild re-entry issues.
+	for (const FPendingRootTransform& Result : PendingRootTransforms)
+	{
+		if (!IsAliveObject(Result.RootComp)) continue;
+		Result.RootComp->SetWorldLocation(Result.Location);
+		Result.RootComp->SetRelativeRotation(Result.Rotation);
 	}
 
 	// ── Dispatch deferred contact/trigger events ──
