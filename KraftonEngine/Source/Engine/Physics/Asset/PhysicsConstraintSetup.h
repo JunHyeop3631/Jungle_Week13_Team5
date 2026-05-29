@@ -4,6 +4,7 @@
 #include "Core/Types/CoreTypes.h"
 #include "Math/Vector.h"
 #include "Math/Quat.h"
+#include "Serialization/Archive.h"
 #include "Source/Engine/Physics/Asset/PhysicsConstraintSetup.generated.h"
 
 
@@ -38,4 +39,19 @@ public:
     float Swing2LimitAngle = 45.f;
 
     bool bLockLinearMotion = true;
+
+    void Serialize(FArchive& Ar)
+    {
+        Ar << ParentBoneName;
+        Ar << ChildBoneName;
+        Ar << ParentAnchorPos;
+        Ar << ParentAnchorRot;
+        Ar << TwistMotion;
+        Ar << TwistLimitAngle;
+        Ar << Swing1Motion;
+        Ar << Swing1LimitAngle;
+        Ar << Swing2Motion;
+        Ar << Swing2LimitAngle;
+        Ar << bLockLinearMotion;
+    }
 };

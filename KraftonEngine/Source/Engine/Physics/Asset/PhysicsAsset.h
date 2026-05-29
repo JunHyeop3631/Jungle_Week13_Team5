@@ -73,12 +73,43 @@ public:
         }
     }
 
-    const TArray<UBodySetup*>& GetBodySetups()  const { return BodySetups; }
-    const TArray<UPhysicsConstraintSetup*>& GetConstraints() const { return ConstraintSetups; }
-    TArray<UBodySetup*>& GetBodySetupsMutable()  { return BodySetups; }
-    TArray<UPhysicsConstraintSetup*>& GetConstraintsMutable() { return ConstraintSetups; }
+    const TArray<UBodySetup*>&              GetBodySetups()          const { return BodySetups; }
+    const TArray<UPhysicsConstraintSetup*>& GetConstraints()         const { return ConstraintSetups; }
+    TArray<UBodySetup*>&                    GetBodySetupsMutable()         { return BodySetups; }
+    TArray<UPhysicsConstraintSetup*>&       GetConstraintsMutable()        { return ConstraintSetups; }
+
+    void Serialize(FArchive& Ar)
+    {
+        Ar << AssetPathFileName;
+
+        // ── BodySetups ────────────────────────────────────────
+        uint32 BodyCount = (uint32)BodySetups.size();
+        Ar << BodyCount;
+        if (Ar.IsLoading())
+        {
+            for (UBodySetup* BS : BodySetups) delete BS;
+            BodySetups.clear();
+            for (uint32 i = 0; i < BodyCount; ++i)
+                BodySetups.push_back(new UBodySetup());
+        }
+        for (UBodySetup* BS : BodySetups)
+            if (BS) BS->Serialize(Ar);
+
+        // ── ConstraintSetups ──────────────────────────────────
+        uint32 ConstraintCount = (uint32)ConstraintSetups.size();
+        Ar << ConstraintCount;
+        if (Ar.IsLoading())
+        {
+            for (UPhysicsConstraintSetup* CS : ConstraintSetups) delete CS;
+            ConstraintSetups.clear();
+            for (uint32 i = 0; i < ConstraintCount; ++i)
+                ConstraintSetups.push_back(new UPhysicsConstraintSetup());
+        }
+        for (UPhysicsConstraintSetup* CS : ConstraintSetups)
+            if (CS) CS->Serialize(Ar);
+    }
 
 private:
-    TArray<UBodySetup*> BodySetups;
+    TArray<UBodySetup*>              BodySetups;
     TArray<UPhysicsConstraintSetup*> ConstraintSetups;
 };

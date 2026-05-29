@@ -5,6 +5,7 @@
 #include "Animation/Skeleton/SkeletonTypes.h"
 
 class USkeleton;
+class UPhysicsAsset;
 
 
 #include "Source/Engine/Mesh/Skeletal/SkeletalMesh.generated.h"
@@ -54,5 +55,8 @@ private:
     TArray<FSkeletalMaterial> SkeletalMaterials;
 
     FSkeletonBinding SkeletonBinding;
-    USkeleton*       Skeleton = nullptr;
+    USkeleton*       Skeleton       = nullptr;
+
+public:
+    UPhysicsAsset* PhysicsAsset = nullptr;
 };

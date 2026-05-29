@@ -13,13 +13,25 @@ public:
 	GENERATED_BODY()
     UBodySetup() = default;
 
-    FString BoneName;
+    FString         BoneName;
     FKAggregateGeom AggregateGeom;
 
-    float Mass = 1.0f;
-    float LinearDamping = 0.01f;
-    float AngularDamping = 0.05f;
-    float Friction = 0.7f;
-    float Restitution = 0.3f;
+    float Mass            = 1.0f;
+    float LinearDamping   = 0.01f;
+    float AngularDamping  = 0.05f;
+    float Friction        = 0.7f;
+    float Restitution     = 0.3f;
     bool  bSimulatePhysics = true;
+
+    void Serialize(FArchive& Ar)
+    {
+        Ar << BoneName;
+        AggregateGeom.Serialize(Ar);
+        Ar << Mass;
+        Ar << LinearDamping;
+        Ar << AngularDamping;
+        Ar << Friction;
+        Ar << Restitution;
+        Ar << bSimulatePhysics;
+    }
 };

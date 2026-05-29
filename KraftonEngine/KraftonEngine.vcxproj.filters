@@ -1340,6 +1340,9 @@
     <ClCompile Include="Source\Engine\Physics\PhysXPhysicsScene.cpp">
       <Filter>Source\Engine\Physics</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Engine\Physics\Asset\PhysicsInstance.cpp">
+      <Filter>Source\Engine\Physics\Asset</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Engine\Platform\CrashDump.cpp">
       <Filter>Source\Engine\Platform</Filter>
     </ClCompile>
@@ -1765,6 +1768,9 @@
     </ClInclude>
     <ClInclude Include="Source\Editor\UI\Asset\Particle\ParticleSystemEditorWidget.h">
       <Filter>Source\Editor\UI\Asset\Particle</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\UI\Asset\Physics\PhysicsShapeGizmoTarget.h">
+      <Filter>Source\Editor\UI\Asset\Physics</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\UI\ContentBrowser\ContentBrowser.h">
       <Filter>Source\Editor\UI\ContentBrowser</Filter>
@@ -4622,7 +4628,6 @@
     <ClInclude Include="ThirdParty\sol2\include\sol\utility\to_string.hpp">
       <Filter>ThirdParty\sol2\include\sol\utility</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Editor\UI\Asset\Physics\PhysicsShapeGizmoTarget.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="KraftonEngine.rc" />

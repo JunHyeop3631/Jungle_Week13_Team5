@@ -2,6 +2,10 @@
 #include "Physics/Asset/PhysicsAsset.h"
 #include "Physics/Asset/BodySetup.h"
 #include "Physics/Asset/PhysicsConstraintSetup.h"
+#include "Asset/AssetPackage.h"
+#include "Serialization/WindowsArchive.h"
+
+#include <filesystem>
 
 #ifdef GetCurrentTime
 #undef GetCurrentTime
@@ -34,6 +38,7 @@
 #include "Editor/UI/Util/EditorTextureManager.h"
 #include "Platform/Paths.h"
 #include "Object/Object.h"
+#include "Core/Logging/Log.h"
 #include "Render/Types/MinimalViewInfo.h"
 #include "Math/Quat.h"
 #include "Component/Debug/GizmoComponent.h"
@@ -82,6 +87,35 @@ namespace
 	}
 
 	TMap<FString, double> GMeshImportDurationsByAssetPath;
+
+	// MyCar.uasset  →  MyCar_Physics.uasset (같은 디렉토리)
+	FString MakePhysicsAssetPath(const FString& MeshPath)
+	{
+		const size_t DotPos = MeshPath.find_last_of('.');
+		if (DotPos != FString::npos)
+			return MeshPath.substr(0, DotPos) + "_Physics" + MeshPath.substr(DotPos);
+		return MeshPath + "_Physics.uasset";
+	}
+
+	// 파일에서 PhysicsAsset 로드. 실패 시 nullptr 반환.
+	UPhysicsAsset* LoadPhysicsAssetFromFile(const FString& Path)
+	{
+		const FString NormalizedPath = FPaths::MakeProjectRelative(Path);
+
+		FWindowsBinReader Reader(NormalizedPath);
+		if (!Reader.IsValid()) return nullptr;
+
+		FAssetPackageHeader Header;
+		Reader << Header;
+		if (!Header.IsValid(EAssetPackageType::PhysicsAsset)) return nullptr;
+
+		FAssetImportMetadata Metadata;
+		Reader << Metadata;
+
+		UPhysicsAsset* Asset = new UPhysicsAsset();
+		Asset->Serialize(Reader);
+		return Asset;
+	}
 
 	double GetRecordedImportDurationSeconds(const USkeletalMesh* Mesh)
 	{
@@ -267,6 +301,19 @@ void FMeshEditorWidget::Open(UObject* Object)
 
 void FMeshEditorWidget::Close()
 {
+	// Physics 정리: FAssetEditorWidget::Close() 전에 해야 EditedObject 가 살아있음
+	{
+		USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(EditedObject);
+		// 저장된 적 있으면 USkeletalMesh 가 소유 → delete 금지 (dangling pointer 방지)
+		// 저장 안 한 채로 닫으면 편집 위젯이 소유 → delete
+		bool bMeshOwns = SkeletalMesh
+			&& PhysicsTabState.PhysicsAsset != nullptr
+			&& SkeletalMesh->PhysicsAsset == PhysicsTabState.PhysicsAsset;
+		if (!bMeshOwns)
+			delete PhysicsTabState.PhysicsAsset;
+		PhysicsTabState.PhysicsAsset = nullptr;
+	}
+
 	FAssetEditorWidget::Close();
 
 	if (UWorld* PreviewWorld = ViewportClient.GetPreviewWorld())
@@ -283,10 +330,6 @@ void FMeshEditorWidget::Close()
 	FSlateApplication::Get().UnregisterViewport(&ViewportClient);
 
 	ViewportClient.Release();
-
-	// Physics 탭 상태 정리
-	delete PhysicsTabState.PhysicsAsset;
-	PhysicsTabState.PhysicsAsset = nullptr;
 }
 
 void FMeshEditorWidget::Tick(float DeltaTime)
@@ -1449,10 +1492,32 @@ void FMeshEditorWidget::RenderPhysicsLayout()
 	USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(EditedObject);
 	const FSkeletalMesh* Asset = SkeletalMesh ? SkeletalMesh->GetSkeletalMeshAsset() : nullptr;
 
-	// PhysicsAsset 이 없으면 이 메시 전용으로 새로 생성
+	// PhysicsAsset 로드 우선순위:
+	//   1) 메시에 이미 연결된 포인터 (이번 세션에서 Save 한 것)
+	//   2) 파일에서 로드 (이전 세션에서 저장된 것)
+	//   3) 없으면 빈 것 새로 생성
 	if (!PhysicsTabState.PhysicsAsset)
 	{
-		PhysicsTabState.PhysicsAsset = new UPhysicsAsset();
+		if (SkeletalMesh && SkeletalMesh->PhysicsAsset)
+		{
+			PhysicsTabState.PhysicsAsset = SkeletalMesh->PhysicsAsset;
+		}
+		else if (SkeletalMesh)
+		{
+			const FString MeshPath = SkeletalMesh->GetAssetPathFileName();
+			if (!MeshPath.empty() && MeshPath != "None")
+			{
+				const FString PhysicsPath = MakePhysicsAssetPath(MeshPath);
+				if (UPhysicsAsset* Loaded = LoadPhysicsAssetFromFile(PhysicsPath))
+				{
+					PhysicsTabState.PhysicsAsset    = Loaded;
+					SkeletalMesh->PhysicsAsset = Loaded;
+				}
+			}
+		}
+
+		if (!PhysicsTabState.PhysicsAsset)
+			PhysicsTabState.PhysicsAsset = new UPhysicsAsset();
 	}
 	UPhysicsAsset* PhysicsAsset = PhysicsTabState.PhysicsAsset;
 
@@ -2129,6 +2194,51 @@ void FMeshEditorWidget::SavePhysicsAsset()
 {
     UPhysicsAsset* PhysicsAsset = PhysicsTabState.PhysicsAsset;
     if (!PhysicsAsset) return;
-    // TODO: PhysicsAsset->SaveToFile(PhysicsAsset->AssetPathFileName);
+
+    USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(EditedObject);
+    if (!SkeletalMesh) return;
+
+    const FString MeshPath = SkeletalMesh->GetAssetPathFileName();
+    if (MeshPath.empty() || MeshPath == "None")
+    {
+        UE_LOG("PhysicsAsset save failed: mesh has no path.");
+        return;
+    }
+
+    const FString PhysicsPath = FPaths::MakeProjectRelative(MakePhysicsAssetPath(MeshPath));
+    PhysicsAsset->AssetPathFileName = PhysicsPath;
+
+    // 저장 디렉토리 자동 생성
+    {
+        std::filesystem::path FullPath =
+            std::filesystem::path(FPaths::RootDir()) / FPaths::ToWide(PhysicsPath);
+        FPaths::CreateDir(FullPath.parent_path().wstring());
+    }
+
+    FWindowsBinWriter Writer(PhysicsPath);
+    if (!Writer.IsValid())
+    {
+        UE_LOG("PhysicsAsset save failed: could not open file. Path=%s", PhysicsPath.c_str());
+        return;
+    }
+
+    FAssetPackageHeader Header;
+    Header.Type = static_cast<uint32>(EAssetPackageType::PhysicsAsset);
+
+    FAssetImportMetadata Metadata; // PhysicsAsset은 별도 소스 파일 없음
+
+    Writer << Header;
+    Writer << Metadata;
+    PhysicsAsset->Serialize(Writer);
+
+    if (!Writer.IsValid())
+    {
+        UE_LOG("PhysicsAsset save failed: write error. Path=%s", PhysicsPath.c_str());
+        return;
+    }
+
+    // 저장 성공 → 메시에 포인터 연결 (이후 Close 시 delete 안 함)
+    SkeletalMesh->PhysicsAsset = PhysicsAsset;
+
     ClearDirty();
 }
