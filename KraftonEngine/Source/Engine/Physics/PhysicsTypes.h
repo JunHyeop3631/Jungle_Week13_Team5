@@ -57,6 +57,23 @@ struct FPhysicsJointHandle
 	bool IsValid() const { return NativePtr != nullptr; }
 };
 
+struct FPhysicsVehicleHandle
+{
+	void* NativePtr = nullptr;
+	uint64 Serial = 0;
+
+	bool IsValid() const { return NativePtr != nullptr; }
+};
+
+enum class EVehicle4WWheelIndex : uint8
+{
+	FrontLeft = 0,
+	FrontRight,
+	RearLeft,
+	RearRight,
+	Count,
+};
+
 struct FPhysicalMaterialDesc
 {
 	float StaticFriction = 0.5f;
@@ -141,6 +158,7 @@ struct FPhysicsStats
 	uint32 NumActiveBodies = 0;
 	uint32 NumShapes = 0;
 	uint32 NumJoints = 0;
+	uint32 NumVehicles = 0;
 	uint32 NumContactPairs = 0;
 	float LastSimulationMs = 0.0f;
 };
@@ -150,6 +168,72 @@ struct FPhysicsDebugLine
 	FVector Start;
 	FVector End;
 	FVector Color = FVector(0.0f, 1.0f, 0.0f);
+};
+
+struct FVehicle4WInput
+{
+	bool bAccelerate = false;
+	bool bBrake = false;
+	bool bSteerLeft = false;
+	bool bSteerRight = false;
+	bool bHandbrake = false;
+};
+
+struct FVehicle4WDesc
+{
+	FString Name;
+	FTransform WorldTransform;
+
+	FVector ChassisHalfExtents = FVector(1.6f, 0.8f, 0.45f);
+	FVector ChassisCenterOfMassOffset = FVector(0.0f, 0.0f, -0.35f);
+	float ChassisMass = 1200.0f;
+
+	float WheelMass = 20.0f;
+	float WheelRadius = 0.35f;
+	float WheelWidth = 0.25f;
+	float WheelDampingRate = 0.25f;
+	float MaxSteerRadians = PhysicsPi * 0.333f;
+	float MaxBrakeTorque = 1500.0f;
+	float MaxHandbrakeTorque = 4000.0f;
+
+	float SuspensionMaxCompression = 0.30f;
+	float SuspensionMaxDroop = 0.10f;
+	float SuspensionSpringStrength = 35000.0f;
+	float SuspensionSpringDamperRate = 4500.0f;
+
+	float EnginePeakTorque = 500.0f;
+	float EngineMaxOmega = 600.0f;
+	float ClutchStrength = 10.0f;
+	float TireFriction = 1.0f;
+
+	// Actor-local offsets. This engine uses +X forward, +Y right, +Z up.
+	TStaticArray<FVector, 4> WheelCenterOffsets =
+	{
+		FVector( 1.30f, -0.80f, -0.35f),
+		FVector( 1.30f,  0.80f, -0.35f),
+		FVector(-1.30f, -0.80f, -0.35f),
+		FVector(-1.30f,  0.80f, -0.35f),
+	};
+};
+
+struct FVehicle4WInstance
+{
+	FString Name;
+	FPhysicsVehicleHandle VehicleHandle;
+	FBodyInstance* ChassisBody = nullptr;
+	TStaticArray<FTransform, 4> WheelWorldTransforms;
+	FVehicle4WInput LastInput;
+	bool bValid = false;
+
+	void Reset()
+	{
+		Name.clear();
+		VehicleHandle = {};
+		ChassisBody = nullptr;
+		WheelWorldTransforms = {};
+		LastInput = FVehicle4WInput();
+		bValid = false;
+	}
 };
 
 

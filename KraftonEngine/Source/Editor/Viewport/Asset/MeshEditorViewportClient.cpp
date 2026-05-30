@@ -11,11 +11,38 @@
 #include "Component/Debug/GizmoComponent.h"
 #include "Component/Primitive/SkeletalMeshComponent.h"
 #include "Component/Debug/BoneDebugComponent.h"
+#include "Component/Debug/PhysicsShapeDebugComponent.h"
 #include "Collision/Ray/RayUtils.h"
 #include "Settings/EditorSettings.h"
 #include "Slate/SlateApplication.h"
 
 #include <imgui.h>
+
+void FMeshEditorViewportClient::UpdatePhysicsShapeDebug(UPhysicsAsset* PhysicsAsset, int32 SelBodyIndex, int32 SelKind, int32 SelElemIndex)
+{
+	if (!PreviewActor) return;
+
+	// 본 디버그와 동일하게 프리뷰 액터에 지연 생성.
+	if (!PhysicsShapeDebugComponent)
+	{
+		PhysicsShapeDebugComponent = PreviewActor->AddComponent<UPhysicsShapeDebugComponent>();
+	}
+
+	PhysicsShapeDebugComponent->SetVisibility(true);
+	PhysicsShapeDebugComponent->SetTargetMeshComponent(PreviewMeshComponent);
+	PhysicsShapeDebugComponent->SetPhysicsAsset(PhysicsAsset);
+	PhysicsShapeDebugComponent->SetSelection(SelBodyIndex, SelKind, SelElemIndex);
+	// 매 프레임 프록시를 재생성해 현재 본 포즈/선택을 반영 (본 디버그의 HighlightBone 과 동일 패턴).
+	PhysicsShapeDebugComponent->MarkRenderStateDirty();
+}
+
+void FMeshEditorViewportClient::SetPhysicsShapeDebugVisible(bool bVisible)
+{
+	if (PhysicsShapeDebugComponent)
+	{
+		PhysicsShapeDebugComponent->SetVisibility(bVisible);
+	}
+}
 
 void FMeshEditorViewportClient::Initialize(ID3D11Device* Device, uint32 Width, uint32 Height)
 {
@@ -41,6 +68,7 @@ void FMeshEditorViewportClient::Release()
 	UObjectManager::Get().DestroyObject(Gizmo);
 	Gizmo = nullptr;
 	BoneDebugComponent = nullptr;
+	PhysicsShapeDebugComponent = nullptr;
 
 	bIsRenderable = false;
 

@@ -9,6 +9,7 @@
 #include "Render/Proxy/DecalSceneProxy.h"
 #include "Render/Proxy/ShapeSceneProxy.h"
 #include "Render/Proxy/BoneDebugSceneProxy.h"
+#include "Render/Proxy/PhysicsShapeDebugSceneProxy.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 #include "Render/Proxy/ParticleSystemSceneProxy.h"
 #include "Render/Scene/FScene.h"
@@ -34,6 +35,7 @@ void FDrawCommandBuilder::Create(ID3D11Device* InDevice, ID3D11DeviceContext* In
 	EditorLines.Create(InDevice);
 	GridLines.Create(InDevice);
 	DebugBoneLines.Create(InDevice);
+	PhysicsShapeSolid.Create(InDevice);
 	FontGeometry.Create(InDevice);
 
 	FogCB.Create(InDevice, sizeof(FFogConstants), "FogCB");
@@ -55,6 +57,7 @@ void FDrawCommandBuilder::Release()
 	EditorLines.Release();
 	GridLines.Release();
 	DebugBoneLines.Release();
+	PhysicsShapeSolid.Release();
 	FontGeometry.Release();
 
 	for (auto& Pair : PerSceneObjectCBPool)
@@ -100,6 +103,7 @@ void FDrawCommandBuilder::BeginCollect(const FFrameContext& Frame)
 	EditorLines.Clear();
 	GridLines.Clear();
 	DebugBoneLines.Clear();
+	PhysicsShapeSolid.Clear();
 	FontGeometry.Clear();
 	FontGeometry.ClearScreen();
 
@@ -345,6 +349,18 @@ void FDrawCommandBuilder::BuildProxyCommands(const FFrameContext& Frame, FScene&
 				{
 					EditorLines.AddLine(Line.Start, Line.End, Color);
 				}
+			}
+		}
+		else if (Proxy->HasProxyFlag(EPrimitiveProxyFlags::PhysicsShapeDebug))
+		{
+			const FPhysicsShapeDebugSceneProxy* ShapeProxy = static_cast<const FPhysicsShapeDebugSceneProxy*>(Proxy);
+			// 반투명 셰이딩 솔리드 → AlphaBlend 삼각형 버퍼 (연속 3개 = 삼각형)
+			const TArray<FColoredVertex>& Solid = ShapeProxy->GetCachedSolid();
+			for (size_t i = 0; i + 2 < Solid.size(); i += 3)
+			{
+				PhysicsShapeSolid.AddTriangle(
+					Solid[i].Pos, Solid[i+1].Pos, Solid[i+2].Pos,
+					Solid[i].Color, Solid[i+1].Color, Solid[i+2].Color);
 			}
 		}
 		else if (Proxy->HasProxyFlag(EPrimitiveProxyFlags::FontBatched))
@@ -738,6 +754,23 @@ void FDrawCommandBuilder::BuildEditorLineCommands(EViewMode ViewMode)
 	BoneLinesRS.DepthStencil = EDepthStencilState::NoDepth;
 
 	EmitLineCommand(DebugBoneLines, EditorShader, BoneLinesRS);
+
+	// 피직스 셰이프 반투명 솔리드(언리얼 PhAT 스타일) → AlphaBlend 패스를 NoDepth 로 덮어써
+	// 메시에 가려지지 않고 항상 보이게 한다. (TRIANGLELIST, 머티리얼 없이 Editor 정점색 셰이더
+	// 재사용, 명암은 정점 색에 구워져 있음. 기즈모는 이후 패스라 위에 남는다.)
+	if (PhysicsShapeSolid.GetTriangleCount() > 0 && PhysicsShapeSolid.UploadBuffers(CachedContext))
+	{
+		FDrawCommandRenderState SolidRS = PassRenderStateTable->ToDrawCommandState(ERenderPass::AlphaBlend, ViewMode);
+		SolidRS.DepthStencil = EDepthStencilState::NoDepth;
+
+		FDrawCommand& Cmd = DrawCommandList.AddCommand();
+		Cmd.Pass = ERenderPass::AlphaBlend;
+		Cmd.Shader = EditorShader;
+		Cmd.RenderState = SolidRS;
+		Cmd.Buffer = { PhysicsShapeSolid.GetVBBuffer(), PhysicsShapeSolid.GetVBStride(), PhysicsShapeSolid.GetIBBuffer() };
+		Cmd.Buffer.IndexCount = PhysicsShapeSolid.GetIndexCount();
+		Cmd.BuildSortKey();
+	}
 }
 
 // ============================================================

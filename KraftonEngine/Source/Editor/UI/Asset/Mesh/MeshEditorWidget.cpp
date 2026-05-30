@@ -342,10 +342,19 @@ void FMeshEditorWidget::Tick(float DeltaTime)
 			// 드래그 중에는 SetTarget 재호출로 위치가 흔들리지 않도록 건드리지 않는다.
 			UpdatePhysicsShapeGizmo();
 		}
+
+		// 콜리전 셰이프 와이어 컴포넌트 갱신 (본 포즈/선택 반영, NoDepth 로 항상 위에 표시).
+		ViewportClient.UpdatePhysicsShapeDebug(
+			PhysicsTabState.PhysicsAsset,
+			PhysicsTabState.SelectedBodySetupIndex,
+			(int32)PhysicsTabState.SelectedShapeType,
+			PhysicsTabState.SelectedShapeElemIndex);
 	}
 	else
 	{
 		ViewportClient.SetBoneDebugVisible(true);
+		// Physics 탭을 떠나면 셰이프 와이어 숨김.
+		ViewportClient.SetPhysicsShapeDebugVisible(false);
 	}
 
 	if (ActiveTab == EMeshEditorTab::Animation)

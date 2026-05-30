@@ -16,6 +16,11 @@ public:
 	virtual void DestroyJoint(FConstraintInstance* Joint) = 0;
 	virtual bool Initialize() = 0;
 
+	virtual FVehicle4WInstance* CreateVehicle4W(const FVehicle4WDesc& Desc) = 0;
+	virtual void DestroyVehicle4W(FVehicle4WInstance* Vehicle) = 0;
+	virtual void SetVehicle4WInput(FVehicle4WInstance* Vehicle, const FVehicle4WInput& Input) = 0;
+	virtual bool GetVehicle4WWheelTransforms(const FVehicle4WInstance* Vehicle, TStaticArray<FTransform, 4>& OutTransforms) const = 0;
+
 	virtual void Simulate(float DeltaTime) = 0;
 
 	virtual bool GetBodyTransform(const FBodyInstance* Body, FTransform& OutTransform) const = 0;
@@ -27,4 +32,5 @@ public:
 
 	virtual void GetPhysicsStats(FPhysicsStats& OutStats) const = 0;
 	virtual void ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines) const = 0;
+	virtual void ExtractVehicleDebugLines(TArray<FPhysicsDebugLine>& OutLines) const = 0;
 };
