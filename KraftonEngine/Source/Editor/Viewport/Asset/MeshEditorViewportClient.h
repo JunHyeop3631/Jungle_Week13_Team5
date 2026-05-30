@@ -16,6 +16,8 @@ class FWindowsWindow;
 class UWorld;
 class AActor;
 class USkeletalMesh;
+class UPhysicsAsset;
+class UPhysicsShapeDebugComponent;
 
 class FMeshEditorViewportClient : public FViewportClient, public IEditorPreviewViewportClient
 {
@@ -49,6 +51,11 @@ public:
 	void NotifyViewportResized(int32 NewWidth, int32 NewHeight) override;
 
 	bool GetCameraView(FMinimalViewInfo& OutPOV) const override;
+
+	// Physics 탭: 콜리전 셰이프 와이어 컴포넌트 갱신 (매 프레임 호출 → 본 포즈/선택 반영).
+	//   SelKind: 0 None, 1 Sphere, 2 Box, 3 Capsule
+	void UpdatePhysicsShapeDebug(UPhysicsAsset* PhysicsAsset, int32 SelBodyIndex, int32 SelKind, int32 SelElemIndex);
+	void SetPhysicsShapeDebugVisible(bool bVisible);
 
 	void Tick(float DeltaTime);
 
@@ -92,6 +99,9 @@ private:
 
 	UWorld* PreviewWorld = nullptr;
 	AActor* PreviewActor = nullptr;
+
+	// Physics 탭 콜리전 셰이프 와이어 컴포넌트 (지연 생성). 본 디버그와 동일 패턴.
+	UPhysicsShapeDebugComponent* PhysicsShapeDebugComponent = nullptr;
 
 	bool bIsRenderable = false;
 

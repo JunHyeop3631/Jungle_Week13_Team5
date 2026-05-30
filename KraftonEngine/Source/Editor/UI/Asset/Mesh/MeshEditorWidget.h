@@ -176,17 +176,9 @@ private:
 	// 선택된 컨스트레인트의 각 한계(트위스트 호 + 스윙 콘) 시각화
 	void DrawConstraintLimitsOverlay(ImDrawList* DL, const FMatrix& VP, ImVec2 VPMin, ImVec2 VPSize) const;
 
-	// Physics 콜리전 셰이프 오버레이
+	// Physics 콜리전 셰이프 오버레이 (현재는 컨스트레인트 각 한계 시각화만 담당)
 	void DrawPhysicsShapeOverlays(ImDrawList* DL, ImVec2 VPMin, ImVec2 VPSize) const;
 	bool WorldToScreenPhysics(const FMatrix& VP, FVector World, ImVec2 VPMin, ImVec2 VPSize, ImVec2& Out) const;
-	void DrawWireSpherePh (ImDrawList* DL, FVector C, float R,
-	                       unsigned int Col, const FMatrix& VP, ImVec2 VPMin, ImVec2 VPSize) const;
-	void DrawWireBoxPh    (ImDrawList* DL, FVector C, FQuat Rot,
-	                       float HX, float HY, float HZ,
-	                       unsigned int Col, const FMatrix& VP, ImVec2 VPMin, ImVec2 VPSize) const;
-	void DrawWireCapsulePh(ImDrawList* DL, FVector C, FQuat Rot,
-	                       float Radius, float HalfH,
-	                       unsigned int Col, const FMatrix& VP, ImVec2 VPMin, ImVec2 VPSize) const;
 
 	// Animation tab helpers
 	void ApplyAnimationToComponent();

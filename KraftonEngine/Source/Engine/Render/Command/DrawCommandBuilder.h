@@ -101,6 +101,7 @@ private:
 	FLineGeometry  EditorLines;
 	FLineGeometry  GridLines;
 	FLineGeometry  DebugBoneLines;
+	FLineGeometry  PhysicsShapeSolid;	// 피직스 셰이프 반투명 솔리드 (AlphaBlend, 삼각형, NoDepth)
 	FFontGeometry  FontGeometry;
 
 	// PerObject CB 풀
