@@ -485,6 +485,48 @@ void FPhysXRuntime::SetKinematicTarget(FBodyInstance* Body, const FTransform& Tr
 	Body->CachedWorldTransform = Transform;
 }
 
+void FPhysXRuntime::SetBodyType(FBodyInstance* Body, EPhysicsBodyType NewType)
+{
+	if (!Body)
+	{
+		return;
+	}
+
+	// PxRigidStatic↔PxRigidDynamic 전환은 actor 자체를 재생성해야 한다 — 이번 범위 밖.
+	// Static 요청은 무시한다.
+	if (NewType == EPhysicsBodyType::Static)
+	{
+		return;
+	}
+
+	PxRigidDynamic* Dynamic = GetPxDynamic(Body);
+	if (!Dynamic)
+	{
+		return;
+	}
+
+	if (Body->BodyType == NewType)
+	{
+		// 이미 같은 타입이라도 Dynamic 진입 시점에 잠들어 있을 수 있으니 wake만 보장.
+		if (NewType == EPhysicsBodyType::Dynamic)
+		{
+			Dynamic->wakeUp();
+		}
+		return;
+	}
+
+	const bool bWantKinematic = (NewType == EPhysicsBodyType::Kinematic);
+	Dynamic->setRigidBodyFlag(PxRigidBodyFlag::eKINEMATIC, bWantKinematic);
+	Body->BodyType = NewType;
+	Body->bSimulating = (NewType == EPhysicsBodyType::Dynamic);
+
+	if (NewType == EPhysicsBodyType::Dynamic)
+	{
+		// kinematic → dynamic 전환은 즉시 wake — 잠든 상태로 두면 중력/조인트가 적용되지 않는다.
+		Dynamic->wakeUp();
+	}
+}
+
 void FPhysXRuntime::GetPhysicsStats(FPhysicsStats& OutStats) const
 {
 	OutStats = FPhysicsStats();

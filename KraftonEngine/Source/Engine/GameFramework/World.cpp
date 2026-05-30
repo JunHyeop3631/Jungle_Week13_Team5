@@ -1,4 +1,4 @@
-#include "GameFramework/World.h"
+﻿#include "GameFramework/World.h"
 #include "Object/Reflection/ObjectFactory.h"
 #include "Object/ReferenceCollector.h"
 #include "Component/PrimitiveComponent.h"
@@ -310,6 +310,10 @@ void UWorld::InitWorld()
 	else
 		PhysicsScene = std::make_unique<FNativePhysicsScene>();
 	PhysicsScene->Initialize(this);
+
+	//TODO 추후 결정
+	//PhysicsRuntime = std::make_unique<FPhysXRuntime>();
+	//PhysicsRuntime->Initialize();
 }
 
 void UWorld::BeginPlay()
@@ -361,6 +365,9 @@ void UWorld::Tick(float DeltaTime, ELevelTick TickType)
 	{
 		SCOPE_STAT_CAT("PhysicsScene", "1_WorldTick");
 		PhysicsScene->Tick(DeltaTime);
+	
+		//TODO 추후 결정
+		//PhysicsRuntime->Simulate(DeltaTime);
 	}
 
 	TickManager.Tick(this, DeltaTime, TickType);
