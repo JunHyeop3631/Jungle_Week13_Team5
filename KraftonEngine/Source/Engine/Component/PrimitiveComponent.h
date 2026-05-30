@@ -209,7 +209,7 @@ protected:
 	void OnTransformDirty() override;
 	void EnsureWorldAABBUpdated() const;
 
-	// 컴포넌트가 BeginPlay 후에만 PhysicsScene::RebuildBody 호출. 이전이면 skip.
+	// 컴포넌트가 BeginPlay 후에만 PhysicsRuntime::RebuildBody 호출. 이전이면 skip.
 	void NotifyPhysicsBodyDirty();
 
 	FVector LocalExtents = { 0.5f, 0.5f, 0.5f };
@@ -217,9 +217,9 @@ protected:
 	mutable FVector WorldAABBMaxLocation;
 	mutable bool bWorldAABBDirty = true;
 	mutable bool bHasValidWorldAABB = false;
-	// PrimitiveComponent::BeginPlay에서 PhysicsScene::RegisterComponent를 호출한 직후 true가 된다.
-	// setter들이 이 플래그를 보고 PhysicsScene 측 RebuildBody를 호출할지 결정한다.
-	// (BeginPlay 전 InitDefaultComponents 단계에서 setter가 호출돼도 PhysicsScene 호출은 skip되어
+	// PrimitiveComponent::BeginPlay에서 PhysicsRuntime::RegisterComponent를 호출한 직후 true가 된다.
+	// setter들이 이 플래그를 보고 PhysicsRuntime 측 RebuildBody를 호출할지 결정한다.
+	// (BeginPlay 전 InitDefaultComponents 단계에서 setter가 호출돼도 PhysicsRuntime 호출은 skip되어
 	//  멤버만 변경 → BeginPlay에서 한 번 정확한 값으로 등록됨.)
 	bool bComponentHasBegunPlay = false;
 	UPROPERTY(Edit, Save, Category="Rendering", DisplayName="Visible")

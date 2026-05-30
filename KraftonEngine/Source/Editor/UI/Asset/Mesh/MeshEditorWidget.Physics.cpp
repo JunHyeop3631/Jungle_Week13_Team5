@@ -1191,7 +1191,7 @@ void FMeshEditorWidget::TickPhysicsSimulation(float DeltaTime)
 		return;
 	}
 
-	// UWorld::Tick 의 `bHasBegunPlay && PhysicsScene` 가드(World.cpp:364) 때문에 에디터 PreviewWorld
+	// UWorld::Tick 의 `bHasBegunPlay && PhysicsRuntime` 가드 때문에 에디터 PreviewWorld
 	// (InitWorld 만 호출, BeginPlay 미호출)에서는 World::Tick 안에서 Runtime->Simulate 가 돌지 않는다.
 	// 따라서 Runtime 스텝은 여기서 직접 돌리고, 이어서 PreviewWorld->Tick 으로 TickManager 경로를
 	// 통해 PreviewMeshComponent::TickComponent → ApplyPhysicsToBones write-back 을 트리거한다.

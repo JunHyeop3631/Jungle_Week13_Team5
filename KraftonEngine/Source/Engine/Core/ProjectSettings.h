@@ -3,12 +3,17 @@
 #include "Core/Types/CoreTypes.h"
 #include "Core/Singleton.h"
 #include "Platform/Paths.h"
-#include "Physics/IPhysicsScene.h"  // EPhysicsBackend
 
 /*
 	FProjectSettings — 프로젝트 전역 설정 (per-viewport가 아닌 전체 공유).
 	Settings/ProjectSettings.ini에 독립 직렬화됩니다.
 */
+
+enum class EPhysicsBackend : uint8
+{
+	Native,
+	PhysX,
+};
 
 class FProjectSettings : public TSingleton<FProjectSettings>
 {

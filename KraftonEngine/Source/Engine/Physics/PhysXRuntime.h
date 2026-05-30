@@ -17,9 +17,13 @@ public:
 	FPhysXRuntime() = default;
 	~FPhysXRuntime() override;
 
-	bool Initialize();
-	void Shutdown();
+	bool Initialize() override;
+	void Shutdown() override;
 	void Simulate(float DeltaTime) override;
+
+	void RegisterComponent(UPrimitiveComponent* Comp) override;
+	void UnregisterComponent(UPrimitiveComponent* Comp) override;
+	void RebuildBody(UPrimitiveComponent* Comp) override;
 
 	FBodyInstance* CreateRigidBody(const FPhysicsBodyDesc& Desc) override;
 	void DestroyRigidBody(FBodyInstance* Body) override;
@@ -33,6 +37,32 @@ public:
 	void DestroyVehicle4W(FVehicle4WInstance* Vehicle) override;
 	void SetVehicle4WInput(FVehicle4WInstance* Vehicle, const FVehicle4WInput& Input) override;
 	bool GetVehicle4WWheelTransforms(const FVehicle4WInstance* Vehicle, TStaticArray<FTransform, 4>& OutTransforms) const override;
+
+	void AddForce(UPrimitiveComponent* Comp, const FVector& Force) override;
+	void AddForceAtLocation(UPrimitiveComponent* Comp, const FVector& Force, const FVector& WorldLocation) override;
+	void AddTorque(UPrimitiveComponent* Comp, const FVector& Torque) override;
+
+	FVector GetLinearVelocity(UPrimitiveComponent* Comp) const override;
+	void SetLinearVelocity(UPrimitiveComponent* Comp, const FVector& Vel) override;
+	FVector GetAngularVelocity(UPrimitiveComponent* Comp) const override;
+	void SetAngularVelocity(UPrimitiveComponent* Comp, const FVector& Vel) override;
+
+	void SetMass(UPrimitiveComponent* Comp, float Mass) override;
+	float GetMass(UPrimitiveComponent* Comp) const override;
+	void SetCenterOfMass(UPrimitiveComponent* Comp, const FVector& LocalOffset) override;
+	FVector GetCenterOfMass(UPrimitiveComponent* Comp) const override;
+
+	bool Raycast(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
+		ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic,
+		const AActor* IgnoreActor = nullptr) const override;
+
+	bool RaycastByObjectTypes(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
+		uint32 ObjectTypeMask, const AActor* IgnoreActor = nullptr) const override;
+
+	bool SphereSweepShapeComponents(const FVector& Start, const FVector& Dir, float MaxDist, float Radius,
+		FHitResult& OutHit,
+		ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic,
+		const AActor* IgnoreActor = nullptr) const override;
 
 	bool GetBodyTransform(const FBodyInstance* Body, FTransform& OutTransform) const override;
 	void SetBodyTransform(FBodyInstance* Body, const FTransform& Transform, bool bTeleport = true) override;
@@ -58,4 +88,6 @@ private:
 	uint64 NextSerial = 1;
 
 	uint64 AllocateSerial() { return NextSerial++; }
+	FBodyInstance* FindBodyByComponent(const UPrimitiveComponent* Comp) const;
+	bool BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysicsBodyDesc& OutDesc) const;
 };

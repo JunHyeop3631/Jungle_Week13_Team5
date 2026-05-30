@@ -13,13 +13,6 @@ struct FHitResult;
 /*Deprecated. 더 이상 사용하지 않음*/
 /*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 
-// 물리 백엔드 선택
-enum class EPhysicsBackend : uint8
-{
-	Native,		// Hand-written collision math (O(N²) brute-force)
-	PhysX,		// NVIDIA PhysX 4.1
-};
-
 /*Deprecated. 더 이상 사용하지 않음*/
 /*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 

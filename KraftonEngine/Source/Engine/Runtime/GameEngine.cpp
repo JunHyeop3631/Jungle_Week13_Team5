@@ -155,7 +155,7 @@ void UGameEngine::ProcessPendingTransition()
 	// Lua 에서 "Map" 같은 이름만 넘겨도 동작하도록 SceneDir/Map.Scene 으로 풀어준다.
 	const FString FilePath = ResolveSceneFilePath(ScenePath);
 
-	// 기존 active world 파괴 — EndPlay → 액터/컴포넌트 destruct → PhysicsScene unique_ptr 해제.
+	// 기존 active world 파괴 — EndPlay → 액터/컴포넌트 destruct → PhysicsRuntime unique_ptr 해제.
 	const FName OldHandle = GetActiveWorldHandle();
 	DestroyWorldContext(OldHandle);
 
@@ -163,7 +163,7 @@ void UGameEngine::ProcessPendingTransition()
 	// 안 하면 옛 actor 의 Wait(N) 코루틴이 새 월드 Tick 에서 만료되며 freed actor 를 deref → 크래시.
 	FLuaScriptManager::FireWorldReset();
 
-	// 새 scene 로드 — World/Level/PhysicsScene 새로 만들고 WorldList push + SetActiveWorld 까지.
+	// 새 scene 로드 — World/Level/PhysicsRuntime 새로 만들고 WorldList push + SetActiveWorld 까지.
 	if (!LoadSceneFromPath(FilePath))
 	{
 		UE_LOG("[GameEngine] TransitionToScene failed: %s", FilePath.c_str());

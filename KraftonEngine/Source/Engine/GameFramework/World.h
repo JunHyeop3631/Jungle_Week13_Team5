@@ -15,8 +15,7 @@
 #include <Collision/Octree/Octree.h>
 #include <Collision/Octree/SpatialPartition.h>
 #include "GameFramework/WorldSettings.h"
-#include "Physics/IPhysicsScene.h"
-#include "Physics/PhysXRuntime.h"
+#include "Physics/IPhysicsRuntime.h"
 #include "Source/Engine/GameFramework/World.generated.h"
 #include <memory>
 
@@ -86,7 +85,7 @@ public:
 	FWorldSettings& GetWorldSettings() { return WorldSettings; }
 	const FWorldSettings& GetWorldSettings() const { return WorldSettings; }
 
-	// 일시정지 — true 동안 World::Tick 이 PhysicsScene 와 TickManager 호출을 skip 한다.
+	// 일시정지 — true 동안 World::Tick 이 PhysicsRuntime 와 TickManager 호출을 skip 한다.
 	// Render / UI / Input poll 은 영향 받지 않으므로 인트로 / 메뉴 / 모달 띄운 상태에서
 	// 게임 시간만 멈추는 용도. 기본 false (게임 진행).
 	void SetPaused(bool bInPaused) { bPaused = bInPaused; }
@@ -134,9 +133,6 @@ private:
 	FTickManager TickManager;
 
 	FSpatialPartition Partition;
-	std::unique_ptr<IPhysicsScene> PhysicsScene;
-
-	// 추후 결정
 	std::unique_ptr<IPhysicsRuntime> PhysicsRuntime;
 
 	// Game flow — Editor 월드에서는 nullptr로 유지된다.
@@ -144,15 +140,14 @@ private:
 	UClass* GameModeClass = nullptr;  // GameEngine 등이 BeginPlay 전에 세팅
 
 public:
-	IPhysicsScene* GetPhysicsScene() const { return PhysicsScene.get(); }
 	IPhysicsRuntime* GetPhysicsRuntime() const { return PhysicsRuntime.get(); }
 
-	// Physics raycast convenience — delegates to IPhysicsScene::Raycast
+	// Physics raycast convenience — delegates to IPhysicsRuntime::Raycast
 	bool PhysicsRaycast(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
 		ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic,
 		const AActor* IgnoreActor = nullptr) const;
 
-	// ObjectType 기반 raycast convenience — delegates to IPhysicsScene::RaycastByObjectTypes.
+	// ObjectType 기반 raycast convenience — delegates to IPhysicsRuntime::RaycastByObjectTypes.
 	// 채널-응답 시맨틱이 아니라 "이 ObjectType 의 shape 만" 잡고 싶을 때 (예: 바닥은 WorldStatic 만).
 	// ObjectTypeMask 는 ObjectTypeBit(ECollisionChannel::WorldStatic) 처럼 헬퍼로 조합.
 	bool PhysicsRaycastByObjectTypes(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,

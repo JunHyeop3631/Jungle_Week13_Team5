@@ -5,9 +5,7 @@
 #include "Component/Primitive/StaticMeshComponent.h"
 #include "Engine/Component/Camera/CameraComponent.h"
 #include "Render/Types/LODContext.h"
-#include "Physics/NativePhysicsScene.h"
-#include "Physics/PhysXPhysicsScene.h"
-#include "Core/ProjectSettings.h"
+#include "Physics/PhysXRuntime.h"
 #include "GameFramework/GameMode/GameModeBase.h"
 #include "GameFramework/GameMode/GameStateBase.h"
 #include "GameFramework/GameMode/PlayerController.h"
@@ -223,24 +221,24 @@ bool UWorld::RaycastPrimitives(const FRay& Ray, FHitResult& OutHitResult, AActor
 bool UWorld::PhysicsRaycast(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
 	ECollisionChannel TraceChannel, const AActor* IgnoreActor) const
 {
-	if (PhysicsScene)
-		return PhysicsScene->Raycast(Start, Dir, MaxDist, OutHit, TraceChannel, IgnoreActor);
+	if (PhysicsRuntime)
+		return PhysicsRuntime->Raycast(Start, Dir, MaxDist, OutHit, TraceChannel, IgnoreActor);
 	return false;
 }
 
 bool UWorld::PhysicsRaycastByObjectTypes(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
 	uint32 ObjectTypeMask, const AActor* IgnoreActor) const
 {
-	if (PhysicsScene)
-		return PhysicsScene->RaycastByObjectTypes(Start, Dir, MaxDist, OutHit, ObjectTypeMask, IgnoreActor);
+	if (PhysicsRuntime)
+		return PhysicsRuntime->RaycastByObjectTypes(Start, Dir, MaxDist, OutHit, ObjectTypeMask, IgnoreActor);
 	return false;
 }
 
 bool UWorld::PhysicsSphereSweepShapeComponents(const FVector& Start, const FVector& Dir, float MaxDist, float Radius,
 	FHitResult& OutHit, ECollisionChannel TraceChannel, const AActor* IgnoreActor) const
 {
-	if (PhysicsScene)
-		return PhysicsScene->SphereSweepShapeComponents(Start, Dir, MaxDist, Radius, OutHit, TraceChannel, IgnoreActor);
+	if (PhysicsRuntime)
+		return PhysicsRuntime->SphereSweepShapeComponents(Start, Dir, MaxDist, Radius, OutHit, TraceChannel, IgnoreActor);
 	return false;
 }
 
@@ -304,14 +302,7 @@ void UWorld::InitWorld()
 
 	// E.2/3: CameraManager spawn 은 PC 의 BeginPlay 가 담당. World 는 보유하지 않음.
 
-	// 물리 시스템 초기화 — ProjectSettings 백엔드 선택
-	if (FProjectSettings::Get().Physics.Backend == EPhysicsBackend::PhysX)
-		PhysicsScene = std::make_unique<FPhysXPhysicsScene>();
-	else
-		PhysicsScene = std::make_unique<FNativePhysicsScene>();
-	PhysicsScene->Initialize(this);
-
-	// world 확정
+	// 물리 시스템 초기화 — IPhysicsRuntime 단일 경로.
 	PhysicsRuntime = std::make_unique<FPhysXRuntime>();
 	PhysicsRuntime->Initialize();
 }
@@ -352,7 +343,7 @@ void UWorld::Tick(float DeltaTime, ELevelTick TickType)
 
 	Scene.GetDebugDrawQueue().Tick(DeltaTime);
 
-	// bPaused 동안 PhysicsScene + TickManager skip — GameMode 타이머, Lua Tick, 차량
+	// bPaused 동안 PhysicsRuntime + TickManager skip — GameMode 타이머, Lua Tick, 차량
 	// 이동, PhysX 시뮬레이션 모두 정지. Render / UI / Input poll 은 호출자 (UEngine::Tick)
 	// 가 따로 돌리므로 영향 없음 → 메뉴/인트로 위에서 화면 보이고 클릭 가능.
 	if (bPaused)
@@ -361,12 +352,9 @@ void UWorld::Tick(float DeltaTime, ELevelTick TickType)
 		return;
 	}
 
-	if (bHasBegunPlay && PhysicsScene)
+	if (bHasBegunPlay && PhysicsRuntime)
 	{
-		SCOPE_STAT_CAT("PhysicsScene", "1_WorldTick");
-		PhysicsScene->Tick(DeltaTime);
-	
-		// 현재 legacy nuget physics 환경이 존재하기 때문에 동시 존
+		SCOPE_STAT_CAT("PhysicsRuntime", "1_WorldTick");
 		PhysicsRuntime->Simulate(DeltaTime);
 	}
 
@@ -411,9 +399,9 @@ void UWorld::EndPlay()
 	PersistentLevel->EndPlay();
 
 	// 물리 시스템 정리 — 액터/컴포넌트가 아직 살아있는 동안 해제
-	if (PhysicsScene)
+	if (PhysicsRuntime)
 	{
-		PhysicsScene->Shutdown();
+		PhysicsRuntime->Shutdown();
 	}
 
 	// Clear spatial partition while actors/components are still alive.

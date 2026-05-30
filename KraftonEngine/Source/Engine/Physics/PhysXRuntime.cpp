@@ -1,5 +1,10 @@
 ﻿#include "Physics/PhysXRuntime.h"
 #include "Physics/PhysXHelpers.h"
+#include "Component/PrimitiveComponent.h"
+#include "Component/Shape/BoxComponent.h"
+#include "Component/Shape/CapsuleComponent.h"
+#include "Component/Shape/SphereComponent.h"
+#include "GameFramework/AActor.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,6 +40,96 @@ namespace
 		AddDebugLine(OutLines, Center - PxVec3(Radius, 0.0f, 0.0f), Center + PxVec3(Radius, 0.0f, 0.0f), Color);
 		AddDebugLine(OutLines, Center - PxVec3(0.0f, Radius, 0.0f), Center + PxVec3(0.0f, Radius, 0.0f), Color);
 		AddDebugLine(OutLines, Center - PxVec3(0.0f, 0.0f, Radius), Center + PxVec3(0.0f, 0.0f, Radius), Color);
+	}
+
+	bool HasAnyBlockResponse(const UPrimitiveComponent* Comp)
+	{
+		if (!Comp)
+		{
+			return false;
+		}
+
+		for (int32 Channel = 0; Channel < static_cast<int32>(ECollisionChannel::ActiveCount); ++Channel)
+		{
+			if (Comp->GetCollisionResponseToChannel(static_cast<ECollisionChannel>(Channel)) == ECollisionResponse::Block)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	PxFilterData BuildComponentFilterData(const UPrimitiveComponent* Comp)
+	{
+		PxFilterData Filter;
+		if (!Comp)
+		{
+			return Filter;
+		}
+
+		Filter.word0 = static_cast<PxU32>(Comp->GetCollisionObjectType());
+		Filter.word1 = 0;
+		Filter.word2 = 0;
+		Filter.word3 = Comp->GetOwner() ? Comp->GetOwner()->GetUUID() : 0;
+
+		for (int32 Channel = 0; Channel < static_cast<int32>(ECollisionChannel::ActiveCount); ++Channel)
+		{
+			const ECollisionResponse Response = Comp->GetCollisionResponseToChannel(static_cast<ECollisionChannel>(Channel));
+			if (Response == ECollisionResponse::Block)
+			{
+				Filter.word1 |= (1u << Channel);
+			}
+			else if (Response == ECollisionResponse::Overlap)
+			{
+				Filter.word2 |= (1u << Channel);
+			}
+		}
+		return Filter;
+	}
+
+	void ApplyComponentFilterData(PxShape* Shape, const UPrimitiveComponent* Comp)
+	{
+		if (!Shape || !Comp)
+		{
+			return;
+		}
+
+		const PxFilterData Filter = BuildComponentFilterData(Comp);
+		Shape->setSimulationFilterData(Filter);
+		Shape->setQueryFilterData(Filter);
+	}
+
+	FBodyInstance* GetBodyFromActor(const PxRigidActor* Actor)
+	{
+		return Actor ? static_cast<FBodyInstance*>(Actor->userData) : nullptr;
+	}
+
+	UPrimitiveComponent* GetComponentFromActor(const PxRigidActor* Actor)
+	{
+		FBodyInstance* Body = GetBodyFromActor(Actor);
+		return Body ? Body->OwnerComponent : nullptr;
+	}
+
+	bool IsTriggerShape(const PxShape* Shape)
+	{
+		return Shape && Shape->getFlags().isSet(PxShapeFlag::eTRIGGER_SHAPE);
+	}
+
+	void FillHitResult(const PxLocationHit& Hit, FHitResult& OutHit)
+	{
+		OutHit = FHitResult();
+		OutHit.bHit = true;
+		OutHit.Distance = Hit.distance;
+		OutHit.WorldHitLocation = ToFVector(Hit.position);
+		OutHit.WorldNormal = ToFVector(Hit.normal);
+		OutHit.ImpactNormal = OutHit.WorldNormal;
+		OutHit.FaceIndex = static_cast<int>(Hit.faceIndex);
+
+		if (UPrimitiveComponent* HitComp = GetComponentFromActor(Hit.actor))
+		{
+			OutHit.HitComponent = HitComp;
+			OutHit.HitActor = HitComp->GetOwner();
+		}
 	}
 
 	static constexpr PxU32 NumVehicle4WWheels = 4;
@@ -372,11 +467,134 @@ void FPhysXRuntime::Shutdown()
 	NextSerial = 1;
 }
 
+FBodyInstance* FPhysXRuntime::FindBodyByComponent(const UPrimitiveComponent* Comp) const
+{
+	if (!Comp)
+	{
+		return nullptr;
+	}
+
+	for (FBodyInstance* Body : Bodies)
+	{
+		if (Body && Body->OwnerComponent == Comp)
+		{
+			return Body;
+		}
+	}
+	return nullptr;
+}
+
+bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysicsBodyDesc& OutDesc) const
+{
+	if (!Comp || !Comp->IsQueryCollisionEnabled())
+	{
+		return false;
+	}
+
+	FPhysicsShapeDesc ShapeDesc;
+	if (UBoxComponent* Box = Cast<UBoxComponent>(Comp))
+	{
+		ShapeDesc.ShapeType = EPhysicsShapeType::Box;
+		ShapeDesc.HalfExtent = Box->GetScaledBoxExtent();
+	}
+	else if (USphereComponent* Sphere = Cast<USphereComponent>(Comp))
+	{
+		ShapeDesc.ShapeType = EPhysicsShapeType::Sphere;
+		ShapeDesc.Radius = Sphere->GetScaledSphereRadius();
+	}
+	else if (UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Comp))
+	{
+		const float Radius = Capsule->GetScaledCapsuleRadius();
+		const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+		ShapeDesc.ShapeType = EPhysicsShapeType::Capsule;
+		ShapeDesc.Radius = Radius;
+		ShapeDesc.HalfHeight = (std::max)(0.0f, HalfHeight - Radius);
+		// PhysX capsules are X-axis aligned; engine capsules use local Z as their long axis.
+		ShapeDesc.LocalTransform.Rotation = FQuat::FromAxisAngle(FVector(0.0f, 1.0f, 0.0f), -PhysicsPi * 0.5f);
+	}
+	else
+	{
+		return false;
+	}
+
+	const bool bTrigger = Comp->GetGenerateOverlapEvents() || !HasAnyBlockResponse(Comp);
+	ShapeDesc.bTriggerShape = bTrigger;
+	ShapeDesc.bSimulationShape = !bTrigger && Comp->GetCollisionEnabled() != ECollisionEnabled::QueryOnly;
+	ShapeDesc.bSceneQueryShape = true;
+
+	OutDesc = FPhysicsBodyDesc();
+	OutDesc.OwnerComponent = Comp;
+	OutDesc.BodyName = "PrimitiveComponent";
+	OutDesc.BodyType = Comp->GetSimulatePhysics() ? EPhysicsBodyType::Dynamic : EPhysicsBodyType::Static;
+	OutDesc.WorldTransform = FTransform(Comp->GetWorldLocation(), Comp->GetWorldRotation(), FVector(1.0f, 1.0f, 1.0f));
+	OutDesc.Mass = Comp->GetMass();
+	OutDesc.bUseGravity = true;
+	OutDesc.bEnableCCD = Comp->GetSimulatePhysics();
+	OutDesc.Shapes.push_back(ShapeDesc);
+	return true;
+}
+
+void FPhysXRuntime::RegisterComponent(UPrimitiveComponent* Comp)
+{
+	if (!Comp)
+	{
+		return;
+	}
+
+	UnregisterComponent(Comp);
+
+	FPhysicsBodyDesc Desc;
+	if (!BuildBodyDescFromComponent(Comp, Desc))
+	{
+		return;
+	}
+
+	CreateRigidBody(Desc);
+	SetCenterOfMass(Comp, Comp->GetCenterOfMass());
+}
+
+void FPhysXRuntime::UnregisterComponent(UPrimitiveComponent* Comp)
+{
+	if (FBodyInstance* Body = FindBodyByComponent(Comp))
+	{
+		DestroyRigidBody(Body);
+	}
+}
+
+void FPhysXRuntime::RebuildBody(UPrimitiveComponent* Comp)
+{
+	if (!Comp || !Comp->IsQueryCollisionEnabled())
+	{
+		UnregisterComponent(Comp);
+		return;
+	}
+
+	RegisterComponent(Comp);
+}
+
 void FPhysXRuntime::Simulate(float DeltaTime)
 {
 	if (!Scene || DeltaTime <= 0.0f)
 	{
 		return;
+	}
+
+	for (FBodyInstance* Body : Bodies)
+	{
+		if (!Body || !Body->OwnerComponent || Body->BoneIndex >= 0 || Body->BodyType == EPhysicsBodyType::Dynamic)
+		{
+			continue;
+		}
+
+		if (PxRigidActor* Actor = GetPxActor(Body))
+		{
+			const FTransform ComponentWorld(
+				Body->OwnerComponent->GetWorldLocation(),
+				Body->OwnerComponent->GetWorldRotation(),
+				FVector(1.0f, 1.0f, 1.0f));
+			Actor->setGlobalPose(ToPxTransform(ComponentWorld));
+			Body->CachedWorldTransform = ComponentWorld;
+		}
 	}
 
 	for (FVehicle4WInstance* VehicleInstance : Vehicles)
@@ -437,6 +655,15 @@ void FPhysXRuntime::Simulate(float DeltaTime)
 		if (GetBodyTransform(Body, Transform))
 		{
 			Body->CachedWorldTransform = Transform;
+			if (Body->OwnerComponent && Body->BoneIndex < 0 && Body->BodyType == EPhysicsBodyType::Dynamic)
+			{
+				PxRigidDynamic* Dynamic = GetPxDynamic(Body);
+				if (Dynamic && !Dynamic->isSleeping())
+				{
+					Body->OwnerComponent->SetWorldLocation(Transform.Location);
+					Body->OwnerComponent->SetRelativeRotation(Transform.Rotation);
+				}
+			}
 		}
 	}
 
@@ -560,6 +787,7 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape(FBodyInstance* Body, const FPhysi
 	Shape->setFlag(PxShapeFlag::eTRIGGER_SHAPE, Desc.bTriggerShape);
 	Shape->setFlag(PxShapeFlag::eSCENE_QUERY_SHAPE, Desc.bSceneQueryShape);
 	Shape->userData = Body->OwnerComponent;
+	ApplyComponentFilterData(Shape, Body->OwnerComponent);
 
 	FPhysicsShapeHandle Handle{ Shape, AllocateSerial() };
 	Body->ShapeHandles.push_back(Handle);
@@ -948,6 +1176,274 @@ bool FPhysXRuntime::GetVehicle4WWheelTransforms(
 
 	OutTransforms = Vehicle->WheelWorldTransforms;
 	return true;
+}
+
+void FPhysXRuntime::AddForce(UPrimitiveComponent* Comp, const FVector& Force)
+{
+	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		Dynamic->addForce(ToPxVec3(Force));
+	}
+}
+
+void FPhysXRuntime::AddForceAtLocation(UPrimitiveComponent* Comp, const FVector& Force, const FVector& WorldLocation)
+{
+	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		PxRigidBodyExt::addForceAtPos(*Dynamic, ToPxVec3(Force), ToPxVec3(WorldLocation));
+	}
+}
+
+void FPhysXRuntime::AddTorque(UPrimitiveComponent* Comp, const FVector& Torque)
+{
+	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		Dynamic->addTorque(ToPxVec3(Torque));
+	}
+}
+
+FVector FPhysXRuntime::GetLinearVelocity(UPrimitiveComponent* Comp) const
+{
+	if (const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		return ToFVector(Dynamic->getLinearVelocity());
+	}
+	return FVector(0.0f, 0.0f, 0.0f);
+}
+
+void FPhysXRuntime::SetLinearVelocity(UPrimitiveComponent* Comp, const FVector& Vel)
+{
+	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		Dynamic->setLinearVelocity(ToPxVec3(Vel));
+	}
+}
+
+FVector FPhysXRuntime::GetAngularVelocity(UPrimitiveComponent* Comp) const
+{
+	if (const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		return ToFVector(Dynamic->getAngularVelocity());
+	}
+	return FVector(0.0f, 0.0f, 0.0f);
+}
+
+void FPhysXRuntime::SetAngularVelocity(UPrimitiveComponent* Comp, const FVector& Vel)
+{
+	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		Dynamic->setAngularVelocity(ToPxVec3(Vel));
+	}
+}
+
+void FPhysXRuntime::SetMass(UPrimitiveComponent* Comp, float Mass)
+{
+	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		PxRigidBodyExt::updateMassAndInertia(*Dynamic, (std::max)(0.001f, Mass));
+	}
+}
+
+float FPhysXRuntime::GetMass(UPrimitiveComponent* Comp) const
+{
+	if (const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		return Dynamic->getMass();
+	}
+	return 0.0f;
+}
+
+void FPhysXRuntime::SetCenterOfMass(UPrimitiveComponent* Comp, const FVector& LocalOffset)
+{
+	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		Dynamic->setCMassLocalPose(PxTransform(ToPxVec3(LocalOffset)));
+	}
+}
+
+FVector FPhysXRuntime::GetCenterOfMass(UPrimitiveComponent* Comp) const
+{
+	if (const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	{
+		return ToFVector(Dynamic->getCMassLocalPose().p);
+	}
+	return FVector(0.0f, 0.0f, 0.0f);
+}
+
+bool FPhysXRuntime::Raycast(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
+	ECollisionChannel TraceChannel, const AActor* IgnoreActor) const
+{
+	OutHit = FHitResult();
+	if (!Scene || MaxDist <= 0.0f)
+	{
+		return false;
+	}
+
+	const PxVec3 PxDir = ToPxVec3(Dir);
+	if (!IsUsableDirection(PxDir))
+	{
+		return false;
+	}
+
+	struct FChannelRaycastFilter : PxQueryFilterCallback
+	{
+		const AActor* IgnoreActor = nullptr;
+		PxU32 TraceBit = 0;
+
+		PxQueryHitType::Enum preFilter(const PxFilterData&, const PxShape* Shape, const PxRigidActor* Actor, PxHitFlags&) override
+		{
+			if (IsTriggerShape(Shape))
+			{
+				return PxQueryHitType::eNONE;
+			}
+
+			UPrimitiveComponent* Comp = GetComponentFromActor(Actor);
+			if (!Comp || (IgnoreActor && Comp->GetOwner() == IgnoreActor))
+			{
+				return PxQueryHitType::eNONE;
+			}
+
+			const PxFilterData Filter = Shape ? Shape->getQueryFilterData() : PxFilterData();
+			return (Filter.word1 & TraceBit) ? PxQueryHitType::eBLOCK : PxQueryHitType::eNONE;
+		}
+
+		PxQueryHitType::Enum postFilter(const PxFilterData&, const PxQueryHit&) override
+		{
+			return PxQueryHitType::eBLOCK;
+		}
+	} FilterCallback;
+
+	FilterCallback.IgnoreActor = IgnoreActor;
+	FilterCallback.TraceBit = 1u << static_cast<PxU32>(TraceChannel);
+
+	PxRaycastBuffer Hit;
+	const bool bStatus = Scene->raycast(ToPxVec3(Start), PxDir.getNormalized(), MaxDist, Hit,
+		PxHitFlag::eDEFAULT, PxQueryFilterData(), &FilterCallback);
+	if (!bStatus || !Hit.hasBlock)
+	{
+		return false;
+	}
+
+	FillHitResult(Hit.block, OutHit);
+	return OutHit.bHit;
+}
+
+bool FPhysXRuntime::RaycastByObjectTypes(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
+	uint32 ObjectTypeMask, const AActor* IgnoreActor) const
+{
+	OutHit = FHitResult();
+	if (!Scene || MaxDist <= 0.0f || ObjectTypeMask == 0)
+	{
+		return false;
+	}
+
+	const PxVec3 PxDir = ToPxVec3(Dir);
+	if (!IsUsableDirection(PxDir))
+	{
+		return false;
+	}
+
+	struct FObjectTypeRaycastFilter : PxQueryFilterCallback
+	{
+		const AActor* IgnoreActor = nullptr;
+		PxU32 ObjectTypeMask = 0;
+
+		PxQueryHitType::Enum preFilter(const PxFilterData&, const PxShape* Shape, const PxRigidActor* Actor, PxHitFlags&) override
+		{
+			if (IsTriggerShape(Shape))
+			{
+				return PxQueryHitType::eNONE;
+			}
+
+			UPrimitiveComponent* Comp = GetComponentFromActor(Actor);
+			if (!Comp || (IgnoreActor && Comp->GetOwner() == IgnoreActor))
+			{
+				return PxQueryHitType::eNONE;
+			}
+
+			const PxFilterData Filter = Shape ? Shape->getQueryFilterData() : PxFilterData();
+			const PxU32 ObjectBit = 1u << Filter.word0;
+			return (ObjectTypeMask & ObjectBit) ? PxQueryHitType::eBLOCK : PxQueryHitType::eNONE;
+		}
+
+		PxQueryHitType::Enum postFilter(const PxFilterData&, const PxQueryHit&) override
+		{
+			return PxQueryHitType::eBLOCK;
+		}
+	} FilterCallback;
+
+	FilterCallback.IgnoreActor = IgnoreActor;
+	FilterCallback.ObjectTypeMask = ObjectTypeMask;
+
+	PxRaycastBuffer Hit;
+	const bool bStatus = Scene->raycast(ToPxVec3(Start), PxDir.getNormalized(), MaxDist, Hit,
+		PxHitFlag::eDEFAULT, PxQueryFilterData(), &FilterCallback);
+	if (!bStatus || !Hit.hasBlock)
+	{
+		return false;
+	}
+
+	FillHitResult(Hit.block, OutHit);
+	return OutHit.bHit;
+}
+
+bool FPhysXRuntime::SphereSweepShapeComponents(const FVector& Start, const FVector& Dir, float MaxDist, float Radius,
+	FHitResult& OutHit, ECollisionChannel TraceChannel, const AActor* IgnoreActor) const
+{
+	OutHit = FHitResult();
+	if (!Scene || MaxDist <= 0.0f || Radius <= 0.0f)
+	{
+		return false;
+	}
+
+	const PxVec3 PxDir = ToPxVec3(Dir);
+	if (!IsUsableDirection(PxDir))
+	{
+		return false;
+	}
+
+	struct FSweepFilter : PxQueryFilterCallback
+	{
+		const AActor* IgnoreActor = nullptr;
+		PxU32 TraceBit = 0;
+
+		PxQueryHitType::Enum preFilter(const PxFilterData&, const PxShape* Shape, const PxRigidActor* Actor, PxHitFlags&) override
+		{
+			if (IsTriggerShape(Shape))
+			{
+				return PxQueryHitType::eNONE;
+			}
+
+			UPrimitiveComponent* Comp = GetComponentFromActor(Actor);
+			if (!Comp || (IgnoreActor && Comp->GetOwner() == IgnoreActor))
+			{
+				return PxQueryHitType::eNONE;
+			}
+
+			const PxFilterData Filter = Shape ? Shape->getQueryFilterData() : PxFilterData();
+			return (Filter.word1 & TraceBit) ? PxQueryHitType::eBLOCK : PxQueryHitType::eNONE;
+		}
+
+		PxQueryHitType::Enum postFilter(const PxFilterData&, const PxQueryHit&) override
+		{
+			return PxQueryHitType::eBLOCK;
+		}
+	} FilterCallback;
+
+	FilterCallback.IgnoreActor = IgnoreActor;
+	FilterCallback.TraceBit = 1u << static_cast<PxU32>(TraceChannel);
+
+	PxSweepBuffer Hit;
+	const PxSphereGeometry SweepGeometry(Radius);
+	const bool bStatus = Scene->sweep(SweepGeometry, PxTransform(ToPxVec3(Start)), PxDir.getNormalized(), MaxDist, Hit,
+		PxHitFlag::eDEFAULT, PxQueryFilterData(), &FilterCallback);
+	if (!bStatus || !Hit.hasBlock)
+	{
+		return false;
+	}
+
+	FillHitResult(Hit.block, OutHit);
+	return OutHit.bHit;
 }
 
 bool FPhysXRuntime::GetBodyTransform(const FBodyInstance* Body, FTransform& OutTransform) const
