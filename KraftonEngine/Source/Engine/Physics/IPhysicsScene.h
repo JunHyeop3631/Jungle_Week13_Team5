@@ -10,20 +10,8 @@ class AActor;
 class UPrimitiveComponent;
 struct FHitResult;
 
-
-
-
-
-
-
 /*Deprecated. 더 이상 사용하지 않음*/
 /*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
-
-
-
-
-
-
 
 // 물리 백엔드 선택
 enum class EPhysicsBackend : uint8
@@ -31,6 +19,9 @@ enum class EPhysicsBackend : uint8
 	Native,		// Hand-written collision math (O(N²) brute-force)
 	PhysX,		// NVIDIA PhysX 4.1
 };
+
+/*Deprecated. 더 이상 사용하지 않음*/
+/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 
 // ============================================================
 // IPhysicsScene — 물리 시스템 어댑터 인터페이스
@@ -43,25 +34,44 @@ class IPhysicsScene
 public:
 	virtual ~IPhysicsScene() = default;
 
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
+
 	// --- Lifecycle ---
 	virtual void Initialize(UWorld* InWorld) = 0;
 	virtual void Shutdown() = 0;
 
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
+
 	// --- Body 관리 ---
 	virtual void RegisterComponent(UPrimitiveComponent* Comp) = 0;
 	virtual void UnregisterComponent(UPrimitiveComponent* Comp) = 0;
+
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
+
 	// 컴포넌트의 SimulatePhysics/ObjectType/Response 등이 변경된 경우 호출.
 	// PhysX는 actor 단위로 unregister + register (compound shape의 다른 컴포넌트도 함께 재등록),
 	// Native는 BodyState만 갱신.
 	virtual void RebuildBody(UPrimitiveComponent* Comp) = 0;
 
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
+
 	// --- 시뮬레이션 ---
 	virtual void Tick(float DeltaTime) = 0;
+
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 
 	// --- 힘/토크 ---
 	virtual void AddForce(UPrimitiveComponent* Comp, const FVector& Force) = 0;
 	virtual void AddForceAtLocation(UPrimitiveComponent* Comp, const FVector& Force, const FVector& WorldLocation) = 0;
 	virtual void AddTorque(UPrimitiveComponent* Comp, const FVector& Torque) = 0;
+
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 
 	// --- 속도 읽기/쓰기 ---
 	virtual FVector GetLinearVelocity(UPrimitiveComponent* Comp) const = 0;
@@ -69,13 +79,23 @@ public:
 	virtual FVector GetAngularVelocity(UPrimitiveComponent* Comp) const = 0;
 	virtual void SetAngularVelocity(UPrimitiveComponent* Comp, const FVector& Vel) = 0;
 
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
+
 	// --- Mass / Center of Mass ---
 	virtual void SetMass(UPrimitiveComponent* Comp, float Mass) = 0;
 	virtual float GetMass(UPrimitiveComponent* Comp) const = 0;
+
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
+
 	// CenterOfMass는 RootComponent의 local 좌표계 기준 offset.
 	// 차량처럼 mass center를 차체 아래로 내리면 회전 안정성↑.
 	virtual void SetCenterOfMass(UPrimitiveComponent* Comp, const FVector& LocalOffset) = 0;
 	virtual FVector GetCenterOfMass(UPrimitiveComponent* Comp) const = 0;
+
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 
 	// --- Raycast ---
 	// TraceChannel: shape의 응답이 이 채널에 대해 Block일 때만 hit으로 인정 (UE 패턴).
@@ -85,6 +105,9 @@ public:
 	virtual bool Raycast(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
 		ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic,
 		const AActor* IgnoreActor = nullptr) const = 0;
+
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 
 	// ObjectType 기반 Raycast — UE의 LineTraceSingleByObjectType 대응.
 	//   ObjectTypeMask: bit i = ECollisionChannel(i)의 shape를 hit 후보로 둘지.
@@ -96,11 +119,17 @@ public:
 	virtual bool RaycastByObjectTypes(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
 		uint32 ObjectTypeMask, const AActor* IgnoreActor = nullptr) const = 0;
 
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
+
 	// Sphere sweep against registered shape components only.
 	virtual bool SphereSweepShapeComponents(const FVector& Start, const FVector& Dir, float MaxDist, float Radius,
 		FHitResult& OutHit,
 		ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic,
 		const AActor* IgnoreActor = nullptr) const = 0;
+
+	/*Deprecated. 더 이상 사용하지 않음*/
+	/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 };
 
 

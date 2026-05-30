@@ -32,4 +32,5 @@ public:
 
 	virtual void GetPhysicsStats(FPhysicsStats& OutStats) const = 0;
 	virtual void ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines) const = 0;
+	virtual void ExtractVehicleDebugLines(TArray<FPhysicsDebugLine>& OutLines) const = 0;
 };

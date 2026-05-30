@@ -99,6 +99,32 @@ namespace
 		return FVector(R, G, B);
 	}
 
+	bool IsUsableDirection(const PxVec3& Direction)
+	{
+		return Direction.magnitudeSquared() > 1.0e-6f;
+	}
+
+	PxVec3 NormalizeOrFallback(const PxVec3& Direction, const PxVec3& Fallback)
+	{
+		return IsUsableDirection(Direction) ? Direction.getNormalized() : Fallback;
+	}
+
+	void AddDebugLine(TArray<FPhysicsDebugLine>& OutLines, const PxVec3& Start, const PxVec3& End, const FVector& Color)
+	{
+		FPhysicsDebugLine Line;
+		Line.Start = ToFVector(Start);
+		Line.End = ToFVector(End);
+		Line.Color = Color;
+		OutLines.push_back(Line);
+	}
+
+	void AddDebugCross(TArray<FPhysicsDebugLine>& OutLines, const PxVec3& Center, float Radius, const FVector& Color)
+	{
+		AddDebugLine(OutLines, Center - PxVec3(Radius, 0.0f, 0.0f), Center + PxVec3(Radius, 0.0f, 0.0f), Color);
+		AddDebugLine(OutLines, Center - PxVec3(0.0f, Radius, 0.0f), Center + PxVec3(0.0f, Radius, 0.0f), Color);
+		AddDebugLine(OutLines, Center - PxVec3(0.0f, 0.0f, Radius), Center + PxVec3(0.0f, 0.0f, Radius), Color);
+	}
+
 	static constexpr PxU32 NumVehicle4WWheels = 4;
 	static constexpr PxU32 VehicleQuerySelfIdMask = 0x7fffffffu;
 
@@ -142,6 +168,7 @@ namespace
 		PxBatchQuery* SuspensionBatchQuery = nullptr;
 		TStaticArray<PxRaycastQueryResult, NumVehicle4WWheels> RaycastResults = {};
 		TStaticArray<PxRaycastHit, NumVehicle4WWheels> RaycastHits = {};
+		TStaticArray<PxWheelQueryResult, NumVehicle4WWheels> WheelQueryResults = {};
 		PxVehicleDrivableSurfaceToTireFrictionPairs* FrictionPairs = nullptr;
 		PxVehicleDrive4WRawInputData RawInput;
 		PxVehicleKeySmoothingData KeySmoothingData = {};
@@ -222,6 +249,71 @@ namespace
 			}
 
 			Instance->WheelWorldTransforms[WheelIndex] = ToFTransform(ActorPose * Shapes[ShapeIndex]->getLocalPose());
+		}
+	}
+
+	void AppendVehicleDebugLines(const FVehicle4WInstance* Instance, TArray<FPhysicsDebugLine>& OutLines)
+	{
+		const FPhysXVehicle4WData* Data = GetVehicleData(Instance);
+		const PxRigidActor* RigidActor = GetPxActor(Instance ? Instance->ChassisBody : nullptr);
+		const PxRigidDynamic* Actor = RigidActor ? RigidActor->is<PxRigidDynamic>() : nullptr;
+		if (!Instance || !Data || !Data->Vehicle || !Actor)
+		{
+			return;
+		}
+
+		constexpr float WheelCrossRadius = 0.12f;
+		constexpr float TireDirectionLength = 0.55f;
+		constexpr float ContactNormalLength = 0.45f;
+		const FVector WheelColor(1.0f, 1.0f, 1.0f);
+		const FVector SuspensionColor(1.0f, 0.8f, 0.0f);
+		const FVector AirSuspensionColor(1.0f, 0.35f, 0.0f);
+		const FVector ContactColor(0.0f, 1.0f, 1.0f);
+		const FVector LongitudinalColor(0.0f, 1.0f, 0.0f);
+		const FVector LateralColor(1.0f, 0.0f, 1.0f);
+
+		const PxTransform ActorPose = Actor->getGlobalPose();
+		const PxVec3 ForwardFallback = ActorPose.q.rotate(PxVec3(1.0f, 0.0f, 0.0f));
+		const PxVec3 LateralFallback = ActorPose.q.rotate(PxVec3(0.0f, 1.0f, 0.0f));
+
+		for (PxU32 WheelIndex = 0; WheelIndex < NumVehicle4WWheels; ++WheelIndex)
+		{
+			const PxWheelQueryResult& Query = Data->WheelQueryResults[WheelIndex];
+			const PxTransform WheelPose = ActorPose * Query.localPose;
+			const PxVec3 CachedWheelCenter = ToPxVec3(Instance->WheelWorldTransforms[WheelIndex].Location);
+			const PxVec3 WheelCenter = IsUsableDirection(Query.localPose.p) ? WheelPose.p : CachedWheelCenter;
+
+			AddDebugCross(OutLines, WheelCenter, WheelCrossRadius, WheelColor);
+
+			if (Query.suspLineLength > 0.0f && IsUsableDirection(Query.suspLineDir))
+			{
+				const PxVec3 SuspEnd = Query.suspLineStart + Query.suspLineDir * Query.suspLineLength;
+				AddDebugLine(OutLines, Query.suspLineStart, SuspEnd,
+					Query.isInAir ? AirSuspensionColor : SuspensionColor);
+			}
+			else
+			{
+				AddDebugLine(OutLines, WheelCenter, WheelCenter + ActorPose.q.rotate(PxVec3(0.0f, 0.0f, -0.6f)),
+					AirSuspensionColor);
+			}
+
+			const PxVec3 BasePoint = !Query.isInAir && Query.tireContactShape
+				? Query.tireContactPoint
+				: WheelCenter;
+
+			if (!Query.isInAir && Query.tireContactShape && IsUsableDirection(Query.tireContactNormal))
+			{
+				const PxVec3 ContactNormal = Query.tireContactNormal.getNormalized();
+				AddDebugCross(OutLines, Query.tireContactPoint, WheelCrossRadius, ContactColor);
+				AddDebugLine(OutLines, Query.tireContactPoint,
+					Query.tireContactPoint + ContactNormal * ContactNormalLength,
+					ContactColor);
+			}
+
+			const PxVec3 LongitudinalDir = NormalizeOrFallback(Query.tireLongitudinalDir, ForwardFallback);
+			const PxVec3 LateralDir = NormalizeOrFallback(Query.tireLateralDir, LateralFallback);
+			AddDebugLine(OutLines, BasePoint, BasePoint + LongitudinalDir * TireDirectionLength, LongitudinalColor);
+			AddDebugLine(OutLines, BasePoint, BasePoint + LateralDir * TireDirectionLength, LateralColor);
 		}
 	}
 }
@@ -410,13 +502,17 @@ void FPhysXRuntime::Simulate(float DeltaTime)
 			NumVehicle4WWheels,
 			Data->RaycastResults.data());
 
+		PxVehicleWheelQueryResult VehicleQueryResults[1];
+		VehicleQueryResults[0].wheelQueryResults = Data->WheelQueryResults.data();
+		VehicleQueryResults[0].nbWheelQueryResults = NumVehicle4WWheels;
+
 		PxVehicleUpdates(
 			DeltaTime,
 			Scene->getGravity(),
 			*Data->FrictionPairs,
 			1,
 			VehicleArray,
-			nullptr);
+			VehicleQueryResults);
 	}
 
 	Scene->simulate(DeltaTime);
@@ -1064,8 +1160,10 @@ void FPhysXRuntime::ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines
 	const PxRenderBuffer& RenderBuffer = Scene->getRenderBuffer();
 	const PxU32 NumLines = RenderBuffer.getNbLines();
 	const PxDebugLine* Lines = RenderBuffer.getLines();
+	const PxU32 NumTriangles = RenderBuffer.getNbTriangles();
+	const PxDebugTriangle* Triangles = RenderBuffer.getTriangles();
 
-	OutLines.reserve(NumLines);
+	OutLines.reserve(NumLines + NumTriangles * 3);
 	for (PxU32 Index = 0; Index < NumLines; ++Index)
 	{
 		FPhysicsDebugLine Line;
@@ -1073,5 +1171,24 @@ void FPhysXRuntime::ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines
 		Line.End = ToFVector(Lines[Index].pos1);
 		Line.Color = DecodeDebugColor(Lines[Index].color0);
 		OutLines.push_back(Line);
+	}
+
+	for (PxU32 Index = 0; Index < NumTriangles; ++Index)
+	{
+		const PxDebugTriangle& Triangle = Triangles[Index];
+		const FVector Color = DecodeDebugColor(Triangle.color0);
+		AddDebugLine(OutLines, Triangle.pos0, Triangle.pos1, Color);
+		AddDebugLine(OutLines, Triangle.pos1, Triangle.pos2, Color);
+		AddDebugLine(OutLines, Triangle.pos2, Triangle.pos0, Color);
+	}
+}
+
+void FPhysXRuntime::ExtractVehicleDebugLines(TArray<FPhysicsDebugLine>& OutLines) const
+{
+	OutLines.clear();
+
+	for (const FVehicle4WInstance* Vehicle : Vehicles)
+	{
+		AppendVehicleDebugLines(Vehicle, OutLines);
 	}
 }

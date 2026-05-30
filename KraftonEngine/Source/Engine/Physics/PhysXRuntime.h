@@ -41,6 +41,7 @@ public:
 
 	void GetPhysicsStats(FPhysicsStats& OutStats) const override;
 	void ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines) const override;
+	void ExtractVehicleDebugLines(TArray<FPhysicsDebugLine>& OutLines) const override;
 
 private:
 	physx::PxFoundation* Foundation = nullptr;
