@@ -1193,10 +1193,11 @@ void FMeshEditorWidget::TickPhysicsSimulation(float DeltaTime)
 
 	// UWorld::Tick 의 `bHasBegunPlay && PhysicsRuntime` 가드 때문에 에디터 PreviewWorld
 	// (InitWorld 만 호출, BeginPlay 미호출)에서는 World::Tick 안에서 Runtime->Simulate 가 돌지 않는다.
-	// 따라서 Runtime 스텝은 여기서 직접 돌리고, 이어서 PreviewWorld->Tick 으로 TickManager 경로를
-	// 통해 PreviewMeshComponent::TickComponent → ApplyPhysicsToBones write-back 을 트리거한다.
+	// 또한 PreviewWorld->Tick 의 TickManager 경로도 HasActorBegunPlay() 가드에 막혀 PreviewMeshComponent
+	// ::TickComponent 를 디스패치하지 못한다. 따라서 Runtime 스텝과 write-back 을 모두 여기서 직접 돌린다:
+	// Simulate(fetchResults 포함) 직후 같은 틱에서 ApplyPhysicsToBones 를 호출해 body pose 를 본에 푸시한다.
 	Runtime->Simulate(SimDt);
-	PreviewWorld->Tick(SimDt, ELevelTick::LEVELTICK_All);
+	MeshComp->ApplyPhysicsToBones();
 }
 
 void FMeshEditorWidget::RenderPhysicsTransportBar(float Width)
