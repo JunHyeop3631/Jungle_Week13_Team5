@@ -137,7 +137,7 @@ private:
 	std::unique_ptr<IPhysicsScene> PhysicsScene;
 
 	// 추후 결정
-	//std::unique_ptr<IPhysicsRuntime> PhysicsRuntime;
+	std::unique_ptr<IPhysicsRuntime> PhysicsRuntime;
 
 	// Game flow — Editor 월드에서는 nullptr로 유지된다.
 	AGameModeBase* GameMode = nullptr;
@@ -145,6 +145,7 @@ private:
 
 public:
 	IPhysicsScene* GetPhysicsScene() const { return PhysicsScene.get(); }
+	IPhysicsRuntime* GetPhysicsRuntime() const { return PhysicsRuntime.get(); }
 
 	// Physics raycast convenience — delegates to IPhysicsScene::Raycast
 	bool PhysicsRaycast(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
