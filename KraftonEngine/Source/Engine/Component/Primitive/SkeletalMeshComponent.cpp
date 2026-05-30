@@ -1,4 +1,4 @@
-#include "SkeletalMeshComponent.h"
+﻿#include "SkeletalMeshComponent.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 
 #include "Animation/AnimationManager.h"
@@ -573,8 +573,57 @@ FBodyInstance* USkeletalMeshComponent::GetBodyInstanceByBoneName(const FString& 
     return GetBodyInstanceByBoneIndex(FindBoneIndex(BoneName));
 }
 
+void USkeletalMeshComponent::CreateRagdoll()
+{
+    // 패시브 ragdoll 진입: PhysicsAsset 이 이미 인스턴스화돼 있어야 한다 (Bodies / PhysicsRuntimeOwner).
+    if (!PhysicsRuntimeOwner || Bodies.empty())
+    {
+        UE_LOG("CreateRagdoll skipped: physics asset bodies are not instantiated.");
+        return;
+    }
+
+    USkeletalMesh* Mesh = GetSkeletalMesh();
+    FSkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+    if (!Asset || Asset->Bones.empty())
+    {
+        return;
+    }
+
+    // 1) 현재 본 월드 트랜스폼을 body 에 강제로 동기화한다 — kinematic 동안 누적된 anim pose 와
+    //    InstantiatePhysicsAssetBodies 직후 ref pose 사이의 격차로 인한 튐을 막는다.
+    //    teleport=true 경로는 setGlobalPose 직접 호출이라 kinematic flag 영향 없이 actor 위치만 갱신된다.
+    // 2) 이어서 SetBodyType(Dynamic) — kinematic flag 해제 + wakeUp.
+    for (int32 BoneIndex = 0; BoneIndex < static_cast<int32>(Bodies.size()); ++BoneIndex)
+    {
+        FBodyInstance* Body = Bodies[BoneIndex];
+        if (!Body || !Body->bValid)
+        {
+            continue;
+        }
+
+        FTransform BoneWorldTransform;
+        if (GetBoneWorldTransformByIndex(BoneIndex, BoneWorldTransform))
+        {
+            PhysicsRuntimeOwner->SetBodyTransform(Body, BoneWorldTransform, /*bTeleport*/ true);
+        }
+
+        PhysicsRuntimeOwner->SetBodyType(Body, EPhysicsBodyType::Dynamic);
+    }
+
+    // 3) 애니메이션 평가 차단 — 다음 TickComponent 부터 ApplyPhysicsToBones 경로로 분기된다.
+    bSimulatingPhysics = true;
+}
+
 void USkeletalMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction& ThisTickFunction)
 {
+    if (bSimulatingPhysics)
+    {
+        // Passive ragdoll: AnimInstance 평가 skip, PhysX body → 본 local pose write-back.
+        ApplyPhysicsToBones();
+        UMeshComponent::TickComponent(DeltaTime, TickType, ThisTickFunction);
+        return;
+    }
+
     if (EvaluateAnimInstance(DeltaTime))
     {
         UMeshComponent::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -582,6 +631,69 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType,
     }
 
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+}
+
+void USkeletalMeshComponent::ApplyPhysicsToBones()
+{
+    if (!PhysicsRuntimeOwner)
+    {
+        return;
+    }
+
+    USkeletalMesh* Mesh = GetSkeletalMesh();
+    FSkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+    if (!Asset || Asset->Bones.empty())
+    {
+        return;
+    }
+
+    const int32 BoneCount = static_cast<int32>(Asset->Bones.size());
+
+    // 본 인덱스 오름차순 = parent-first 가 엔진 규약이라 단순 순회로 부모 글로벌이 항상 채워진 뒤
+    // 자식이 사용한다. ComponentLocalGlobals[i] 는 component-local 본 글로벌 행렬을 누적한다.
+    TArray<FMatrix> ComponentLocalGlobals;
+    ComponentLocalGlobals.resize(BoneCount, FMatrix::Identity);
+
+    TArray<FTransform> LocalPose;
+    LocalPose.resize(BoneCount);
+
+    // body 트랜스폼은 world 기준이고 본 local pose 는 component-local 누적이므로 world↔component 변환이 필요하다.
+    // InstantiatePhysicsAssetBodies 가 본 world == body actor pose 로 생성했기 때문에 body→bone 별도 오프셋 보정은 없다.
+    const FMatrix ComponentWorldInv = GetWorldInverseMatrix();
+
+    for (int32 BoneIndex = 0; BoneIndex < BoneCount; ++BoneIndex)
+    {
+        const int32 ParentIndex = Asset->Bones[BoneIndex].ParentIndex;
+        const FMatrix ParentGlobal = (ParentIndex >= 0)
+            ? ComponentLocalGlobals[ParentIndex]
+            : FMatrix::Identity;
+        const FMatrix RefLocal = Asset->Bones[BoneIndex].GetReferenceLocalPose();
+
+        FBodyInstance* Body = (BoneIndex < static_cast<int32>(Bodies.size())) ? Bodies[BoneIndex] : nullptr;
+
+        FMatrix LocalMatrix = RefLocal;
+        FMatrix ComponentGlobal = RefLocal * ParentGlobal;
+
+        if (Body && Body->bValid)
+        {
+            FTransform BodyWorld;
+            if (PhysicsRuntimeOwner->GetBodyTransform(Body, BodyWorld))
+            {
+                // body world → component-local global → parent global inverse 곱으로 local pose 산출.
+                // 루트(ParentIndex < 0)는 ParentGlobal == Identity 이므로 component global 이 곧 local 이 된다.
+                ComponentGlobal = BodyWorld.ToMatrix() * ComponentWorldInv;
+                LocalMatrix = (ParentIndex >= 0)
+                    ? ComponentGlobal * ParentGlobal.GetInverse()
+                    : ComponentGlobal;
+            }
+        }
+
+        ComponentLocalGlobals[BoneIndex] = ComponentGlobal;
+        LocalPose[BoneIndex] = FTransform(LocalMatrix);
+    }
+
+    // CPU skinning / bounds dirty 는 SetBoneLocalTransforms 안의 RefreshSkinningAfterPoseChanged 에서 처리된다.
+    SetBoneLocalTransforms(LocalPose);
 }
 
 // ──────────────────────────────────────────────

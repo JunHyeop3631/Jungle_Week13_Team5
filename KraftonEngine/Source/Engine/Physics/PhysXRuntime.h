@@ -19,7 +19,7 @@ public:
 
 	bool Initialize();
 	void Shutdown();
-	void Simulate(float DeltaTime);
+	void Simulate(float DeltaTime) override;
 
 	FBodyInstance* CreateRigidBody(const FPhysicsBodyDesc& Desc) override;
 	void DestroyRigidBody(FBodyInstance* Body) override;
@@ -32,6 +32,7 @@ public:
 	bool GetBodyTransform(const FBodyInstance* Body, FTransform& OutTransform) const override;
 	void SetBodyTransform(FBodyInstance* Body, const FTransform& Transform, bool bTeleport = true) override;
 	void SetKinematicTarget(FBodyInstance* Body, const FTransform& Transform) override;
+	void SetBodyType(FBodyInstance* Body, EPhysicsBodyType NewType) override;
 
 	void GetPhysicsStats(FPhysicsStats& OutStats) const override;
 	void ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines) const override;

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Core/Types/CoreTypes.h"
 #include "Math/Transform.h"
@@ -150,4 +150,16 @@ struct FPhysicsDebugLine
 	FVector Start;
 	FVector End;
 	FVector Color = FVector(0.0f, 1.0f, 0.0f);
+};
+
+
+struct RagdoleBone
+{
+	FString name;
+	FVector offset;
+	FVector halfSize;
+	int parentIndex;
+	FBodyInstance* body = nullptr;
+	FConstraintInstance* ConstraintInstance = nullptr;
+
 };
