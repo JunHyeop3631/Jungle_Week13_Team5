@@ -7,6 +7,7 @@
 #include "Math/Matrix.h"
 #include "Math/Transform.h"
 #include "Editor/UI/Asset/Physics/PhysicsShapeGizmoTarget.h"
+#include "Editor/UI/Asset/Physics/PhysicsConstraintGizmoTarget.h"
 
 struct FSkeletalMesh;
 struct ImDrawList;
@@ -34,7 +35,8 @@ struct FPhysicsEditTabState
     EShapeType SelectedShapeType      = EShapeType::None;
     int32      SelectedShapeElemIndex = -1;
 
-    FPhysicsShapeGizmoTarget ShapeGizmoTarget;
+    FPhysicsShapeGizmoTarget      ShapeGizmoTarget;
+    FPhysicsConstraintGizmoTarget ConstraintGizmoTarget;
 
     // 우측 패널 탭 (0 = Details, 1 = Tools)
     int32 RightPanelTab = 0;

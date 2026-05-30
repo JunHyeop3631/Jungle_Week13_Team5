@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Core/Types/CoreTypes.h"
 #include "Math/Vector.h"
@@ -12,11 +12,7 @@ struct FKSphereElem
     FVector Center = FVector(0.f, 0.f, 0.f);
     float   Radius = 0.1f;
 
-    void Serialize(FArchive& Ar)
-    {
-        Ar << Center;
-        Ar << Radius;
-    }
+    void Serialize(FArchive& Ar);
 };
 
 struct FKBoxElem
@@ -27,14 +23,7 @@ struct FKBoxElem
     float   HalfY    = 0.1f;
     float   HalfZ    = 0.1f;
 
-    void Serialize(FArchive& Ar)
-    {
-        Ar << Center;
-        Ar << Rotation;
-        Ar << HalfX;
-        Ar << HalfY;
-        Ar << HalfZ;
-    }
+    void Serialize(FArchive& Ar);
 };
 
 struct FKCapsuleElem
@@ -44,13 +33,7 @@ struct FKCapsuleElem
     float   Radius     = 0.1f;
     float   HalfHeight = 0.1f;
 
-    void Serialize(FArchive& Ar)
-    {
-        Ar << Center;
-        Ar << Rotation;
-        Ar << Radius;
-        Ar << HalfHeight;
-    }
+    void Serialize(FArchive& Ar);
 };
 
 // 한 본에 귀속되는 모든 콜리전 기하를 묶는 컨테이너
@@ -63,24 +46,5 @@ struct FKAggregateGeom
     bool  IsEmpty()           const { return SphereElems.empty() && BoxElems.empty() && CapsuleElems.empty(); }
     int32 GetTotalPrimCount() const { return (int32)(SphereElems.size() + BoxElems.size() + CapsuleElems.size()); }
 
-    void Serialize(FArchive& Ar)
-    {
-        // Sphere
-        uint32 SphereCount = (uint32)SphereElems.size();
-        Ar << SphereCount;
-        if (Ar.IsLoading()) SphereElems.resize(SphereCount);
-        for (auto& E : SphereElems) E.Serialize(Ar);
-
-        // Box
-        uint32 BoxCount = (uint32)BoxElems.size();
-        Ar << BoxCount;
-        if (Ar.IsLoading()) BoxElems.resize(BoxCount);
-        for (auto& E : BoxElems) E.Serialize(Ar);
-
-        // Capsule
-        uint32 CapsuleCount = (uint32)CapsuleElems.size();
-        Ar << CapsuleCount;
-        if (Ar.IsLoading()) CapsuleElems.resize(CapsuleCount);
-        for (auto& E : CapsuleElems) E.Serialize(Ar);
-    }
+    void Serialize(FArchive& Ar);
 };

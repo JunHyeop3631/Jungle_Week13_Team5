@@ -707,6 +707,9 @@
     <ClCompile Include="Source\Editor\UI\Asset\Mesh\MeshEditorWidget.cpp">
       <Filter>Source\Editor\UI\Asset\Mesh</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Editor\UI\Asset\Mesh\MeshEditorWidget.Physics.cpp">
+      <Filter>Source\Editor\UI\Asset\Mesh</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Editor\UI\Asset\Mesh\StaticMeshEditorWidget.cpp">
       <Filter>Source\Editor\UI\Asset\Mesh</Filter>
     </ClCompile>
@@ -1334,6 +1337,18 @@
     <ClCompile Include="Source\Engine\Particles\Runtime\ParticleEmitterInstance.cpp">
       <Filter>Source\Engine\Particles\Runtime</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Engine\Physics\Asset\BodySetup.cpp">
+      <Filter>Source\Engine\Physics\Asset</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Physics\Asset\PhysicsAsset.cpp">
+      <Filter>Source\Engine\Physics\Asset</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Physics\Asset\PhysicsConstraintSetup.cpp">
+      <Filter>Source\Engine\Physics\Asset</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Physics\Asset\PhysicsGeometry.cpp">
+      <Filter>Source\Engine\Physics\Asset</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Engine\Physics\NativePhysicsScene.cpp">
       <Filter>Source\Engine\Physics</Filter>
     </ClCompile>
@@ -1771,6 +1786,9 @@
     </ClInclude>
     <ClInclude Include="Source\Editor\UI\Asset\Particle\ParticleSystemEditorWidget.h">
       <Filter>Source\Editor\UI\Asset\Particle</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Editor\UI\Asset\Physics\PhysicsConstraintGizmoTarget.h">
+      <Filter>Source\Editor\UI\Asset\Physics</Filter>
     </ClInclude>
     <ClInclude Include="Source\Editor\UI\Asset\Physics\PhysicsShapeGizmoTarget.h">
       <Filter>Source\Editor\UI\Asset\Physics</Filter>
