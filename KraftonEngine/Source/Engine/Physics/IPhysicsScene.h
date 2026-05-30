@@ -17,8 +17,7 @@ struct FHitResult;
 
 
 /*절대 보지 마셈*/
-/*IPhysicsScene 말고 IPhysicsRuntime 보면 됨*/
-/*이건 Nuget용, IPhysicsRuntime이 이번에 들어온거*/
+/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 
 
 
@@ -103,3 +102,7 @@ public:
 		ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic,
 		const AActor* IgnoreActor = nullptr) const = 0;
 };
+
+
+/*절대 보지 마셈*/
+/*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
