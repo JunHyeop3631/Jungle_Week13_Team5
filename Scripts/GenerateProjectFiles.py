@@ -121,11 +121,11 @@ FMOD_RELEASE_LIB = "fmod_vc.lib"
 FMOD_DEBUG_DLL = "fmodL.dll"
 FMOD_RELEASE_DLL = "fmod.dll"
 
-# PhysX 4.1 source build — checked/release 산출물을 엔진 ThirdParty 경로에 고정한다.
-# Debug 구성은 checked, 그 외(Release/Game/ObjViewDebug/Demo)는 release 사용.
-PHYSX_CHECKED_LIB_DIR = "ThirdParty\\PhysX41\\lib\\checked"
+# PhysX 4.1 source build — engine keeps only the configurations it links.
+# Debug 구성은 debug, 그 외(Release/Game/ObjViewDebug/Demo)는 release 사용.
+PHYSX_DEBUG_LIB_DIR = "ThirdParty\\PhysX41\\lib\\debug"
 PHYSX_RELEASE_LIB_DIR = "ThirdParty\\PhysX41\\lib\\release"
-PHYSX_CHECKED_BIN_DIR = "ThirdParty\\PhysX41\\bin\\checked"
+PHYSX_DEBUG_BIN_DIR = "ThirdParty\\PhysX41\\bin\\debug"
 PHYSX_RELEASE_BIN_DIR = "ThirdParty\\PhysX41\\bin\\release"
 PHYSX_DEPENDENCIES = [
     "PhysX_64.lib",
@@ -419,7 +419,7 @@ def generate_vcxproj(files: dict[str, list[str]]):
         if is_x64:
             additional_lib_dirs.insert(
                 0,
-                f"$(ProjectDir){PHYSX_CHECKED_LIB_DIR if cfg == 'Debug' else PHYSX_RELEASE_LIB_DIR}",
+                f"$(ProjectDir){PHYSX_DEBUG_LIB_DIR if cfg == 'Debug' else PHYSX_RELEASE_LIB_DIR}",
             )
         if additional_lib_dirs:
             ET.SubElement(link, "AdditionalLibraryDirectories").text = (
@@ -440,7 +440,7 @@ def generate_vcxproj(files: dict[str, list[str]]):
         if is_x64:
             rmlui_dir = RMLUI_DEBUG_DIR if cfg == "Debug" else RMLUI_RELEASE_DIR
             fmod_dll = FMOD_DEBUG_DLL if cfg == "Debug" else FMOD_RELEASE_DLL
-            physx_bin = PHYSX_CHECKED_BIN_DIR if cfg == "Debug" else PHYSX_RELEASE_BIN_DIR
+            physx_bin = PHYSX_DEBUG_BIN_DIR if cfg == "Debug" else PHYSX_RELEASE_BIN_DIR
             fbx_lib_dir = FBX_DEBUG_LIB_DIR if cfg == "Debug" else FBX_RELEASE_LIB_DIR
             post_build = ET.SubElement(idg, "PostBuildEvent")
             ET.SubElement(post_build, "Command").text = (

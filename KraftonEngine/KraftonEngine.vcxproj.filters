@@ -277,6 +277,9 @@
     <Filter Include="Source\Engine\Physics\Asset">
       <UniqueIdentifier>{2b8b7095-ed81-73fd-94d5-c4642b32a800}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source\Engine\Physics\Cloth">
+      <UniqueIdentifier>{8e0e8b77-2809-4875-a470-cdbd975451bb}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source\Engine\Platform">
       <UniqueIdentifier>{813e0a37-91de-2afc-805f-1a0f801727b9}</UniqueIdentifier>
     </Filter>
@@ -1354,6 +1357,9 @@
     </ClCompile>
     <ClCompile Include="Source\Engine\Physics\Asset\PhysicsGeometry.cpp">
       <Filter>Source\Engine\Physics\Asset</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\Engine\Physics\Cloth\NvClothScene.cpp">
+      <Filter>Source\Engine\Physics\Cloth</Filter>
     </ClCompile>
     <ClCompile Include="Source\Engine\Physics\NativePhysicsScene.cpp">
       <Filter>Source\Engine\Physics</Filter>
@@ -2608,6 +2614,16 @@
     </ClInclude>
     <ClInclude Include="Source\Engine\Physics\Asset\PhysicsGeometry.h">
       <Filter>Source\Engine\Physics\Asset</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Engine\Physics\Cloth\ClothTypes.h">
+      <Filter>Source\Engine\Physics\Cloth</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Engine\Physics\Cloth\IClothScene.h">
+      <Filter>Source\Engine\Physics\Cloth</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Engine\Physics\Cloth\NvClothScene.h">
+      <Filter>Source\Engine\Physics\Cloth</Filter>
+    </ClInclude>
     <ClInclude Include="Source\Engine\Physics\PhysXRuntime.h">
       <Filter>Source\Engine\Physics</Filter>
     </ClInclude>

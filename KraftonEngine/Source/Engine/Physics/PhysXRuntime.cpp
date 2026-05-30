@@ -1,103 +1,15 @@
-#include "Physics/PhysXRuntime.h"
+﻿#include "Physics/PhysXRuntime.h"
+#include "Physics/PhysXHelpers.h"
 
-#include <PxPhysicsAPI.h>
 #include <algorithm>
 #include <cmath>
 
-using namespace physx;
+using namespace PhysXHelpers;
 
 namespace
 {
 	PxDefaultAllocator GAllocator;
 	PxDefaultErrorCallback GErrorCallback;
-
-	PxVec3 ToPxVec3(const FVector& V)
-	{
-		return PxVec3(V.X, V.Y, V.Z);
-	}
-
-	PxQuat ToPxQuat(const FQuat& Q)
-	{
-		return PxQuat(Q.X, Q.Y, Q.Z, Q.W);
-	}
-
-	FVector ToFVector(const PxVec3& V)
-	{
-		return FVector(V.x, V.y, V.z);
-	}
-
-	FQuat ToFQuat(const PxQuat& Q)
-	{
-		return FQuat(Q.x, Q.y, Q.z, Q.w);
-	}
-
-	PxTransform ToPxTransform(const FTransform& Transform)
-	{
-		return PxTransform(ToPxVec3(Transform.Location), ToPxQuat(Transform.Rotation));
-	}
-
-	FTransform ToFTransform(const PxTransform& Transform)
-	{
-		return FTransform(ToFVector(Transform.p), ToFQuat(Transform.q), FVector(1.0f, 1.0f, 1.0f));
-	}
-
-	PxD6Motion::Enum ToPxD6Motion(EPhysicsMotionType Motion)
-	{
-		switch (Motion)
-		{
-		case EPhysicsMotionType::Free:
-			return PxD6Motion::eFREE;
-		case EPhysicsMotionType::Limited:
-			return PxD6Motion::eLIMITED;
-		case EPhysicsMotionType::Locked:
-		default:
-			return PxD6Motion::eLOCKED;
-		}
-	}
-
-	PxRigidActor* GetPxActor(FBodyInstance* Body)
-	{
-		return Body ? static_cast<PxRigidActor*>(Body->ActorHandle.NativePtr) : nullptr;
-	}
-
-	const PxRigidActor* GetPxActor(const FBodyInstance* Body)
-	{
-		return Body ? static_cast<const PxRigidActor*>(Body->ActorHandle.NativePtr) : nullptr;
-	}
-
-	PxRigidDynamic* GetPxDynamic(FBodyInstance* Body)
-	{
-		PxRigidActor* Actor = GetPxActor(Body);
-		return Actor ? Actor->is<PxRigidDynamic>() : nullptr;
-	}
-
-	bool BuildGeometry(const FPhysicsShapeDesc& Desc, PxGeometryHolder& OutGeometry)
-	{
-		switch (Desc.ShapeType)
-		{
-		case EPhysicsShapeType::Box:
-			OutGeometry = PxBoxGeometry(Desc.HalfExtent.X, Desc.HalfExtent.Y, Desc.HalfExtent.Z);
-			return true;
-		case EPhysicsShapeType::Sphere:
-			OutGeometry = PxSphereGeometry(Desc.Radius);
-			return true;
-		case EPhysicsShapeType::Capsule:
-			OutGeometry = PxCapsuleGeometry(Desc.Radius, Desc.HalfHeight);
-			return true;
-		case EPhysicsShapeType::Convex:
-		case EPhysicsShapeType::TriangleMesh:
-		default:
-			return false;
-		}
-	}
-
-	FVector DecodeDebugColor(PxU32 Color)
-	{
-		const float R = static_cast<float>((Color >> 16) & 0xff) / 255.0f;
-		const float G = static_cast<float>((Color >> 8) & 0xff) / 255.0f;
-		const float B = static_cast<float>(Color & 0xff) / 255.0f;
-		return FVector(R, G, B);
-	}
 
 	bool IsUsableDirection(const PxVec3& Direction)
 	{
@@ -408,7 +320,7 @@ void FPhysXRuntime::Shutdown()
 	for (FBodyInstance* Body : Bodies)
 	{
 		if (!Body) continue;
-		if (PxRigidActor* Actor = GetPxActor(Body))
+		if (PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body))
 		{
 			Actor->release();
 		}
@@ -541,7 +453,7 @@ FBodyInstance* FPhysXRuntime::CreateRigidBody(const FPhysicsBodyDesc& Desc)
 		return nullptr;
 	}
 
-	const PxTransform Pose = ToPxTransform(Desc.WorldTransform);
+	const PxTransform Pose = PhysXHelpers::ToPxTransform(Desc.WorldTransform);
 	PxRigidActor* Actor = nullptr;
 
 	if (Desc.BodyType == EPhysicsBodyType::Static)
@@ -610,7 +522,7 @@ void FPhysXRuntime::DestroyRigidBody(FBodyInstance* Body)
 
 	Bodies.erase(std::remove(Bodies.begin(), Bodies.end(), Body), Bodies.end());
 
-	if (PxRigidActor* Actor = GetPxActor(Body))
+	if (PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body))
 	{
 		Actor->release();
 	}
@@ -625,14 +537,14 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape(FBodyInstance* Body, const FPhysi
 		return {};
 	}
 
-	PxRigidActor* Actor = GetPxActor(Body);
+	PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body);
 	if (!Actor)
 	{
 		return {};
 	}
 
 	PxGeometryHolder Geometry;
-	if (!BuildGeometry(Desc, Geometry))
+	if (!PhysXHelpers::BuildGeometry(Desc, Geometry))
 	{
 		return {};
 	}
@@ -643,7 +555,7 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape(FBodyInstance* Body, const FPhysi
 		return {};
 	}
 
-	Shape->setLocalPose(ToPxTransform(Desc.LocalTransform));
+	Shape->setLocalPose(PhysXHelpers::ToPxTransform(Desc.LocalTransform));
 	Shape->setFlag(PxShapeFlag::eSIMULATION_SHAPE, Desc.bSimulationShape && !Desc.bTriggerShape);
 	Shape->setFlag(PxShapeFlag::eTRIGGER_SHAPE, Desc.bTriggerShape);
 	Shape->setFlag(PxShapeFlag::eSCENE_QUERY_SHAPE, Desc.bSceneQueryShape);
@@ -652,7 +564,7 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape(FBodyInstance* Body, const FPhysi
 	FPhysicsShapeHandle Handle{ Shape, AllocateSerial() };
 	Body->ShapeHandles.push_back(Handle);
 
-	if (PxRigidDynamic* Dynamic = GetPxDynamic(Body))
+	if (PxRigidDynamic* Dynamic = PhysXHelpers::GetPxDynamic(Body))
 	{
 		PxRigidBodyExt::updateMassAndInertia(*Dynamic, Desc.Material.Density);
 	}
@@ -667,8 +579,8 @@ FConstraintInstance* FPhysXRuntime::CreateD6Joint(const FPhysicsConstraintDesc& 
 		return nullptr;
 	}
 
-	PxRigidActor* ParentActor = GetPxActor(Desc.ParentBody);
-	PxRigidActor* ChildActor = GetPxActor(Desc.ChildBody);
+	PxRigidActor* ParentActor = PhysXHelpers::GetPxActor(Desc.ParentBody);
+	PxRigidActor* ChildActor = PhysXHelpers::GetPxActor(Desc.ChildBody);
 	if (!ParentActor || !ChildActor)
 	{
 		return nullptr;
@@ -677,21 +589,21 @@ FConstraintInstance* FPhysXRuntime::CreateD6Joint(const FPhysicsConstraintDesc& 
 	PxD6Joint* Joint = PxD6JointCreate(
 		*Physics,
 		ParentActor,
-		ToPxTransform(Desc.ParentLocalFrame),
+		PhysXHelpers::ToPxTransform(Desc.ParentLocalFrame),
 		ChildActor,
-		ToPxTransform(Desc.ChildLocalFrame));
+		PhysXHelpers::ToPxTransform(Desc.ChildLocalFrame));
 
 	if (!Joint)
 	{
 		return nullptr;
 	}
 
-	Joint->setMotion(PxD6Axis::eX, ToPxD6Motion(Desc.LinearX));
-	Joint->setMotion(PxD6Axis::eY, ToPxD6Motion(Desc.LinearY));
-	Joint->setMotion(PxD6Axis::eZ, ToPxD6Motion(Desc.LinearZ));
-	Joint->setMotion(PxD6Axis::eTWIST, ToPxD6Motion(Desc.Twist));
-	Joint->setMotion(PxD6Axis::eSWING1, ToPxD6Motion(Desc.Swing1));
-	Joint->setMotion(PxD6Axis::eSWING2, ToPxD6Motion(Desc.Swing2));
+	Joint->setMotion(PxD6Axis::eX, PhysXHelpers::ToPxD6Motion(Desc.LinearX));
+	Joint->setMotion(PxD6Axis::eY, PhysXHelpers::ToPxD6Motion(Desc.LinearY));
+	Joint->setMotion(PxD6Axis::eZ, PhysXHelpers::ToPxD6Motion(Desc.LinearZ));
+	Joint->setMotion(PxD6Axis::eTWIST, PhysXHelpers::ToPxD6Motion(Desc.Twist));
+	Joint->setMotion(PxD6Axis::eSWING1, PhysXHelpers::ToPxD6Motion(Desc.Swing1));
+	Joint->setMotion(PxD6Axis::eSWING2, PhysXHelpers::ToPxD6Motion(Desc.Swing2));
 	Joint->setTwistLimit(PxJointAngularLimitPair(Desc.TwistLimitRadiansMin, Desc.TwistLimitRadiansMax));
 	Joint->setSwingLimit(PxJointLimitCone(Desc.Swing1LimitRadians, Desc.Swing2LimitRadians));
 
@@ -1040,19 +952,19 @@ bool FPhysXRuntime::GetVehicle4WWheelTransforms(
 
 bool FPhysXRuntime::GetBodyTransform(const FBodyInstance* Body, FTransform& OutTransform) const
 {
-	const PxRigidActor* Actor = GetPxActor(Body);
+	const PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body);
 	if (!Actor)
 	{
 		return false;
 	}
 
-	OutTransform = ToFTransform(Actor->getGlobalPose());
+	OutTransform = PhysXHelpers::ToFTransform(Actor->getGlobalPose());
 	return true;
 }
 
 void FPhysXRuntime::SetBodyTransform(FBodyInstance* Body, const FTransform& Transform, bool bTeleport)
 {
-	PxRigidActor* Actor = GetPxActor(Body);
+	PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body);
 	if (!Actor)
 	{
 		return;
@@ -1064,20 +976,20 @@ void FPhysXRuntime::SetBodyTransform(FBodyInstance* Body, const FTransform& Tran
 		return;
 	}
 
-	Actor->setGlobalPose(ToPxTransform(Transform));
+	Actor->setGlobalPose(PhysXHelpers::ToPxTransform(Transform));
 	Body->CachedWorldTransform = Transform;
 }
 
 void FPhysXRuntime::SetKinematicTarget(FBodyInstance* Body, const FTransform& Transform)
 {
-	PxRigidDynamic* Dynamic = GetPxDynamic(Body);
+	PxRigidDynamic* Dynamic = PhysXHelpers::GetPxDynamic(Body);
 	if (!Dynamic)
 	{
 		return;
 	}
 
 	Dynamic->setRigidBodyFlag(PxRigidBodyFlag::eKINEMATIC, true);
-	Dynamic->setKinematicTarget(ToPxTransform(Transform));
+	Dynamic->setKinematicTarget(PhysXHelpers::ToPxTransform(Transform));
 	Body->BodyType = EPhysicsBodyType::Kinematic;
 	Body->CachedWorldTransform = Transform;
 }
@@ -1167,9 +1079,9 @@ void FPhysXRuntime::ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines
 	for (PxU32 Index = 0; Index < NumLines; ++Index)
 	{
 		FPhysicsDebugLine Line;
-		Line.Start = ToFVector(Lines[Index].pos0);
-		Line.End = ToFVector(Lines[Index].pos1);
-		Line.Color = DecodeDebugColor(Lines[Index].color0);
+		Line.Start = PhysXHelpers::ToFVector(Lines[Index].pos0);
+		Line.End = PhysXHelpers::ToFVector(Lines[Index].pos1);
+		Line.Color = PhysXHelpers::DecodeDebugColor(Lines[Index].color0);
 		OutLines.push_back(Line);
 	}
 
