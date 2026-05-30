@@ -19,10 +19,10 @@
      - `bin\checked`
      - `bin\release`
 
-3. NuGet PhysX removal
-   - `NVIDIA.PhysX 4.1.2` was removed from `KraftonEngine\packages.config`.
-   - `KraftonEngine.vcxproj` no longer imports `packages\NVIDIA.PhysX.4.1.2`.
-   - The NuGet package folder was deleted from `KraftonEngine\packages`.
+3. Legacy package cleanup
+   - PhysX is now resolved from `ThirdParty\PhysX41`.
+   - `KraftonEngine.vcxproj` imports the source-built PhysX paths directly.
+   - The old package-based PhysX dependency is no longer part of the engine build.
 
 4. Include path
    - PhysX headers are resolved from:
@@ -47,11 +47,11 @@
 7. Runtime DLL copy
    - `Debug|x64` copies from `ThirdParty\PhysX41\bin\checked`.
    - Release-like x64 configs copy from `ThirdParty\PhysX41\bin\release`.
-   - Old NuGet PhysX DLLs in `KraftonEngine\Bin\Debug` were replaced with the new source-built checked DLLs.
+   - Old package-based PhysX DLLs in `KraftonEngine\Bin\Debug` were replaced with the new source-built checked DLLs.
 
 8. Project generation script
    - `Scripts\GenerateProjectFiles.py` now generates the same ThirdParty PhysX paths.
-   - It no longer restores or imports `NVIDIA.PhysX`.
+   - It no longer restores or imports the old package-based PhysX dependency.
    - `ThirdParty\PhysX41` is excluded from source scanning so the SDK header tree is not added as project items.
 
 ## Verification

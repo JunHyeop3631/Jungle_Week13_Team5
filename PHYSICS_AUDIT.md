@@ -182,14 +182,14 @@
 ## F. 프로젝트 인프라
 
 ### F.1 빌드 시스템에서 PhysX 4.1 의존성
-- [확인됨] vcxproj 단일 빌드 (`KraftonEngine.vcxproj`) — CMake는 vcpkg 내부 헬퍼만 존재(KraftonEngine\packages\NVIDIA.PhysX.4.1.2\...), 본 빌드는 vcxproj
+- [확인됨] vcxproj 단일 빌드 (`KraftonEngine.vcxproj`) — 현재 엔진 빌드는 vcxproj 기반이며 PhysX는 `ThirdParty\PhysX41`을 참조
 - [확인됨] include path: `ThirdParty\PhysX41\include\physx;ThirdParty\PhysX41\include\pxshared` — KraftonEngine.vcxproj:131 등
 - [확인됨] lib dir (Debug): `$(ProjectDir)ThirdParty\PhysX41\lib\debug` — KraftonEngine.vcxproj:245
 - [확인됨] lib dir (Release/Standalone/ObjViewer/EditorRelease): `$(ProjectDir)ThirdParty\PhysX41\lib\release` — KraftonEngine.vcxproj:277,333,365,397
 - [확인됨] 링크 라이브러리(공통): `PhysX_64.lib;PhysXCommon_64.lib;PhysXFoundation_64.lib;PhysXCooking_64.lib;PhysXExtensions_static_64.lib;PhysXPvdSDK_static_64.lib;PhysXVehicle_static_64.lib;PhysXCharacterKinematic_static_64.lib;PhysXTask_static_64.lib` — KraftonEngine.vcxproj:246,278,334,366,398
 - [확인됨] post-build DLL 복사 (debug/release 분기) — KraftonEngine.vcxproj:251,283,339,371,403
 - [확인됨] 일부 Config(Debug/Release without WITH_EDITOR=1)에서는 LibraryPath/AdditionalDependencies 분기에 PhysX 누락 — KraftonEngine.vcxproj:132,139,160 (해당 Config로 빌드 시 link error 가능) — **불명확**(해당 Config가 실제 사용되는지)
-- [확인됨] vcpkg 폴더 `KraftonEngine\packages\NVIDIA.PhysX.4.1.2` 존재 (사용 안 됨, ThirdParty가 우선)
+- [확인됨] `KraftonEngine\packages`에는 PhysX 패키지가 남아 있지 않으며, PhysX는 `ThirdParty\PhysX41`이 우선
 
 ### F.2 새 레이어가 빌드 타깃에 포함됐는지
 - [확인됨] `PhysXRuntime.cpp`가 `<ClCompile>` 항목으로 vcxproj에 포함 (grep 결과 매칭) — KraftonEngine.vcxproj
