@@ -113,7 +113,7 @@ void FEditorContentBrowserWidget::Initialize(UEditorEngine* InEditor, ID3D11Devi
 
 	IconFileMap[".Scene"] = L"World_64x.png";
 	IconFileMap[".obj"] = L"obj.png";
-	IconFileMap[".mat"] = L"Sphere_64x.png";
+	IconFileMap[".mat"] = L"PhysicalMaterial_64x.png";
 	IconFileMap[".shake"] = L"StartMerge_42x.png";
 	IconFileMap[".fbx"] = L"fbx.png";
 	IconFileMap[".uasset"] = L"icon_MatEd_Mesh_40x.png";

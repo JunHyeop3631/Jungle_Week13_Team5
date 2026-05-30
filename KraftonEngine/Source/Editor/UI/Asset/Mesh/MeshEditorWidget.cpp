@@ -564,7 +564,7 @@ void FMeshEditorWidget::RenderTabBar()
 	TabButton("Skeleton", L"Skeleton.png", EMeshEditorTab::Skeleton);
 	TabButton("Mesh", L"SkeletalMesh.png", EMeshEditorTab::Mesh);
 	TabButton("Animation", L"Animation.png", EMeshEditorTab::Animation);
-	TabButton("Physics", L"Sphere_64x.png", EMeshEditorTab::Physics);
+	TabButton("Physics", L"Physics_64x.png", EMeshEditorTab::Physics);
 
 	ImGui::NewLine();
 }
