@@ -1,28 +1,13 @@
 ﻿#include "VehicleActor.h"
 #include "Component/Primitive/StaticMeshComponent.h"
+#include "GameFramework/World.h"
+#include "Physics/PhysXRuntime.h"
 
 #include "Physics/PhysXHelpers.h"
 
-void AVehicleActor::BeginPlay()
-{
-	BodyMeshComponent = AddComponent<UStaticMeshComponent>();
-	SetRootComponent(BodyMeshComponent);
-
-	WheelMeshComponent_FL = AddComponent<UStaticMeshComponent>();
-	WheelMeshComponent_FR = AddComponent<UStaticMeshComponent>();
-	WheelMeshComponent_BL = AddComponent<UStaticMeshComponent>();
-	WheelMeshComponent_BR = AddComponent<UStaticMeshComponent>();
-
-	WheelMeshComponent_BL->SetParent(BodyMeshComponent);
-	WheelMeshComponent_BR->SetParent(BodyMeshComponent);
-	WheelMeshComponent_FL->SetParent(BodyMeshComponent);
-	WheelMeshComponent_FR->SetParent(BodyMeshComponent);
-
-}
-
 void AVehicleActor::Tick(float DeltaTime)
 {
-	AActor::Tick(DeltaTime);
+	Super::Tick(DeltaTime);
 
 	if (!Vehicle || !VehicleRigidActor)
 		return;
@@ -43,4 +28,56 @@ void AVehicleActor::Tick(float DeltaTime)
 
 		// wheel mesh에 회전 적용
 	}
+}
+
+void AVehicleActor::BeginPlay()
+{
+	Super::BeginPlay();
+
+	IPhysicsRuntime* PhysXRuntime = GetWorld()->GetPhysicsRuntime();
+
+	//Create Body
+	FPhysicsBodyDesc PhysicsBodyDesc;
+	PhysicsBodyDesc.BodyType = EPhysicsBodyType::Dynamic;
+	PhysicsBodyDesc.Mass = 1500.0f;
+	FBodyInstance* VehicleBody = PhysXRuntime->CreateRigidBody(PhysicsBodyDesc);
+	VehicleRigidActor = PhysXHelpers::GetPxDynamic(VehicleBody);
+
+	//Create Vehicle
+	FVehicle4WDesc VehicleDesc;
+	VehicleDesc.ChassisMass = PhysicsBodyDesc.Mass;
+	VehicleDesc.WheelMass = 20.0f;
+	VehicleDesc.WheelCenterOffsets[0] = WheelOffset_FL;
+	VehicleDesc.WheelCenterOffsets[1] = WheelOffset_FR;
+	VehicleDesc.WheelCenterOffsets[2] = WheelOffset_BL;
+	VehicleDesc.WheelCenterOffsets[3] = WheelOffset_BR;
+
+	FVehicle4WInstance* VehicleInstance = PhysXRuntime->CreateVehicle4W(VehicleDesc);
+	Vehicle = PhysXHelpers::GetPxVehicleDrive4W(VehicleInstance);
+}
+
+void AVehicleActor::InitDefaultComponents()
+{
+	BodyMeshComponent = AddComponent<UStaticMeshComponent>();
+	SetRootComponent(BodyMeshComponent);
+
+	WheelMeshComponent_FL = AddComponent<UStaticMeshComponent>();
+	WheelMeshComponent_FR = AddComponent<UStaticMeshComponent>();
+	WheelMeshComponent_BL = AddComponent<UStaticMeshComponent>();
+	WheelMeshComponent_BR = AddComponent<UStaticMeshComponent>();
+
+	WheelMeshComponent_BL->SetParent(BodyMeshComponent);
+	WheelMeshComponent_BL->SetRelativeLocation(WheelOffset_BL);
+
+	WheelMeshComponent_BR->SetParent(BodyMeshComponent);
+	WheelMeshComponent_BR->SetRelativeLocation(WheelOffset_BR);
+
+	WheelMeshComponent_FL->SetParent(BodyMeshComponent);
+	WheelMeshComponent_FL->SetRelativeLocation(WheelOffset_FL);
+
+	WheelMeshComponent_FR->SetParent(BodyMeshComponent);
+	WheelMeshComponent_FR->SetRelativeLocation(WheelOffset_FR);
+
+
+
 }

@@ -2027,6 +2027,7 @@ AActor* FLevelViewportLayout::SpawnActorFromViewportMenu(EViewportPlaceActorType
 		AVehicleActor* Actor = World->SpawnActor<AVehicleActor>();
 		if (Actor)
 		{
+			Actor->InitDefaultComponents();
 			SpawnedActor = Actor;
 		}
 		break;

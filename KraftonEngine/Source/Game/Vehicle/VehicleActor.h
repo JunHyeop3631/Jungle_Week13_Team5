@@ -20,7 +20,11 @@ public:
 	AVehicleActor() = default;
 	~AVehicleActor() override = default;
 	void BeginPlay() override;
+	void InitDefaultComponents();
+
+protected:
 	void Tick(float DeltaTime) override;
+
 
 private:
 
@@ -39,9 +43,13 @@ private:
 	//Input
 	physx::PxVehicleDrive4WRawInputData VehicleInputData;
 
-	FVector WheelOffset_FL;
-	FVector WheelOffset_FR;
-	FVector WheelOffset_BL;
-	FVector WheelOffset_BR;
+	UPROPERTY(Save, Edit)
+	FVector WheelOffset_FL = FVector(5.0f, -5.0f, 0.0f);
+	UPROPERTY(Save, Edit)
+	FVector WheelOffset_FR = FVector(5.0f, 5.0f, 0.0f);
+	UPROPERTY(Save, Edit)
+	FVector WheelOffset_BL = FVector(-5.0f, 5.0f, 0.0f);
+	UPROPERTY(Save, Edit)
+	FVector WheelOffset_BR = FVector(-5.0f, -5.0f, 0.0f);
 };
 
