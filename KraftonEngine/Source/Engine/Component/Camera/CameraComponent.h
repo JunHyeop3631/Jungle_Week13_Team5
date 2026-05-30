@@ -1,8 +1,10 @@
-#pragma once
+﻿#pragma once
 #include "Object/Reflection/ObjectFactory.h"
 #include "Component/SceneComponent.h"
 #include "Math/MathUtils.h"
 #include "Math/Vector.h"
+#include "GameFramework/Camera/CameraTypes.h"
+
 
 struct FMinimalViewInfo;
 
@@ -51,6 +53,13 @@ public:
 	float GetOrthoWidth() const { return CameraState.OrthoWidth; }
 	bool IsOrthogonal() const { return CameraState.bIsOrthogonal; }
 
+	void SetDepthOfFieldEnabled(bool bEnabled) { DepthOfField.bEnabled = bEnabled; }
+	void SetDepthOfFieldFocusDistance(float FocusDistance) { DepthOfField.FocusDistance = FocusDistance; }
+	void SetDepthOfFieldFocalLength(float FocalLength) { DepthOfField.FocalLength = FocalLength; }
+	void SetDepthOfFieldMaxBlurSize(float MaxBlurSize) { DepthOfField.MaxBlurSize = MaxBlurSize; }
+
+	const FCameraDepthOfFieldSettings& GetDepthOfFieldSettings() const { return DepthOfField; }
+
 private:
 	UPROPERTY(Edit, Save, Category="Camera", DisplayName="FOV", Member=CameraState.FOV, Type=Float, Min=0.1f, Max=3.14f, Speed=0.01f);
 	UPROPERTY(Edit, Save, Category="Camera", DisplayName="Near Z", Member=CameraState.NearZ, Type=Float, Min=0.01f, Max=100.0f, Speed=0.01f);
@@ -58,4 +67,7 @@ private:
 	UPROPERTY(Edit, Save, Category="Camera", DisplayName="Orthographic", Member=CameraState.bIsOrthogonal, Type=Bool);
 	UPROPERTY(Edit, Save, Category="Camera", DisplayName="Ortho Width", Member=CameraState.OrthoWidth, Type=Float, Min=0.1f, Max=1000.0f, Speed=0.5f);
 	FCameraState CameraState;
+
+	UPROPERTY(Edit, Save, Category = "Camera", DisplayName = "Depth Of Field", Type = Struct, Struct = FCameraDepthOfFieldSettings)
+	FCameraDepthOfFieldSettings DepthOfField;
 };

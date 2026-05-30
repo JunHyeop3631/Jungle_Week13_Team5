@@ -302,6 +302,18 @@ struct FCameraLetterboxConstants
 	float _pad[2];            // 8B - 16B boundary
 };
 
+struct FDepthOfFieldConstants
+{
+	float FocusDistance;
+	float FocalLength;
+	float Aperture;
+	float MaxBlurSize;
+
+	float NearZ;
+	float FarZ;
+	float _pad[2];
+};
+
 // ============================================================
 // 타입별 CB 바인딩 디스크립터 — GPU CB에 업로드할 데이터를 인라인 보관
 // ============================================================
