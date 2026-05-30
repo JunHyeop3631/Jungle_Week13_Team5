@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Core/Types/CoreTypes.h"
 #include "Editor/UI/Panel/EditorPlayToolbarWidget.h"
@@ -89,6 +89,7 @@ public:
 		SkeletalMesh,
 		Character,
 		LuaCharacter,
+		Vehicle,
 		// 게임-특화 액터(ACarPawn 등) 는 enum 에 추가하지 않고 FActorPlacementRegistry
 		// 가 관리. 메뉴 렌더 / spawn dispatch 가 위 빌트인 항목 뒤에 registry 항목을 합친다.
 	};

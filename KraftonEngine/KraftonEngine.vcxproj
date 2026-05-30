@@ -774,6 +774,7 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Intermediate\Generated\Reflection.generated.cpp" />
     <ClCompile Include="Intermediate\Generated\LuaBindings.generated.cpp" />
+    <ClCompile Include="Source\Game\Vehicle\VehicleActor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Editor\EditorEngine.h" />
@@ -1072,6 +1073,7 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClInclude Include="Source\Engine\Physics\IPhysicsRuntime.h" />
     <ClInclude Include="Source\Engine\Physics\NativePhysicsScene.h" />
     <ClInclude Include="Source\Engine\Physics\PhysXCore.h" />
+    <ClInclude Include="Source\Engine\Physics\PhysXHelpers.h" />
     <ClInclude Include="Source\Engine\Physics\PhysXPhysicsScene.h" />
     <ClInclude Include="Source\Engine\Physics\Asset\BodySetup.h" />
     <ClInclude Include="Source\Engine\Physics\Asset\PhysicsAsset.h" />
@@ -1769,6 +1771,7 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClInclude Include="ThirdParty\sol2\include\sol\stack\detail\pairs.hpp" />
     <ClInclude Include="ThirdParty\sol2\include\sol\utility\is_integer.hpp" />
     <ClInclude Include="ThirdParty\sol2\include\sol\utility\to_string.hpp" />
+    <ClInclude Include="Source\Game\Vehicle\VehicleActor.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Shaders\Common\ConstantBuffers.hlsli">

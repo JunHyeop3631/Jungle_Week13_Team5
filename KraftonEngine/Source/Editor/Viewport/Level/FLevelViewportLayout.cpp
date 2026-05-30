@@ -1,4 +1,4 @@
-#include "Editor/Viewport/Level/FLevelViewportLayout.h"
+﻿#include "Editor/Viewport/Level/FLevelViewportLayout.h"
 
 #include "Editor/EditorEngine.h"
 #include "Editor/Viewport/Level/LevelEditorViewportClient.h"
@@ -36,6 +36,7 @@
 #include "GameFramework/Actor/BoxActor.h"
 #include "GameFramework/Actor/SphereActor.h"
 #include "GameFramework/Actor/CapsuleActor.h"
+#include "Game/Vehicle/VehicleActor.h"
 
 // Editor → Game 직접 결합 제거 — 게임-특화 spawn 항목은 FActorPlacementRegistry 를
 // 통해 런타임에 외부에서 등록된다 (Game 모듈의 RegisterGameActorPlacements 가 채움).
@@ -1733,6 +1734,7 @@ void FLevelViewportLayout::RenderViewportPlaceActorPopup()
 		PlaceActorMenuItem("Skeletal Mesh Actor", EViewportPlaceActorType::SkeletalMesh);
 		PlaceActorMenuItem("Character",           EViewportPlaceActorType::Character);
 		PlaceActorMenuItem("Lua Character",       EViewportPlaceActorType::LuaCharacter);
+		PlaceActorMenuItem("Vehicle",			  EViewportPlaceActorType::Vehicle);
 
 		// Game 모듈이 등록한 액터들 (예: ACarPawn). 등록 순서대로 표시.
 		const auto& RegistryEntries = FActorPlacementRegistry::Get().GetEntries();
@@ -2019,6 +2021,17 @@ AActor* FLevelViewportLayout::SpawnActorFromViewportMenu(EViewportPlaceActorType
 		}
 		break;
 	}
+
+	case EViewportPlaceActorType::Vehicle:
+	{
+		AVehicleActor* Actor = World->SpawnActor<AVehicleActor>();
+		if (Actor)
+		{
+			SpawnedActor = Actor;
+		}
+		break;
+	}
+
 	default:
 		break;
 	}
