@@ -657,6 +657,7 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClCompile Include="Source\Engine\Physics\Asset\PhysicsAsset.cpp" />
     <ClCompile Include="Source\Engine\Physics\Asset\PhysicsConstraintSetup.cpp" />
     <ClCompile Include="Source\Engine\Physics\Asset\PhysicsGeometry.cpp" />
+    <ClCompile Include="Source\Engine\Physics\Cloth\NvClothScene.cpp" />
     <ClCompile Include="Source\Engine\Physics\NativePhysicsScene.cpp" />
     <ClCompile Include="Source\Engine\Physics\PhysXCore.cpp" />
     <ClCompile Include="Source\Engine\Physics\PhysXPhysicsScene.cpp" />
@@ -1079,6 +1080,9 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClInclude Include="Source\Engine\Physics\Asset\PhysicsAsset.h" />
     <ClInclude Include="Source\Engine\Physics\Asset\PhysicsConstraintSetup.h" />
     <ClInclude Include="Source\Engine\Physics\Asset\PhysicsGeometry.h" />
+    <ClInclude Include="Source\Engine\Physics\Cloth\ClothTypes.h" />
+    <ClInclude Include="Source\Engine\Physics\Cloth\IClothScene.h" />
+    <ClInclude Include="Source\Engine\Physics\Cloth\NvClothScene.h" />
     <ClInclude Include="Source\Engine\Physics\PhysXRuntime.h" />
     <ClInclude Include="Source\Engine\Physics\PhysXSceneLock.h" />
     <ClInclude Include="Source\Engine\Physics\PhysicsTypes.h" />
