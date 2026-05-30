@@ -16,7 +16,7 @@ struct FHitResult;
 
 
 
-/*절대 보지 마셈*/
+/*Deprecated. 더 이상 사용하지 않음*/
 /*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
 
 
@@ -104,5 +104,5 @@ public:
 };
 
 
-/*절대 보지 마셈*/
+/*Deprecated. 더 이상 사용하지 않음*/
 /*IPhysicsScene은 과거 Nuget 용, IPhysicsRuntime은 현재 PhysX용*/
