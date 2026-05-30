@@ -78,6 +78,40 @@ public:
     TArray<UBodySetup*>&                    GetBodySetupsMutable()         { return BodySetups; }
     TArray<UPhysicsConstraintSetup*>&       GetConstraintsMutable()        { return ConstraintSetups; }
 
+    // ── 바디쌍 충돌 비활성화 ──────────────────────────────────
+    // 래그돌에서 인접한 두 바디(예: 위팔-아래팔)가 서로 부딪혀 떨리는 것을 막기 위해
+    // 특정 본 쌍의 충돌을 꺼둔다. 본 이름 순서와 무관하게 동작한다.
+    bool IsCollisionDisabled(const FString& BoneA, const FString& BoneB) const
+    {
+        for (const FDisabledCollisionPair& P : DisabledCollisionPairs)
+            if ((P.BoneA == BoneA && P.BoneB == BoneB) || (P.BoneA == BoneB && P.BoneB == BoneA))
+                return true;
+        return false;
+    }
+
+    void SetCollisionDisabled(const FString& BoneA, const FString& BoneB, bool bDisabled)
+    {
+        if (BoneA == BoneB) return;
+        const bool bAlready = IsCollisionDisabled(BoneA, BoneB);
+        if (bDisabled && !bAlready)
+        {
+            DisabledCollisionPairs.push_back(FDisabledCollisionPair{ BoneA, BoneB });
+        }
+        else if (!bDisabled && bAlready)
+        {
+            for (auto It = DisabledCollisionPairs.begin(); It != DisabledCollisionPairs.end(); ++It)
+            {
+                if ((It->BoneA == BoneA && It->BoneB == BoneB) || (It->BoneA == BoneB && It->BoneB == BoneA))
+                {
+                    DisabledCollisionPairs.erase(It);
+                    return;
+                }
+            }
+        }
+    }
+
+    int32 GetNumDisabledCollisionPairs() const { return (int32)DisabledCollisionPairs.size(); }
+
     void Serialize(FArchive& Ar)
     {
         Ar << AssetPathFileName;
@@ -107,9 +141,31 @@ public:
         }
         for (UPhysicsConstraintSetup* CS : ConstraintSetups)
             if (CS) CS->Serialize(Ar);
+
+        // ── DisabledCollisionPairs ────────────────────────────
+        // (이후 버전에서 추가됨. 구버전 에셋은 재저장 필요)
+        uint32 PairCount = (uint32)DisabledCollisionPairs.size();
+        Ar << PairCount;
+        if (Ar.IsLoading())
+        {
+            DisabledCollisionPairs.clear();
+            DisabledCollisionPairs.resize(PairCount);
+        }
+        for (FDisabledCollisionPair& P : DisabledCollisionPairs)
+        {
+            Ar << P.BoneA;
+            Ar << P.BoneB;
+        }
     }
 
 private:
+    struct FDisabledCollisionPair
+    {
+        FString BoneA;
+        FString BoneB;
+    };
+
     TArray<UBodySetup*>              BodySetups;
     TArray<UPhysicsConstraintSetup*> ConstraintSetups;
+    TArray<FDisabledCollisionPair>  DisabledCollisionPairs;
 };
