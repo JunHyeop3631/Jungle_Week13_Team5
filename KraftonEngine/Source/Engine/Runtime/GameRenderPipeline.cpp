@@ -1,4 +1,4 @@
-#include "Engine/Runtime/GameRenderPipeline.h"
+﻿#include "Engine/Runtime/GameRenderPipeline.h"
 
 #include "Engine/Runtime/GameEngine.h"
 #include "GameFramework/GameMode/PlayerController.h"
@@ -104,36 +104,42 @@ void FGameRenderPipeline::BuildFrame(FViewport* VP, const FMinimalViewInfo& POV,
 	APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
 	APlayerCameraManager* CamManager = PC ? PC->GetPlayerCameraManager() : nullptr;
 
-	Frame.CameraFade.bEnabled = CamManager ? CamManager->IsFadeEnabled() : false;
-	if (Frame.CameraFade.bEnabled)
+	if (CamManager)
 	{
-		Frame.CameraFade.Color = CamManager->GetFadeColor();
-		Frame.CameraFade.Amount = CamManager->GetFadeAmount();
-	}
-
-	Frame.CameraVignette.bEnabled = CamManager ? CamManager->IsVignetteEnabled() : false;
-	if (Frame.CameraVignette.bEnabled)
-	{
-		Frame.CameraVignette.Intensity = CamManager->GetVignetteIntensity();
-		Frame.CameraVignette.Radius = CamManager->GetVignetteRadius();
-		Frame.CameraVignette.Softness = CamManager->GetVignetteSoftness();
-	}
-
-	UCameraComponent* ActiveCamera = CamManager ? CamManager->GetActiveCamera() : nullptr;
-	if (UCineCameraComponent* CineCamera = Cast<UCineCameraComponent>(ActiveCamera))
-	{
-		const FCineLetterboxSettings& LetterboxSettings = CineCamera->GetLetterboxSettings();
-		Frame.CameraLetterbox.bEnabled = LetterboxSettings.bEnabled;
-		if (Frame.CameraLetterbox.bEnabled)
+		Frame.CameraFade.bEnabled = CamManager->IsFadeEnabled();
+		if (Frame.CameraFade.bEnabled)
 		{
-			Frame.CameraLetterbox.Amount = LetterboxSettings.Amount;
-			Frame.CameraLetterbox.Thickness = LetterboxSettings.Thickness;
-			Frame.CameraLetterbox.Color = LetterboxSettings.Color;
+			Frame.CameraFade.Color = CamManager->GetFadeColor();
+			Frame.CameraFade.Amount = CamManager->GetFadeAmount();
 		}
-	}
-	else
-	{
-		Frame.CameraLetterbox.bEnabled = false;
+
+		Frame.CameraVignette.bEnabled = CamManager->IsVignetteEnabled();
+		if (Frame.CameraVignette.bEnabled)
+		{
+			Frame.CameraVignette.Intensity = CamManager->GetVignetteIntensity();
+			Frame.CameraVignette.Radius = CamManager->GetVignetteRadius();
+			Frame.CameraVignette.Softness = CamManager->GetVignetteSoftness();
+		}
+
+		UCameraComponent* ActiveCamera = CamManager->GetActiveCamera();
+		if (ActiveCamera != nullptr)
+		{
+			Frame.CameraDepthOfField = ActiveCamera->GetDepthOfFieldSettings();
+		}
+		else
+		{
+			Frame.CameraDepthOfField = {};
+		}
+
+		if (UCineCameraComponent* CineCamera = Cast<UCineCameraComponent>(ActiveCamera))
+		{
+			Frame.CameraLetterbox = CineCamera->GetLetterboxSettings();
+		}
+		else
+		{
+			Frame.CameraLetterbox.bEnabled = false;
+			Frame.CameraLetterbox = {};
+		}
 	}
 
 	FMinimalViewInfo RenderPOV = POV;

@@ -93,6 +93,7 @@ struct FFrameContext
 	FCameraFadeState CameraFade;
 	FCameraVignetteState CameraVignette;
 	FCameraLetterboxState CameraLetterbox;
+	FCameraDepthOfFieldSettings CameraDepthOfField;
 
 	// Derived helpers
 	bool IsFixedOrtho() const

@@ -1,9 +1,13 @@
-#pragma once
+﻿#pragma once
 
 #include "Core/Types/CoreTypes.h"
 #include "Core/Types/EngineTypes.h"
 #include "Math/Vector.h"
 #include "Math/Rotator.h"
+#include "Object/Reflection/ObjectMacros.h"
+#include "Object/Reflection/UStruct.h"
+
+#include "Source/Engine/GameFramework/Camera/CameraTypes.generated.h"
 
 // ============================================================
 // EViewTargetBlendFunction — SetViewTargetWithBlend 의 블렌딩 함수
@@ -70,10 +74,41 @@ struct FCameraVignetteState
 	FLinearColor Color = FLinearColor::Black();
 };
 
+USTRUCT()
 struct FCameraLetterboxState
 {
+	GENERATED_BODY()
+
+	UPROPERTY(Edit, Save, Category="Letterbox", DisplayName="Enabled", Type=Bool)
 	bool bEnabled = false;
+
+	UPROPERTY(Edit, Save, Category="Letterbox", DisplayName="Amount", Type=Float, Min=0.0f, Max=1.0f, Speed=0.01f)
 	float Amount = 1.0f;
+
+	UPROPERTY(Edit, Save, Category="Letterbox", DisplayName="Thickness", Type=Float, Min=0.0f, Max=0.5f, Speed=0.01f)
 	float Thickness = 0.12f;
+
+	UPROPERTY(Edit, Save, Category="Letterbox", DisplayName="Color", Type=Color4)
 	FLinearColor Color = FLinearColor::Black();
-};;
+};
+
+USTRUCT()
+struct FCameraDepthOfFieldSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Edit, Save, Category="Depth Of Field", DisplayName="Enabled", Type=Bool)
+	bool bEnabled = false;
+
+	UPROPERTY(Edit, Save, Category="Depth Of Field", DisplayName="Focus Distance(m)", Type=Float, Min=0.0f, Max=100000.0f, Speed=10.0f)
+	float FocusDistance = 500.0f;
+
+	UPROPERTY(Edit, Save, Category="Depth Of Field", DisplayName="Focus Length(mm)", Type=Float, Min=0.0f, Max=100000.0f, Speed=10.0f)
+	float FocalLength = 50.0f;
+	
+	UPROPERTY(Edit, Save, Category = "Depth Of Field", DisplayName = "Aperture", Type=Float, Min = 0.0f, Max = 100000.0f, Speed = 10.0f)
+	float Aperture = 1.6f;
+
+	UPROPERTY(Edit, Save, Category="Depth Of Field", DisplayName="Max Blur Size", Type=Float, Min=0.0f, Max=64.0f, Speed=0.1f)
+	float MaxBlurSize = 6.0f;
+};

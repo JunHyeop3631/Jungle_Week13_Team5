@@ -934,6 +934,27 @@ void FDrawCommandBuilder::BuildPostProcessCommands(const FFrameContext& Frame, c
 			Cmd.BuildSortKey(0);
 		}
 	}
+
+	if (Frame.RenderOptions.ShowFlags.bDepthOfField && Frame.CameraDepthOfField.bEnabled)
+	{
+		FShader* DOFShader = FShaderManager::Get().GetOrCreate(EShaderPath::DepthOfField);
+		if (DOFShader)
+		{
+			FDepthOfFieldConstants DOFData = {};
+			DOFData.FocusDistance = Frame.CameraDepthOfField.FocusDistance;
+			DOFData.FocalLength = Frame.CameraDepthOfField.FocalLength;
+			DOFData.MaxBlurSize = Frame.CameraDepthOfField.MaxBlurSize;
+			DOFData.Aperture = Frame.CameraDepthOfField.Aperture;
+			DOFData.NearZ = Frame.NearClip;
+			DOFData.FarZ = Frame.FarClip;
+			DepthOfFieldCB.Update(Ctx, &DOFData, sizeof(FDepthOfFieldConstants));
+			FDrawCommand& Cmd = DrawCommandList.AddCommand();
+			Cmd.InitFullscreenTriangle(DOFShader, ERenderPass::PostProcess,
+				PassRenderStateTable->ToDrawCommandState(ERenderPass::PostProcess, ViewMode));
+			Cmd.Bindings.PerShaderCB[0] = &DepthOfFieldCB;
+			Cmd.BuildSortKey(8);
+		}
+	}
 }
 
 // ============================================================
