@@ -81,12 +81,22 @@ public:
     const TArray<FBodyInstance*>& GetPhysicsBodies() const { return Bodies; }
     const TArray<FConstraintInstance*>& GetPhysicsConstraints() const { return Constraints; }
 
+	void CreateRagdoll();
+
+	// Passive ragdoll write-back 진입 상태. true 이면 TickComponent 가 AnimInstance 평가를 건너뛰고
+	// PhysX body 트랜스폼을 본 local pose 로 변환해 메시에 푸시한다.
+	bool IsSimulatingPhysics() const { return bSimulatingPhysics; }
+
 protected:
     // 매 프레임 AnimInstance 평가 → 결과 포즈를 SetBoneLocalTransforms 로 푸시.
     // 이 경로가 CPU skinning 과 bounds dirty 를 한 번에 처리한다.
     void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction& ThisTickFunction) override;
 
     bool EvaluateAnimInstance(float DeltaTime);
+
+    // 시뮬레이션 결과 → 본 local pose. 본 인덱스 오름차순 = parent-first 보장에 의존한다.
+    // 액티브 ragdoll 확장 시 drive target push 단계를 이 함수 앞/뒤에 추가하도록 별도 분리.
+    void ApplyPhysicsToBones();
 
 private:
     void LoadAnimationFromPath();
@@ -105,4 +115,7 @@ protected:
 	TArray<FBodyInstance*> Bodies;
 	TArray<FConstraintInstance*> Constraints;
     IPhysicsRuntime* PhysicsRuntimeOwner = nullptr;
+
+    // Passive ragdoll on/off. CreateRagdoll 이 true 로 켜고, 이후 TickComponent 가 ApplyPhysicsToBones 경로로 갈린다.
+    bool bSimulatingPhysics = false;
 };

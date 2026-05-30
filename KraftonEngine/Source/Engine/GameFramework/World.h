@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Object/Object.h"
 #include "Core/Types/RayTypes.h"
 #include "Core/Types/CollisionTypes.h"
@@ -16,6 +16,7 @@
 #include <Collision/Octree/SpatialPartition.h>
 #include "GameFramework/WorldSettings.h"
 #include "Physics/IPhysicsScene.h"
+#include "Physics/PhysXRuntime.h"
 #include "Source/Engine/GameFramework/World.generated.h"
 #include <memory>
 
@@ -134,6 +135,9 @@ private:
 
 	FSpatialPartition Partition;
 	std::unique_ptr<IPhysicsScene> PhysicsScene;
+
+	// 추후 결정
+	//std::unique_ptr<IPhysicsRuntime> PhysicsRuntime;
 
 	// Game flow — Editor 월드에서는 nullptr로 유지된다.
 	AGameModeBase* GameMode = nullptr;
