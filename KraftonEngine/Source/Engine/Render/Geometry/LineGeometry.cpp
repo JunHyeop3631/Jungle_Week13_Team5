@@ -88,6 +88,18 @@ void FLineGeometry::AddLine(const FVector& Start, const FVector& End, const FVec
 	Indices.push_back(BaseVertex + 1);
 }
 
+void FLineGeometry::AddTriangle(const FVector& A, const FVector& B, const FVector& C,
+	const FVector4& ColA, const FVector4& ColB, const FVector4& ColC)
+{
+	const uint32 Base = static_cast<uint32>(IndexedVertices.size());
+	IndexedVertices.emplace_back(A, ColA);
+	IndexedVertices.emplace_back(B, ColB);
+	IndexedVertices.emplace_back(C, ColC);
+	Indices.push_back(Base);
+	Indices.push_back(Base + 1);
+	Indices.push_back(Base + 2);
+}
+
 void FLineGeometry::AddAABB(const FBoundingBox& Box, const FColor& InColor)
 {
 	const FVector4 BoxColor = InColor.ToVector4();
