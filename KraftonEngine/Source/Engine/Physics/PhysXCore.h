@@ -17,6 +17,7 @@ struct FPhysXCoreHandles
 	bool bDevelopmentFeaturesEnabled = false;
 	bool bPvdConnected = false;
 	bool bExtensionsInitialized = false;
+	bool bVehicleSdkInitialized = false;
 };
 
 FPhysXCoreHandles AcquireSharedPhysXCore();

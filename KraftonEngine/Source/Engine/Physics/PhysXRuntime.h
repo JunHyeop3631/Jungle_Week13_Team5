@@ -79,8 +79,7 @@ private:
 	physx::PxScene* Scene = nullptr;
 	physx::PxDefaultCpuDispatcher* Dispatcher = nullptr;
 	physx::PxMaterial* DefaultMaterial = nullptr;
-	bool bExtensionsInitialized = false;
-	bool bVehicleSdkInitialized = false;
+	bool bVehicleSdkAvailable = false;
 
 	TArray<FBodyInstance*> Bodies;
 	TArray<FConstraintInstance*> Joints;

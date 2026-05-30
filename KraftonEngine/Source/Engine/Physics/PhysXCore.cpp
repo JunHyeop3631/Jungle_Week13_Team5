@@ -55,10 +55,17 @@ static PxPvd* GSharedPvd = nullptr;
 static PxPvdTransport* GSharedPvdTransport = nullptr;
 static int GSharedRefCount = 0;
 static bool GPhysXExtensionsInitialized = false;
+static bool GPhysXVehicleSdkInitialized = false;
 static bool GPhysXPvdConnected = false;
 
 static void ReleasePhysXCoreObjects()
 {
+	if (GPhysXVehicleSdkInitialized)
+	{
+		PxCloseVehicleSDK();
+		GPhysXVehicleSdkInitialized = false;
+	}
+
 	if (GPhysXExtensionsInitialized)
 	{
 		PxCloseExtensions();
@@ -137,6 +144,17 @@ static bool CreateSharedPhysXCore()
 		return false;
 	}
 
+	GPhysXVehicleSdkInitialized = PxInitVehicleSDK(*GSharedPhysics);
+	if (!GPhysXVehicleSdkInitialized)
+	{
+		UE_LOG("[PhysX] PxInitVehicleSDK failed");
+		ReleasePhysXCoreObjects();
+		return false;
+	}
+
+	PxVehicleSetBasisVectors(PxVec3(0.0f, 0.0f, 1.0f), PxVec3(1.0f, 0.0f, 0.0f));
+	PxVehicleSetUpdateMode(PxVehicleUpdateMode::eVELOCITY_CHANGE);
+
 	return true;
 }
 
@@ -156,6 +174,7 @@ FPhysXCoreHandles AcquireSharedPhysXCore()
 	Handles.bDevelopmentFeaturesEnabled = KRAFTON_PHYSX_DEVELOPMENT_FEATURES != 0;
 	Handles.bPvdConnected = GPhysXPvdConnected;
 	Handles.bExtensionsInitialized = GPhysXExtensionsInitialized;
+	Handles.bVehicleSdkInitialized = GPhysXVehicleSdkInitialized;
 	return Handles;
 }
 

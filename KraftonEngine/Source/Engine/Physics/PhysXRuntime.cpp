@@ -1,4 +1,5 @@
 ﻿#include "Physics/PhysXRuntime.h"
+#include "Physics/PhysXCore.h"
 #include "Physics/PhysXHelpers.h"
 #include "Component/PrimitiveComponent.h"
 #include "Component/Shape/BoxComponent.h"
@@ -13,9 +14,6 @@ using namespace PhysXHelpers;
 
 namespace
 {
-	PxDefaultAllocator GAllocator;
-	PxDefaultErrorCallback GErrorCallback;
-
 	bool IsUsableDirection(const PxVec3& Direction)
 	{
 		return Direction.magnitudeSquared() > 1.0e-6f;
@@ -332,35 +330,24 @@ FPhysXRuntime::~FPhysXRuntime()
 
 bool FPhysXRuntime::Initialize()
 {
-	if (Foundation || Physics || Scene)
+	if (Foundation && Physics && Scene)
 	{
 		return true;
 	}
 
-	Foundation = PxCreateFoundation(PX_PHYSICS_VERSION, GAllocator, GErrorCallback);
-	if (!Foundation)
-	{
-		return false;
-	}
-
-	Physics = PxCreatePhysics(PX_PHYSICS_VERSION, *Foundation, PxTolerancesScale());
-	if (!Physics)
+	if (Foundation || Physics || Scene)
 	{
 		Shutdown();
-		return false;
 	}
 
-	bExtensionsInitialized = PxInitExtensions(*Physics, nullptr);
-	if (!bExtensionsInitialized)
+	FPhysXCoreHandles Core = AcquireSharedPhysXCore();
+	Foundation = Core.Foundation;
+	Physics = Core.Physics;
+	bVehicleSdkAvailable = Core.bVehicleSdkInitialized;
+	if (!Foundation || !Physics)
 	{
-		Shutdown();
 		return false;
 	}
-
-	PxInitVehicleSDK(*Physics);
-	PxVehicleSetBasisVectors(PxVec3(0.0f, 0.0f, 1.0f), PxVec3(1.0f, 0.0f, 0.0f));
-	PxVehicleSetUpdateMode(PxVehicleUpdateMode::eVELOCITY_CHANGE);
-	bVehicleSdkInitialized = true;
 
 	Dispatcher = PxDefaultCpuDispatcherCreate(4);
 	if (!Dispatcher)
@@ -383,6 +370,7 @@ bool FPhysXRuntime::Initialize()
 		Shutdown();
 		return false;
 	}
+	ConfigurePhysXPvdSceneClient(Scene);
 
 	DefaultMaterial = Physics->createMaterial(0.5f, 0.5f, 0.3f);
 	if (!DefaultMaterial)
@@ -441,27 +429,12 @@ void FPhysXRuntime::Shutdown()
 		Dispatcher = nullptr;
 	}
 
-	if (Physics)
+	if (Foundation || Physics)
 	{
-		if (bVehicleSdkInitialized)
-		{
-			PxCloseVehicleSDK();
-			bVehicleSdkInitialized = false;
-		}
-
-		if (bExtensionsInitialized)
-		{
-			PxCloseExtensions();
-			bExtensionsInitialized = false;
-		}
-		Physics->release();
-		Physics = nullptr;
-	}
-
-	if (Foundation)
-	{
-		Foundation->release();
 		Foundation = nullptr;
+		Physics = nullptr;
+		bVehicleSdkAvailable = false;
+		ReleaseSharedPhysXCore();
 	}
 
 	NextSerial = 1;
@@ -871,7 +844,7 @@ void FPhysXRuntime::DestroyJoint(FConstraintInstance* Joint)
 
 FVehicle4WInstance* FPhysXRuntime::CreateVehicle4W(const FVehicle4WDesc& Desc)
 {
-	if (!Initialize() || !Physics || !Scene || !DefaultMaterial || !bVehicleSdkInitialized)
+	if (!Initialize() || !Physics || !Scene || !DefaultMaterial || !bVehicleSdkAvailable)
 	{
 		return nullptr;
 	}
