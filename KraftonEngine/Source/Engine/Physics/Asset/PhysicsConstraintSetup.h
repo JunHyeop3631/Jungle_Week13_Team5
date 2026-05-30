@@ -40,18 +40,5 @@ public:
 
     bool bLockLinearMotion = true;
 
-    void Serialize(FArchive& Ar)
-    {
-        Ar << ParentBoneName;
-        Ar << ChildBoneName;
-        Ar << ParentAnchorPos;
-        Ar << ParentAnchorRot;
-        Ar << TwistMotion;
-        Ar << TwistLimitAngle;
-        Ar << Swing1Motion;
-        Ar << Swing1LimitAngle;
-        Ar << Swing2Motion;
-        Ar << Swing2LimitAngle;
-        Ar << bLockLinearMotion;
-    }
+    void Serialize(FArchive& Ar);
 };

@@ -5,7 +5,9 @@
 #include "Asset/AssetRegistry.h"
 #include "Physics/Asset/PhysicsAsset.h"
 #include "Math/Matrix.h"
+#include "Math/Transform.h"
 #include "Editor/UI/Asset/Physics/PhysicsShapeGizmoTarget.h"
+#include "Editor/UI/Asset/Physics/PhysicsConstraintGizmoTarget.h"
 
 struct FSkeletalMesh;
 struct ImDrawList;
@@ -33,11 +35,40 @@ struct FPhysicsEditTabState
     EShapeType SelectedShapeType      = EShapeType::None;
     int32      SelectedShapeElemIndex = -1;
 
-    FPhysicsShapeGizmoTarget ShapeGizmoTarget;
+    FPhysicsShapeGizmoTarget      ShapeGizmoTarget;
+    FPhysicsConstraintGizmoTarget ConstraintGizmoTarget;
+
+    // 우측 패널 탭 (0 = Details, 1 = Tools)
+    int32 RightPanelTab = 0;
+
+    // 스켈레톤 트리 검색 필터
+    char BoneSearchText[128] = {};
+
+    // 바디 자동 생성 툴 설정 (UI 전용)
+    // 실제 생성 로직은 아직 미구현. FMeshEditorWidget::GeneratePhysicsBodies() 에서 연결할 것.
+    struct FBodyCreationSettings
+    {
+        float      MinBoneSize            = 20.0f;     // 이 길이보다 작은 본은 건너뜀
+        EShapeType PrimitiveType          = EShapeType::Capsule; // 생성할 기본 셰이프
+        bool       bOrientAlongBone       = true;      // 본 축을 따라 셰이프 정렬
+        bool       bWalkPastSmallBones    = true;      // 작은 본은 지나치고 다음 본으로
+        bool       bCreateBodyForAllBones = false;     // 모든 본에 바디 생성
+        bool       bDisableCollisionByDefault = true;  // 생성 시 인접 바디 충돌 비활성화
+        int32      LodIndex               = 0;
+        bool       bCreateConstraints     = true;      // 부모-자식 컨스트레인트 자동 생성
+        int32      AngularConstraintMode  = 1;         // 0 Locked, 1 Limited, 2 Free
+    };
+    FBodyCreationSettings BodyCreation;
 
     // 패널 너비
     float BoneTreeWidth = 220.f;
     float DetailsWidth  = 300.f;
+
+    // 그래프 패널 (좌측 하단)
+    float GraphHeight = 200.f;
+    float GraphPanX   = 0.f;
+    float GraphPanY   = 0.f;
+    float GraphZoom   = 1.f;
 };
 
 struct FAnimationTabState
@@ -113,12 +144,37 @@ private:
 	void RenderMeshStatsOverlay(ImDrawList* DrawList, const ImVec2& ViewportPos) const;
 
 	// Physics tab helpers
-	void RenderPhysicsBoneTree(const FSkeletalMesh* Asset, int32 BoneIndex);
+	void RenderPhysicsBoneTree(const FSkeletalMesh* Asset, int32 BoneIndex, bool bFlat = false);
 	void RenderPhysicsDetailsPanel();
 	void RenderBodySetupDetails(UBodySetup* Setup);
 	void RenderConstraintDetails(UPhysicsConstraintSetup* Constraint);
+	// 편집 툴바 (컨스트레인트 타입 변환, 바디쌍 충돌 토글)
+	void RenderPhysicsToolbar();
+	// 그래프 패널 (노드 기반 바디↔컨스트레인트 뷰)
+	void RenderPhysicsGraphPanel();
+	// 바디 자동 생성 툴 (목표: 언리얼 PhAT 의 "바디 생성" 패널)
+	void RenderPhysicsToolsPanel();
+	// 스켈레톤 전체에 바디/컨스트레인트를 일괄 생성한다.
+	// TODO: 현재는 미구현 stub. 생성 로직 담당자가 채워넣을 것.
+	void GeneratePhysicsBodies();
+
+	// ── Physics 시뮬레이션 (래그돌 미리보기) ──────────────────
+	// 하단 트랜스포트 바 (재생/일시정지/정지/속도)
+	void RenderPhysicsTransportBar(float Width);
+	void StartPhysicsSimulation();
+	void StopPhysicsSimulation();
+	void TickPhysicsSimulation(float DeltaTime);
 	void UpdatePhysicsShapeGizmo();
 	void SavePhysicsAsset();
+
+	// Physics 통계 오버레이 (바디/프리미티브/컨스트레인트/충돌쌍 개수)
+	void DrawPhysicsStatsOverlay(ImDrawList* DL, ImVec2 VPMin) const;
+
+	// 뷰포트 클릭 레이 피킹 (바디 셰이프 우선, 없으면 컨스트레인트)
+	void PickPhysicsAtScreen(float LocalX, float LocalY, float VpW, float VpH);
+
+	// 선택된 컨스트레인트의 각 한계(트위스트 호 + 스윙 콘) 시각화
+	void DrawConstraintLimitsOverlay(ImDrawList* DL, const FMatrix& VP, ImVec2 VPMin, ImVec2 VPSize) const;
 
 	// Physics 콜리전 셰이프 오버레이
 	void DrawPhysicsShapeOverlays(ImDrawList* DL, ImVec2 VPMin, ImVec2 VPSize) const;
@@ -159,4 +215,11 @@ private:
 	FString WindowIdSuffix;
 
 	bool bPendingClose = false;
+
+	// ── Physics 시뮬레이션 UI 상태 (트랜스포트 바 전용) ───────
+	// 실제 시뮬레이션 런타임/바디/조인트 상태는 시뮬레이션 담당자가
+	// 구현하면서 필요한 만큼 여기에 추가한다.
+	bool                         bSimulating = false;
+	bool                         bSimPaused  = false;
+	float                        SimSpeed    = 1.0f;
 };
