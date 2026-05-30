@@ -99,6 +99,7 @@ namespace EShaderPath
 	inline constexpr const char* Outline = "Shaders/PostProcess/Outline.hlsl";
 	inline constexpr const char* SceneDepth = "Shaders/PostProcess/SceneDepth.hlsl";
 	inline constexpr const char* SceneNormal = "Shaders/PostProcess/SceneNormal.hlsl";
+	inline constexpr const char* DepthOfField = "Shaders/PostProcess/DepthOfField.hlsl";
 	inline constexpr const char* HeightFog = "Shaders/PostProcess/HeightFog.hlsl";
 	inline constexpr const char* LightCulling = "Shaders/PostProcess/LightCulling.hlsl";
 	inline constexpr const char* GammaCorrection = "Shaders/PostProcess/GammaCorrection.hlsl";

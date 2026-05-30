@@ -46,6 +46,8 @@ void FDrawCommandBuilder::Create(ID3D11Device* InDevice, ID3D11DeviceContext* In
 	CameraVignetteCB.Create(InDevice, sizeof(FCameraVignetteConstants), "CameraVignetteCB");
 	CameraLetterboxCB.Create(InDevice, sizeof(FCameraLetterboxConstants), "CameraLetterboxCB");
 	BoneHeatMapCB.Create(InDevice, sizeof(FBoneHeatMapConstants), "BoneHeatMapCB");
+
+	DepthOfFieldCB.Create(InDevice, sizeof(FDepthOfFieldConstants), "DepthOfFieldCB");
 }
 
 void FDrawCommandBuilder::Release()
@@ -75,6 +77,8 @@ void FDrawCommandBuilder::Release()
 	CameraVignetteCB.Release();
 	CameraLetterboxCB.Release();
 	BoneHeatMapCB.Release();
+
+	DepthOfFieldCB.Release();
 }
 
 // ============================================================
@@ -928,6 +932,27 @@ void FDrawCommandBuilder::BuildPostProcessCommands(const FFrameContext& Frame, c
 				PassRenderStateTable->ToDrawCommandState(ERenderPass::GammaCorrection, ViewMode));
 			Cmd.Bindings.PerShaderCB[0] = &GammaCorrectionCB;
 			Cmd.BuildSortKey(0);
+		}
+	}
+
+	if (Frame.RenderOptions.ShowFlags.bDepthOfField && Frame.CameraDepthOfField.bEnabled)
+	{
+		FShader* DOFShader = FShaderManager::Get().GetOrCreate(EShaderPath::DepthOfField);
+		if (DOFShader)
+		{
+			FDepthOfFieldConstants DOFData = {};
+			DOFData.FocusDistance = Frame.CameraDepthOfField.FocusDistance;
+			DOFData.FocalLength = Frame.CameraDepthOfField.FocalLength;
+			DOFData.MaxBlurSize = Frame.CameraDepthOfField.MaxBlurSize;
+			DOFData.Aperture = Frame.CameraDepthOfField.Aperture;
+			DOFData.NearZ = Frame.NearClip;
+			DOFData.FarZ = Frame.FarClip;
+			DepthOfFieldCB.Update(Ctx, &DOFData, sizeof(FDepthOfFieldConstants));
+			FDrawCommand& Cmd = DrawCommandList.AddCommand();
+			Cmd.InitFullscreenTriangle(DOFShader, ERenderPass::PostProcess,
+				PassRenderStateTable->ToDrawCommandState(ERenderPass::PostProcess, ViewMode));
+			Cmd.Bindings.PerShaderCB[0] = &DepthOfFieldCB;
+			Cmd.BuildSortKey(8);
 		}
 	}
 }

@@ -244,20 +244,22 @@ void FEditorRenderPipeline::BuildFrame(FLevelEditorViewportClient* VC, const FMi
 	}
 
 	UCameraComponent* ActiveCamera = CamManager ? CamManager->GetActiveCamera() : nullptr;
-	if (UCineCameraComponent* CineCamera = Cast<UCineCameraComponent>(ActiveCamera))
+	if (ActiveCamera)
 	{
-		const FCineLetterboxSettings& LetterboxSettings = CineCamera->GetLetterboxSettings();
-		Frame.CameraLetterbox.bEnabled = LetterboxSettings.bEnabled;
-		if (Frame.CameraLetterbox.bEnabled)
-		{
-			Frame.CameraLetterbox.Amount = LetterboxSettings.Amount;
-			Frame.CameraLetterbox.Thickness = LetterboxSettings.Thickness;
-			Frame.CameraLetterbox.Color = LetterboxSettings.Color;
-		}
+		Frame.CameraDepthOfField = ActiveCamera->GetDepthOfFieldSettings();
 	}
 	else
 	{
-		Frame.CameraLetterbox.bEnabled = false;
+		Frame.CameraDepthOfField = {};
+	}
+
+	if (UCineCameraComponent* CineCamera = Cast<UCineCameraComponent>(ActiveCamera))
+	{
+		Frame.CameraLetterbox = CineCamera->GetLetterboxSettings();
+	}
+	else
+	{
+		Frame.CameraLetterbox = {};
 	}
 
 	FMinimalViewInfo RenderPOV = POV;

@@ -26,11 +26,23 @@ bool FPostProcessPass::BeginPass(const FPassContext& Ctx)
 
 	DC->OMSetRenderTargets(0, nullptr, nullptr);
 	DC->CopyResource(Frame.DepthCopyTexture, Frame.DepthTexture);
+	DC->CopyResource(Frame.SceneColorCopyTexture, Frame.ViewportRenderTexture);
 	DC->OMSetRenderTargets(1, &Cache.RTV, Cache.DSV);
 
 	ID3D11ShaderResourceView* stencilSRV = Frame.StencilCopySRV;
 	DC->PSSetShaderResources(ESystemTexSlot::Stencil, 1, &stencilSRV);
 
+	ID3D11ShaderResourceView* sceneColorSRV = Frame.SceneColorCopySRV;
+	DC->PSSetShaderResources(ESystemTexSlot::SceneColor, 1, &sceneColorSRV);
+
 	Cache.bForceAll = true;
 	return true;
 }
+
+void FPostProcessPass::EndPass(const FPassContext& Ctx)
+{
+	ID3D11ShaderResourceView* NullSRV = nullptr;
+	Ctx.Device.GetDeviceContext()->PSSetShaderResources(ESystemTexSlot::SceneColor, 1, &NullSRV);
+}
+
+
