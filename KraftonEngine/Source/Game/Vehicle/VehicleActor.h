@@ -1,13 +1,8 @@
 ﻿#pragma once
 #include "GameFramework/AActor.h"
+#include "Physics/PhysicsTypes.h"
 
-#include "PxPhysicsAPI.h"
-#include "vehicle/PxVehicleSDK.h"
-#include "vehicle/PxVehicleDrive4W.h"
-#include "vehicle/PxVehicleUtil.h"
-#include "vehicle/PxVehicleUtilSetup.h"
-#include "vehicle/PxVehicleUtilControl.h"
-#include "vehicle/PxVehicleUpdate.h"
+class IPhysicsScene;
 class UStaticMeshComponent;
 
 #include "Source/Game/Vehicle/VehicleActor.generated.h"
@@ -20,6 +15,7 @@ public:
 	AVehicleActor() = default;
 	~AVehicleActor() override = default;
 	void BeginPlay() override;
+	void EndPlay() override;
 	void InitDefaultComponents();
 
 protected:
@@ -36,20 +32,24 @@ private:
 	UStaticMeshComponent* WheelMeshComponent_BL = nullptr;
 	UStaticMeshComponent* WheelMeshComponent_BR = nullptr;
 
-	//PhysX Vehicle
-	physx::PxRigidDynamic* VehicleRigidActor = nullptr;
-	physx::PxVehicleDrive4W* Vehicle = nullptr;
+	FVehicle4WInput BuildVehicleInput() const;
+	void ApplyVehicleTransforms(IPhysicsScene& PhysicsScene);
 
-	//Input
-	physx::PxVehicleDrive4WRawInputData VehicleInputData;
+	IPhysicsScene* PhysicsSceneOwner = nullptr;
+	FVehicle4WInstance* VehicleInstance = nullptr;
+
+	UPROPERTY(Edit, Save, Category="Vehicle Input", DisplayName="Keyboard Input")
+	bool bUseKeyboardInput = true;
+	UPROPERTY(Edit, Save, Category="Vehicle Input", DisplayName="Auto Accelerate")
+	bool bAutoAccelerate = false;
 
 	UPROPERTY(Save, Edit)
-	FVector WheelOffset_FL = FVector(5.0f, -5.0f, 0.0f);
+	FVector WheelOffset_FL = FVector(1.30f, -0.80f, -0.35f);
 	UPROPERTY(Save, Edit)
-	FVector WheelOffset_FR = FVector(5.0f, 5.0f, 0.0f);
+	FVector WheelOffset_FR = FVector(1.30f, 0.80f, -0.35f);
 	UPROPERTY(Save, Edit)
-	FVector WheelOffset_BL = FVector(-5.0f, 5.0f, 0.0f);
+	FVector WheelOffset_BL = FVector(-1.30f, -0.80f, -0.35f);
 	UPROPERTY(Save, Edit)
-	FVector WheelOffset_BR = FVector(-5.0f, -5.0f, 0.0f);
+	FVector WheelOffset_BR = FVector(-1.30f, 0.80f, -0.35f);
 };
 

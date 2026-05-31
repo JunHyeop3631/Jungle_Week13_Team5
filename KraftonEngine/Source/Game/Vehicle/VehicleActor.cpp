@@ -1,59 +1,72 @@
 #include "VehicleActor.h"
 #include "Component/Primitive/StaticMeshComponent.h"
 #include "GameFramework/World.h"
+#include "Input/InputSystem.h"
 #include "Physics/IPhysicsScene.h"
 
-#include "Physics/PhysXHelpers.h"
+namespace
+{
+	FTransform MakeRelativeTransform(const FTransform& WorldTransform, const FTransform& ParentWorldTransform)
+	{
+		return FTransform(WorldTransform.ToMatrix() * ParentWorldTransform.ToMatrix().GetInverse());
+	}
+}
 
 void AVehicleActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	(void)DeltaTime;
 
-	if (!Vehicle || !VehicleRigidActor)
-		return;
-
-	const physx::PxTransform Pose = VehicleRigidActor->getGlobalPose();
-
-	// 1. PhysX rigid body pose -> Actor/Body mesh transform
-	SetActorLocation(PhysXHelpers::ToFVector(Pose.p));
-	SetActorRotation(FRotator::FromQuaternion(PhysXHelpers::ToFQuat(Pose.q)));
-
-	// 2. PhysX wheel pose -> wheel mesh transform
-	const physx::PxVehicleWheelsDynData& WheelDynData = Vehicle->mWheelsDynData;
-
-	for (int32 i = 0; i < 4; ++i)
+	if (!PhysicsSceneOwner || !VehicleInstance)
 	{
-		float RotationAngle = WheelDynData.getWheelRotationAngle(i);
-		float SteerAngle = WheelDynData.getWheelRotationAngle(i);
-
-		// wheel mesh에 회전 적용
+		return;
 	}
+
+	PhysicsSceneOwner->SetVehicle4WInput(VehicleInstance, BuildVehicleInput());
+	ApplyVehicleTransforms(*PhysicsSceneOwner);
 }
 
 void AVehicleActor::BeginPlay()
 {
 	Super::BeginPlay();
 
-	IPhysicsScene* PhysicsScene = GetWorld()->GetPhysicsScene();
+	UWorld* World = GetWorld();
+	PhysicsSceneOwner = World ? World->GetPhysicsScene() : nullptr;
+	if (!PhysicsSceneOwner)
+	{
+		return;
+	}
 
-	//Create Body
-	FPhysicsBodyDesc PhysicsBodyDesc;
-	PhysicsBodyDesc.BodyType = EPhysicsBodyType::Dynamic;
-	PhysicsBodyDesc.Mass = 1500.0f;
-	FBodyInstance* VehicleBody = PhysicsScene->CreateRigidBody(PhysicsBodyDesc);
-	VehicleRigidActor = PhysXHelpers::GetPxDynamic(VehicleBody);
-
-	//Create Vehicle
 	FVehicle4WDesc VehicleDesc;
-	VehicleDesc.ChassisMass = PhysicsBodyDesc.Mass;
+	VehicleDesc.Name = GetName();
+	VehicleDesc.WorldTransform = FTransform(GetActorLocation(), GetActorRotation(), FVector(1.0f, 1.0f, 1.0f));
+	VehicleDesc.ChassisMass = 1500.0f;
 	VehicleDesc.WheelMass = 20.0f;
-	VehicleDesc.WheelCenterOffsets[0] = WheelOffset_FL;
-	VehicleDesc.WheelCenterOffsets[1] = WheelOffset_FR;
-	VehicleDesc.WheelCenterOffsets[2] = WheelOffset_BL;
-	VehicleDesc.WheelCenterOffsets[3] = WheelOffset_BR;
+	VehicleDesc.WheelCenterOffsets[static_cast<size_t>(EVehicle4WWheelIndex::FrontLeft)] = WheelOffset_FL;
+	VehicleDesc.WheelCenterOffsets[static_cast<size_t>(EVehicle4WWheelIndex::FrontRight)] = WheelOffset_FR;
+	VehicleDesc.WheelCenterOffsets[static_cast<size_t>(EVehicle4WWheelIndex::RearLeft)] = WheelOffset_BL;
+	VehicleDesc.WheelCenterOffsets[static_cast<size_t>(EVehicle4WWheelIndex::RearRight)] = WheelOffset_BR;
 
-	FVehicle4WInstance* VehicleInstance = PhysicsScene->CreateVehicle4W(VehicleDesc);
-	Vehicle = PhysXHelpers::GetPxVehicleDrive4W(VehicleInstance);
+	VehicleInstance = PhysicsSceneOwner->CreateVehicle4W(VehicleDesc);
+	if (!VehicleInstance)
+	{
+		PhysicsSceneOwner = nullptr;
+		return;
+	}
+
+	ApplyVehicleTransforms(*PhysicsSceneOwner);
+}
+
+void AVehicleActor::EndPlay()
+{
+	if (PhysicsSceneOwner && VehicleInstance)
+	{
+		PhysicsSceneOwner->DestroyVehicle4W(VehicleInstance);
+	}
+	VehicleInstance = nullptr;
+	PhysicsSceneOwner = nullptr;
+
+	Super::EndPlay();
 }
 
 void AVehicleActor::InitDefaultComponents()
@@ -66,18 +79,75 @@ void AVehicleActor::InitDefaultComponents()
 	WheelMeshComponent_BL = AddComponent<UStaticMeshComponent>();
 	WheelMeshComponent_BR = AddComponent<UStaticMeshComponent>();
 
-	WheelMeshComponent_BL->SetParent(BodyMeshComponent);
-	WheelMeshComponent_BL->SetRelativeLocation(WheelOffset_BL);
-
-	WheelMeshComponent_BR->SetParent(BodyMeshComponent);
-	WheelMeshComponent_BR->SetRelativeLocation(WheelOffset_BR);
-
 	WheelMeshComponent_FL->SetParent(BodyMeshComponent);
 	WheelMeshComponent_FL->SetRelativeLocation(WheelOffset_FL);
 
 	WheelMeshComponent_FR->SetParent(BodyMeshComponent);
 	WheelMeshComponent_FR->SetRelativeLocation(WheelOffset_FR);
 
+	WheelMeshComponent_BL->SetParent(BodyMeshComponent);
+	WheelMeshComponent_BL->SetRelativeLocation(WheelOffset_BL);
 
+	WheelMeshComponent_BR->SetParent(BodyMeshComponent);
+	WheelMeshComponent_BR->SetRelativeLocation(WheelOffset_BR);
+}
 
+FVehicle4WInput AVehicleActor::BuildVehicleInput() const
+{
+	FVehicle4WInput Input;
+	Input.bAccelerate = bAutoAccelerate;
+
+	if (bUseKeyboardInput)
+	{
+		const InputSystem& In = InputSystem::Get();
+		Input.bAccelerate = Input.bAccelerate || In.GetKey('W') || In.GetKey(VK_UP);
+		Input.bBrake = In.GetKey('S') || In.GetKey(VK_DOWN);
+		Input.bSteerLeft = In.GetKey('A') || In.GetKey(VK_LEFT);
+		Input.bSteerRight = In.GetKey('D') || In.GetKey(VK_RIGHT);
+		Input.bHandbrake = In.GetKey(VK_SPACE);
+	}
+
+	return Input;
+}
+
+void AVehicleActor::ApplyVehicleTransforms(IPhysicsScene& PhysicsScene)
+{
+	if (!VehicleInstance || !VehicleInstance->ChassisBody)
+	{
+		return;
+	}
+
+	FTransform ChassisWorld;
+	if (!PhysicsScene.GetBodyTransform(VehicleInstance->ChassisBody, ChassisWorld))
+	{
+		return;
+	}
+
+	SetActorLocation(ChassisWorld.Location);
+	SetActorRotation(ChassisWorld.Rotation.ToRotator());
+
+	TStaticArray<FTransform, 4> WheelWorldTransforms;
+	if (!PhysicsScene.GetVehicle4WWheelTransforms(VehicleInstance, WheelWorldTransforms))
+	{
+		return;
+	}
+
+	TStaticArray<UStaticMeshComponent*, 4> WheelComponents =
+	{
+		WheelMeshComponent_FL,
+		WheelMeshComponent_FR,
+		WheelMeshComponent_BL,
+		WheelMeshComponent_BR,
+	};
+
+	for (size_t WheelIndex = 0; WheelIndex < WheelComponents.size(); ++WheelIndex)
+	{
+		UStaticMeshComponent* WheelComponent = WheelComponents[WheelIndex];
+		if (!WheelComponent)
+		{
+			continue;
+		}
+
+		WheelComponent->SetRelativeTransform(MakeRelativeTransform(WheelWorldTransforms[WheelIndex], ChassisWorld));
+	}
 }

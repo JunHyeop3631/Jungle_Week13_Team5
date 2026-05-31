@@ -1904,8 +1904,8 @@
         "PendingActorScale" : [1.000000, 1.000000, 1.000000],
         "PendingActorVisible" : true,
         "PendingTagsString" : "",
-        "WheelOffset_BL" : [-5.000000, 5.000000, 0.000000],
-        "WheelOffset_BR" : [-5.000000, -5.000000, 0.000000],
+        "WheelOffset_BL" : [-5.000000, -5.000000, 0.000000],
+        "WheelOffset_BR" : [-5.000000, 5.000000, 0.000000],
         "WheelOffset_FL" : [5.000000, -5.000000, 0.000000],
         "WheelOffset_FR" : [5.000000, 5.000000, 0.000000],
         "bNeedsTick" : true

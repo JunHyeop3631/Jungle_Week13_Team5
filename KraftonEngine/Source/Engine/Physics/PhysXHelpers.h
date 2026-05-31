@@ -65,26 +65,6 @@ namespace PhysXHelpers
 		return Actor ? Actor->is<PxRigidDynamic>() : nullptr;
 	}
 
-	inline PxVehicleDrive4W* GetPxVehicleDrive4W(FVehicle4WInstance* Instance)
-	{
-		if (!Instance || !Instance->VehicleHandle.IsValid())
-		{
-			return nullptr;
-		}
-
-		return reinterpret_cast<PxVehicleDrive4W*>(Instance->VehicleHandle.NativePtr);
-	}
-
-	inline const PxVehicleDrive4W* GetPxVehicleDrive4W(const FVehicle4WInstance* Instance)
-	{
-		if (!Instance || !Instance->VehicleHandle.IsValid())
-		{
-			return nullptr;
-		}
-
-		return reinterpret_cast<const PxVehicleDrive4W*>(Instance->VehicleHandle.NativePtr);
-	}
-
 	inline bool BuildGeometry(const FPhysicsShapeDesc& Desc, PxGeometryHolder& OutGeometry)
 	{
 		switch (Desc.ShapeType)
