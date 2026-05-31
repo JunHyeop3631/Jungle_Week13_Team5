@@ -5,6 +5,7 @@
 #include "Object/Ptr/SubclassOf.h"
 #include "Physics/ConstraintInstance.h"
 #include "Physics/Cloth/ClothTypes.h"
+#include "Physics/PhysicsTypes.h"
 
 #include "Source/Engine/Component/Primitive/SkeletalMeshComponent.generated.h"
 
@@ -121,6 +122,8 @@ public:
     bool BuildSkeletalClothCollision(FClothCollisionDesc& OutCollision) const;
     bool GetSkeletalClothRenderData(FClothRenderData& OutRenderData) const;
     const TArray<FVector>& GetSkeletalClothParticlePositions() const { return CachedSkeletalClothParticlePositions; }
+    bool GetSkeletalClothStats(FClothStats& OutStats) const;
+    bool ExtractSkeletalClothDebugLines(TArray<FPhysicsDebugLine>& OutLines, const FClothDebugDrawOptions& Options) const;
 
 	void CreateRagdoll();
 

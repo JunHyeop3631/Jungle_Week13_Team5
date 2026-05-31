@@ -2,6 +2,7 @@
 #include "Render/Types/FrameContext.h"
 #include "Engine/Collision/Octree/Octree.h"
 #include "Profiling/Stats/ParticleStats.h"
+#include "Physics/Cloth/ClothTypes.h"
 
 class AActor;
 class UWorld;
@@ -15,6 +16,7 @@ struct FCollectOutput
 	TSet<FPrimitiveSceneProxy*>   VisibleProxySet;         // Decal receiver lookup
 
 	FParticleViewportStats ParticleStats;
+	FClothStats ClothStats;
 };
 
 class FRenderCollector

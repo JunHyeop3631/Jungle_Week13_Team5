@@ -182,6 +182,7 @@ void FEditorRenderPipeline::RenderViewport(FLevelEditorViewportClient* VC, FRend
 	FCollectOutput Output;
 	CollectCommands(VC, World, Renderer, Output);
 	VC->SetParticleStats(Output.ParticleStats);
+	VC->SetClothStats(Output.ClothStats);
 
 	FScene& Scene = World->GetScene();
 

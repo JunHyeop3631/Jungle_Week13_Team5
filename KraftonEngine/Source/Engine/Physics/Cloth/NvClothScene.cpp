@@ -144,6 +144,139 @@ FVector NormalizeOrFallback(const FVector& Value, const FVector& Fallback)
 	return Value.Normalized();
 }
 
+uint64 MakeClothEdgeKey(uint32 A, uint32 B)
+{
+	if (A > B)
+	{
+		std::swap(A, B);
+	}
+	return (static_cast<uint64>(A) << 32) | static_cast<uint64>(B);
+}
+
+bool AddUniqueClothEdge(TSet<uint64>& Edges, uint32 A, uint32 B)
+{
+	if (A == B)
+	{
+		return false;
+	}
+	return Edges.insert(MakeClothEdgeKey(A, B)).second;
+}
+
+uint32 CountFabricConstraintEdges(const TArray<uint32>& Indices)
+{
+	TSet<uint64> Edges;
+	Edges.reserve(Indices.size());
+
+	for (uint32 Index = 0; Index + 2 < Indices.size(); Index += 3)
+	{
+		const uint32 I0 = Indices[Index + 0];
+		const uint32 I1 = Indices[Index + 1];
+		const uint32 I2 = Indices[Index + 2];
+		AddUniqueClothEdge(Edges, I0, I1);
+		AddUniqueClothEdge(Edges, I1, I2);
+		AddUniqueClothEdge(Edges, I2, I0);
+	}
+
+	return static_cast<uint32>(Edges.size());
+}
+
+void AddClothDebugLine(TArray<FPhysicsDebugLine>& OutLines, const FVector& Start, const FVector& End, const FVector& Color)
+{
+	FPhysicsDebugLine Line;
+	Line.Start = Start;
+	Line.End = End;
+	Line.Color = Color;
+	OutLines.push_back(Line);
+}
+
+void AddClothDebugCross(TArray<FPhysicsDebugLine>& OutLines, const FVector& Center, float Radius, const FVector& Color)
+{
+	const float R = (std::max)(0.05f, Radius);
+	AddClothDebugLine(OutLines, Center - FVector(R, 0.0f, 0.0f), Center + FVector(R, 0.0f, 0.0f), Color);
+	AddClothDebugLine(OutLines, Center - FVector(0.0f, R, 0.0f), Center + FVector(0.0f, R, 0.0f), Color);
+	AddClothDebugLine(OutLines, Center - FVector(0.0f, 0.0f, R), Center + FVector(0.0f, 0.0f, R), Color);
+}
+
+void BuildPerpendicularAxes(const FVector& Axis, FVector& OutA, FVector& OutB)
+{
+	const FVector Normal = NormalizeOrFallback(Axis, FVector::UpVector);
+	const FVector Seed = std::abs(Normal.Z) < 0.9f ? FVector::UpVector : FVector::RightVector;
+
+	OutA = Normal.Cross(Seed);
+	if (OutA.LengthSquared() <= 1.0e-8f)
+	{
+		OutA = FVector::RightVector;
+	}
+	else
+	{
+		OutA.Normalize();
+	}
+
+	OutB = Normal.Cross(OutA);
+	if (OutB.LengthSquared() <= 1.0e-8f)
+	{
+		OutB = FVector::ForwardVector;
+	}
+	else
+	{
+		OutB.Normalize();
+	}
+}
+
+void AddClothDebugCircle(
+	TArray<FPhysicsDebugLine>& OutLines,
+	const FVector& Center,
+	const FVector& AxisA,
+	const FVector& AxisB,
+	float Radius,
+	const FVector& Color)
+{
+	if (Radius <= 0.0f)
+	{
+		return;
+	}
+
+	constexpr uint32 SegmentCount = 20;
+	constexpr float TwoPi = 6.28318530717958647692f;
+	for (uint32 Segment = 0; Segment < SegmentCount; ++Segment)
+	{
+		const float A0 = TwoPi * static_cast<float>(Segment) / static_cast<float>(SegmentCount);
+		const float A1 = TwoPi * static_cast<float>(Segment + 1) / static_cast<float>(SegmentCount);
+		const FVector P0 = Center + AxisA * (std::cos(A0) * Radius) + AxisB * (std::sin(A0) * Radius);
+		const FVector P1 = Center + AxisA * (std::cos(A1) * Radius) + AxisB * (std::sin(A1) * Radius);
+		AddClothDebugLine(OutLines, P0, P1, Color);
+	}
+}
+
+void AddClothDebugSphere(TArray<FPhysicsDebugLine>& OutLines, const FVector& Center, float Radius, const FVector& Color)
+{
+	AddClothDebugCircle(OutLines, Center, FVector::RightVector, FVector::ForwardVector, Radius, Color);
+	AddClothDebugCircle(OutLines, Center, FVector::RightVector, FVector::UpVector, Radius, Color);
+	AddClothDebugCircle(OutLines, Center, FVector::ForwardVector, FVector::UpVector, Radius, Color);
+}
+
+void AddClothDebugCapsule(
+	TArray<FPhysicsDebugLine>& OutLines,
+	const FClothCollisionSphere& SphereA,
+	const FClothCollisionSphere& SphereB,
+	const FVector& Color)
+{
+	const FVector Delta = SphereB.Center - SphereA.Center;
+	if (Delta.LengthSquared() <= 1.0e-8f)
+	{
+		return;
+	}
+
+	FVector AxisA;
+	FVector AxisB;
+	BuildPerpendicularAxes(Delta, AxisA, AxisB);
+
+	AddClothDebugLine(OutLines, SphereA.Center + AxisA * SphereA.Radius, SphereB.Center + AxisA * SphereB.Radius, Color);
+	AddClothDebugLine(OutLines, SphereA.Center - AxisA * SphereA.Radius, SphereB.Center - AxisA * SphereB.Radius, Color);
+	AddClothDebugLine(OutLines, SphereA.Center + AxisB * SphereA.Radius, SphereB.Center + AxisB * SphereB.Radius, Color);
+	AddClothDebugLine(OutLines, SphereA.Center - AxisB * SphereA.Radius, SphereB.Center - AxisB * SphereB.Radius, Color);
+}
+
 bool BuildGridDescriptions(const FClothGridDesc& Desc, FClothFabricDesc& OutFabricDesc, FClothInstanceDesc& OutInstanceDesc)
 {
 	if (Desc.NumColumns < 2 || Desc.NumRows < 2 || Desc.Spacing <= 0.0f)
@@ -229,6 +362,160 @@ struct FNvClothInstanceRecord
 	TArray<physx::PxVec4> SphereScratch;
 	TArray<uint32_t> CapsuleScratch;
 };
+
+namespace
+{
+uint32 CountPinnedParticles(const FNvClothInstanceRecord& Record)
+{
+	if (!Record.Cloth)
+	{
+		return 0;
+	}
+
+	uint32 Count = 0;
+	const nv::cloth::Cloth* Cloth = Record.Cloth;
+	nv::cloth::MappedRange<const physx::PxVec4> CurrentParticles = Cloth->getCurrentParticles();
+	for (uint32 Index = 0; Index < CurrentParticles.size(); ++Index)
+	{
+		if (CurrentParticles[Index].w <= 0.0f)
+		{
+			++Count;
+		}
+	}
+	return Count;
+}
+
+void AccumulateRecordStats(const FNvClothInstanceRecord& Record, FClothStats& OutStats)
+{
+	++OutStats.NumCloths;
+	OutStats.NumParticles += Record.Instance.NumParticles;
+	OutStats.NumPinnedParticles += CountPinnedParticles(Record);
+	OutStats.NumMotionConstraints += static_cast<uint32>(Record.Instance.Constraints.MotionConstraints.size());
+	OutStats.NumSeparationConstraints += static_cast<uint32>(Record.Instance.Constraints.SeparationConstraints.size());
+	OutStats.NumCollisionSpheres += static_cast<uint32>(Record.Instance.Collision.Spheres.size());
+	OutStats.NumCollisionCapsules += static_cast<uint32>(Record.Instance.Collision.Capsules.size());
+
+	if (Record.FabricRecord)
+	{
+		OutStats.NumConstraints += CountFabricConstraintEdges(Record.FabricRecord->Indices);
+	}
+}
+
+void AppendRecordParticleDebugLines(
+	const FNvClothInstanceRecord& Record,
+	TArray<FPhysicsDebugLine>& OutLines,
+	const FClothDebugDrawOptions& Options)
+{
+	if (!Record.Cloth)
+	{
+		return;
+	}
+
+	const nv::cloth::Cloth* Cloth = Record.Cloth;
+	nv::cloth::MappedRange<const physx::PxVec4> CurrentParticles = Cloth->getCurrentParticles();
+	const uint32 ParticleCount = static_cast<uint32>(CurrentParticles.size());
+	const uint32 MaxParticles = Options.MaxDebugParticles > 0
+		? (std::min)(ParticleCount, Options.MaxDebugParticles)
+		: ParticleCount;
+
+	const FVector FreeParticleColor(0.0f, 0.72f, 1.0f);
+	const FVector PinnedParticleColor(1.0f, 0.18f, 0.12f);
+	for (uint32 Index = 0; Index < MaxParticles; ++Index)
+	{
+		const physx::PxVec4& Particle = CurrentParticles[Index];
+		const FVector Color = Particle.w <= 0.0f ? PinnedParticleColor : FreeParticleColor;
+		AddClothDebugCross(OutLines, ToFVector(Particle), Options.ParticlePointSize, Color);
+	}
+}
+
+void AppendRecordConstraintDebugLines(
+	const FNvClothInstanceRecord& Record,
+	TArray<FPhysicsDebugLine>& OutLines,
+	const FClothDebugDrawOptions& Options)
+{
+	if (!Record.Cloth || !Record.FabricRecord)
+	{
+		return;
+	}
+
+	const nv::cloth::Cloth* Cloth = Record.Cloth;
+	nv::cloth::MappedRange<const physx::PxVec4> CurrentParticles = Cloth->getCurrentParticles();
+	const uint32 ParticleCount = static_cast<uint32>(CurrentParticles.size());
+	const TArray<uint32>& Indices = Record.FabricRecord->Indices;
+
+	TSet<uint64> Edges;
+	Edges.reserve(Indices.size());
+
+	const FVector ConstraintColor(0.15f, 1.0f, 0.32f);
+	uint32 EmittedLines = 0;
+	for (uint32 Index = 0; Index + 2 < Indices.size(); Index += 3)
+	{
+		const uint32 Tri[3] = { Indices[Index + 0], Indices[Index + 1], Indices[Index + 2] };
+		for (uint32 EdgeIndex = 0; EdgeIndex < 3; ++EdgeIndex)
+		{
+			const uint32 A = Tri[EdgeIndex];
+			const uint32 B = Tri[(EdgeIndex + 1) % 3];
+			if (A >= ParticleCount || B >= ParticleCount || !AddUniqueClothEdge(Edges, A, B))
+			{
+				continue;
+			}
+
+			if (Options.MaxDebugConstraintLines > 0 && EmittedLines >= Options.MaxDebugConstraintLines)
+			{
+				return;
+			}
+
+			AddClothDebugLine(OutLines, ToFVector(CurrentParticles[A]), ToFVector(CurrentParticles[B]), ConstraintColor);
+			++EmittedLines;
+		}
+	}
+}
+
+void AppendRecordCollisionDebugLines(const FNvClothInstanceRecord& Record, TArray<FPhysicsDebugLine>& OutLines)
+{
+	const FVector SphereColor(1.0f, 0.9f, 0.0f);
+	const FVector CapsuleColor(1.0f, 0.45f, 0.08f);
+
+	for (const FClothCollisionSphere& Sphere : Record.Instance.Collision.Spheres)
+	{
+		AddClothDebugSphere(OutLines, Sphere.Center, Sphere.Radius, SphereColor);
+	}
+
+	for (const FClothCollisionCapsule& Capsule : Record.Instance.Collision.Capsules)
+	{
+		if (Capsule.SphereA >= Record.Instance.Collision.Spheres.size() ||
+			Capsule.SphereB >= Record.Instance.Collision.Spheres.size())
+		{
+			continue;
+		}
+
+		const FClothCollisionSphere& SphereA = Record.Instance.Collision.Spheres[Capsule.SphereA];
+		const FClothCollisionSphere& SphereB = Record.Instance.Collision.Spheres[Capsule.SphereB];
+		AddClothDebugCapsule(OutLines, SphereA, SphereB, CapsuleColor);
+	}
+}
+
+void AppendRecordDebugLines(
+	const FNvClothInstanceRecord& Record,
+	TArray<FPhysicsDebugLine>& OutLines,
+	const FClothDebugDrawOptions& Options)
+{
+	if (Options.bParticles)
+	{
+		AppendRecordParticleDebugLines(Record, OutLines, Options);
+	}
+
+	if (Options.bConstraints)
+	{
+		AppendRecordConstraintDebugLines(Record, OutLines, Options);
+	}
+
+	if (Options.bCollision)
+	{
+		AppendRecordCollisionDebugLines(Record, OutLines);
+	}
+}
+}
 
 FNvClothScene::FNvClothScene() = default;
 
@@ -698,9 +985,11 @@ void FNvClothScene::SimulateCloth(float DeltaTime)
 	DeltaTime = std::min(DeltaTime, 1.0f / 30.0f);
 	const auto StartTime = std::chrono::high_resolution_clock::now();
 
+	Stats.NumSolverChunks = 0;
 	if (Solver->beginSimulation(DeltaTime))
 	{
 		const int ChunkCount = Solver->getSimulationChunkCount();
+		Stats.NumSolverChunks = static_cast<uint32>((std::max)(ChunkCount, 0));
 		for (int ChunkIndex = 0; ChunkIndex < ChunkCount; ++ChunkIndex)
 		{
 			Solver->simulateChunk(ChunkIndex);
@@ -806,20 +1095,78 @@ void FNvClothScene::GetClothStats(FClothStats& OutStats) const
 {
 	OutStats = Stats;
 	OutStats.NumFabrics = static_cast<uint32>(Fabrics.size());
-	OutStats.NumCloths = static_cast<uint32>(Instances.size());
+	OutStats.NumCloths = 0;
 	OutStats.NumParticles = 0;
+	OutStats.NumPinnedParticles = 0;
+	OutStats.NumConstraints = 0;
+	OutStats.NumMotionConstraints = 0;
+	OutStats.NumSeparationConstraints = 0;
+	OutStats.NumCollisionSpheres = 0;
+	OutStats.NumCollisionCapsules = 0;
 
 	for (const std::unique_ptr<FNvClothInstanceRecord>& Record : Instances)
 	{
 		if (Record)
 		{
-			OutStats.NumParticles += Record->Instance.NumParticles;
+			AccumulateRecordStats(*Record, OutStats);
 		}
 	}
 
 	if (Solver)
 	{
 		OutStats.bSolverError = Solver->hasError();
+	}
+}
+
+void FNvClothScene::GetClothStats(const FClothInstance* Instance, FClothStats& OutStats) const
+{
+	OutStats = Stats;
+	OutStats.NumFabrics = 0;
+	OutStats.NumCloths = 0;
+	OutStats.NumParticles = 0;
+	OutStats.NumPinnedParticles = 0;
+	OutStats.NumConstraints = 0;
+	OutStats.NumMotionConstraints = 0;
+	OutStats.NumSeparationConstraints = 0;
+	OutStats.NumCollisionSpheres = 0;
+	OutStats.NumCollisionCapsules = 0;
+
+	const FNvClothInstanceRecord* Record = FindInstanceRecord(Instance);
+	if (Record)
+	{
+		OutStats.NumFabrics = Record->FabricRecord ? 1u : 0u;
+		AccumulateRecordStats(*Record, OutStats);
+	}
+
+	if (Solver)
+	{
+		OutStats.bSolverError = Solver->hasError();
+	}
+}
+
+void FNvClothScene::ExtractClothDebugLines(
+	const FClothInstance* Instance,
+	TArray<FPhysicsDebugLine>& OutLines,
+	const FClothDebugDrawOptions& Options) const
+{
+	OutLines.clear();
+
+	if (Instance)
+	{
+		const FNvClothInstanceRecord* Record = FindInstanceRecord(Instance);
+		if (Record)
+		{
+			AppendRecordDebugLines(*Record, OutLines, Options);
+		}
+		return;
+	}
+
+	for (const std::unique_ptr<FNvClothInstanceRecord>& Record : Instances)
+	{
+		if (Record)
+		{
+			AppendRecordDebugLines(*Record, OutLines, Options);
+		}
 	}
 }
 

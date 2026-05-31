@@ -6,6 +6,7 @@
 #include "Engine/Profiling/Stats/ShadowStats.h"
 #include "Engine/Profiling/Stats/Stats.h"
 #include "Engine/Profiling/GPUProfiler.h"
+#include "Physics/Cloth/ClothTypes.h"
 #include "Viewport/Level/LevelEditorViewportClient.h"
 #include "Slate/SWindow.h"
 #include "ImGui/imgui.h"
@@ -332,6 +333,42 @@ void FOverlayStatSystem::BuildParticleLines(const UEditorEngine& Editor,TArray<F
 	OutLines.push_back(Buffer);
 }
 
+void FOverlayStatSystem::BuildClothLines(const UEditorEngine& Editor, TArray<FString>& OutLines) const
+{
+	const FLevelEditorViewportClient* ActiveVC = Editor.GetActiveViewport();
+	if (!ActiveVC)
+	{
+		OutLines.push_back(FString("No active viewport"));
+		return;
+	}
+
+	const FClothStats& S = ActiveVC->GetClothStats();
+
+	char Buffer[160] = {};
+	snprintf(Buffer, sizeof(Buffer), "Cloths : %u  Fabrics : %u", S.NumCloths, S.NumFabrics);
+	OutLines.push_back(Buffer);
+
+	snprintf(Buffer, sizeof(Buffer), "Particles : %u  pinned %u", S.NumParticles, S.NumPinnedParticles);
+	OutLines.push_back(Buffer);
+
+	snprintf(Buffer, sizeof(Buffer), "Constraints : mesh %u  motion %u  separation %u",
+		S.NumConstraints,
+		S.NumMotionConstraints,
+		S.NumSeparationConstraints);
+	OutLines.push_back(Buffer);
+
+	snprintf(Buffer, sizeof(Buffer), "Collision : spheres %u  capsules %u",
+		S.NumCollisionSpheres,
+		S.NumCollisionCapsules);
+	OutLines.push_back(Buffer);
+
+	snprintf(Buffer, sizeof(Buffer), "Solver : %.3f ms  chunks %u  error %s",
+		S.LastSimulationMs,
+		S.NumSolverChunks,
+		S.bSolverError ? "yes" : "no");
+	OutLines.push_back(Buffer);
+}
+
 void FOverlayStatSystem::BuildLines(const UEditorEngine& Editor, TArray<FOverlayStatLine>& OutLines) const
 {
 	OutLines.clear();
@@ -356,6 +393,14 @@ void FOverlayStatSystem::BuildLines(const UEditorEngine& Editor, TArray<FOverlay
 	if (bShowSkinning)
 	{
 		EstimatedLineCount += 4;
+	}
+	if (bShowParticles)
+	{
+		EstimatedLineCount += 6;
+	}
+	if (bShowCloth)
+	{
+		EstimatedLineCount += 5;
 	}
 	OutLines.reserve(EstimatedLineCount);
 
@@ -399,6 +444,20 @@ void FOverlayStatSystem::BuildLines(const UEditorEngine& Editor, TArray<FOverlay
 	{
 		Lines.clear();
 		BuildSkinningLines(Lines);
+		AppendGroup(Lines);
+	}
+
+	if (bShowParticles)
+	{
+		Lines.clear();
+		BuildParticleLines(Editor, Lines);
+		AppendGroup(Lines);
+	}
+
+	if (bShowCloth)
+	{
+		Lines.clear();
+		BuildClothLines(Editor, Lines);
 		AppendGroup(Lines);
 	}
 }
@@ -513,5 +572,12 @@ void FOverlayStatSystem::RenderImGui(const UEditorEngine& Editor, const FRect& V
 		Lines.clear();
 		BuildParticleLines(Editor, Lines);
 		RenderWindow("##StatParticlesOverlay", "Stat Particles", ImVec4(0.08f, 0.08f, 0.03f, 0.62f), Lines);
+	}
+
+	if (bShowCloth)
+	{
+		Lines.clear();
+		BuildClothLines(Editor, Lines);
+		RenderWindow("##StatClothOverlay", "Stat Cloth", ImVec4(0.04f, 0.09f, 0.10f, 0.62f), Lines);
 	}
 }

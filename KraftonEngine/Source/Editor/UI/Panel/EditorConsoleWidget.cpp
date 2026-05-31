@@ -224,6 +224,8 @@ void FEditorConsoleWidget::RegisterEditorCommands()
 		"Editor", "hide editor only", "Hides editor-only components in the property component tree.");
 	RegisterCommand("show collision shape", [this](const TArray<FString>& Args) { HandleShowCollisionShape(Args); },
 		"Editor", "show collision shape", "Toggles collision shape wireframe visibility in PIE/Game viewports.");
+	RegisterCommand("show cloth debug", [this](const TArray<FString>& Args) { HandleShowClothDebug(Args); },
+		"Editor", "show cloth debug", "Toggles cloth debug wireframe visibility in editor viewports.");
 	RegisterCommand("cb refresh", [this](const TArray<FString>& Args) { HandleContentBrowserRefresh(Args); },
 		"Editor", "cb refresh", "Refreshes the content browser.");
 	RegisterCommand("cb icon size", [this](const TArray<FString>& Args) { HandleContentBrowserIconSize(Args); },
@@ -256,6 +258,8 @@ void FEditorConsoleWidget::RegisterDiagnosticsCommands()
 		"Diagnostics", "stat skinning", "Shows the skinning CPU overlay stat.");
 	RegisterCommand("stat particles", [this](const TArray<FString>& Args) { HandleStatParticles(Args); },
 		"Diagnostics", "stat particles", "Shows the particle overlay stat.");
+	RegisterCommand("stat cloth", [this](const TArray<FString>& Args) { HandleStatCloth(Args); },
+		"Diagnostics", "stat cloth", "Shows the cloth overlay stat.");
 	RegisterCommand("stat none", [this](const TArray<FString>& Args) { HandleStatNone(Args); },
 		"Diagnostics", "stat none", "Hides all overlay stats.");
 	RegisterCommand("cause crash", [this](const TArray<FString>& Args) { HandleCauseCrash(Args); },
@@ -735,6 +739,29 @@ void FEditorConsoleWidget::HandleShowCollisionShape(const TArray<FString>& Args)
 	AddLog("Collision shape wireframe: %s\n", bEnabled ? "ON" : "OFF");
 }
 
+void FEditorConsoleWidget::HandleShowClothDebug(const TArray<FString>& Args)
+{
+	(void)Args;
+	if (!EditorEngine)
+	{
+		AddLog("[ERROR] EditorEngine is null.\n");
+		return;
+	}
+
+	for (FLevelEditorViewportClient* VC : EditorEngine->GetLevelViewportClients())
+	{
+		if (!VC) continue;
+		bool& Flag = VC->GetRenderOptions().ShowFlags.bClothDebug;
+		Flag = !Flag;
+	}
+
+	const auto& Clients = EditorEngine->GetLevelViewportClients();
+	bool bEnabled = !Clients.empty() && Clients[0]
+		? Clients[0]->GetRenderOptions().ShowFlags.bClothDebug
+		: false;
+	AddLog("Cloth debug wireframe: %s\n", bEnabled ? "ON" : "OFF");
+}
+
 void FEditorConsoleWidget::HandleContentBrowserRefresh(const TArray<FString>& Args)
 {
 	(void)Args;
@@ -974,6 +1001,18 @@ void FEditorConsoleWidget::HandleStatParticles(const TArray<FString>& Args)
 	}
 	const bool bEnabled = EditorEngine->GetOverlayStatSystem().ToggleParticles();
 	AddLog("Overlay stat %s: particles\n", bEnabled ? "enabled" : "disabled");
+}
+
+void FEditorConsoleWidget::HandleStatCloth(const TArray<FString>& Args)
+{
+	(void)Args;
+	if (!EditorEngine)
+	{
+		AddLog("[ERROR] EditorEngine is null.\n");
+		return;
+	}
+	const bool bEnabled = EditorEngine->GetOverlayStatSystem().ToggleCloth();
+	AddLog("Overlay stat %s: cloth\n", bEnabled ? "enabled" : "disabled");
 }
 
 void FEditorConsoleWidget::HandleStatNone(const TArray<FString>& Args)

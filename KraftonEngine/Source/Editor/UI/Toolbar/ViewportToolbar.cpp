@@ -611,6 +611,10 @@ void FViewportToolbar::RenderShowFlags(const FToolbarRenderState& State)
 		ImGui::Checkbox("Collision", &RenderOptions.ShowFlags.bCollision);
 		ImGui::Checkbox("Show Collision Shape", &RenderOptions.ShowFlags.bShowCollisionShape);
 		ImGui::Checkbox("Particle", &RenderOptions.ShowFlags.bParticle);
+		ImGui::Checkbox("Cloth Debug", &RenderOptions.ShowFlags.bClothDebug);
+		ImGui::Checkbox("Cloth Particles", &RenderOptions.ShowFlags.bClothParticles);
+		ImGui::Checkbox("Cloth Constraints", &RenderOptions.ShowFlags.bClothConstraints);
+		ImGui::Checkbox("Cloth Collision", &RenderOptions.ShowFlags.bClothCollision);
 
 		ImGui::EndPopup();
 	}

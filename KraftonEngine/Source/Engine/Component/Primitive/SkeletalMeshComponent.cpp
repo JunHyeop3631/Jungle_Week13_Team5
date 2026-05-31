@@ -672,6 +672,48 @@ bool USkeletalMeshComponent::GetSkeletalClothRenderData(FClothRenderData& OutRen
     return true;
 }
 
+bool USkeletalMeshComponent::GetSkeletalClothStats(FClothStats& OutStats) const
+{
+    OutStats = FClothStats();
+    if (!bSkeletalClothBound || !SkeletalClothSceneOwner || !SkeletalClothInstance || !SkeletalClothInstance->bValid)
+    {
+        return false;
+    }
+
+    SkeletalClothSceneOwner->GetClothStats(SkeletalClothInstance, OutStats);
+    return OutStats.NumCloths > 0;
+}
+
+bool USkeletalMeshComponent::ExtractSkeletalClothDebugLines(
+    TArray<FPhysicsDebugLine>& OutLines,
+    const FClothDebugDrawOptions& Options) const
+{
+    if (!bSkeletalClothBound || !SkeletalClothSceneOwner || !SkeletalClothInstance || !SkeletalClothInstance->bValid)
+    {
+        return false;
+    }
+
+    TArray<FPhysicsDebugLine> LocalLines;
+    SkeletalClothSceneOwner->ExtractClothDebugLines(SkeletalClothInstance, LocalLines, Options);
+    if (LocalLines.empty())
+    {
+        return false;
+    }
+
+    const FMatrix ClothWorld = GetSkeletalClothWorldMatrix();
+    OutLines.reserve(OutLines.size() + LocalLines.size());
+    for (const FPhysicsDebugLine& LocalLine : LocalLines)
+    {
+        FPhysicsDebugLine WorldLine;
+        WorldLine.Start = TransformPoint(ClothWorld, LocalLine.Start);
+        WorldLine.End = TransformPoint(ClothWorld, LocalLine.End);
+        WorldLine.Color = LocalLine.Color;
+        OutLines.push_back(WorldLine);
+    }
+
+    return true;
+}
+
 bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene)
 {
     USkeletalMesh* Mesh = GetSkeletalMesh();

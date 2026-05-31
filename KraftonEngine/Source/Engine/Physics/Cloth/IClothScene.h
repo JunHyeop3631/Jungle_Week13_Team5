@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Physics/Cloth/ClothTypes.h"
+#include "Physics/PhysicsTypes.h"
 
 class IClothScene
 {
@@ -29,4 +30,9 @@ public:
 	virtual bool GetClothParticlePositions(const FClothInstance* Instance, TArray<FVector>& OutPositions) const = 0;
 	virtual bool GetClothRenderData(const FClothInstance* Instance, FClothRenderData& OutRenderData) const = 0;
 	virtual void GetClothStats(FClothStats& OutStats) const = 0;
+	virtual void GetClothStats(const FClothInstance* Instance, FClothStats& OutStats) const = 0;
+	virtual void ExtractClothDebugLines(
+		const FClothInstance* Instance,
+		TArray<FPhysicsDebugLine>& OutLines,
+		const FClothDebugDrawOptions& Options) const = 0;
 };

@@ -1,8 +1,10 @@
 ﻿#include "RenderCollector.h"
 
 #include "Component/ActorComponent.h"
+#include "Component/Primitive/SkeletalMeshComponent.h"
 #include "GameFramework/AActor.h"
 #include "GameFramework/World.h"
+#include "Physics/PhysicsTypes.h"
 #include "Profiling/Stats/Stats.h"
 #include "Collision/Math/ConvexVolume.h"
 #include "Render/Culling/GPUOcclusionCulling.h"
@@ -10,10 +12,35 @@
 #include "Render/Types/LODContext.h"
 #include "Render/Proxy/PrimitiveSceneProxy.h"
 #include "Render/Proxy/ParticleSystemSceneProxy.h"
+#include "Render/Proxy/SkeletalMeshSceneProxy.h"
 #include "Render/Scene/FScene.h"
 
 #include <Collision/Octree/Octree.h>
 #include <Collision/Octree/SpatialPartition.h>
+
+#include <algorithm>
+
+namespace
+{
+	uint32 ToDebugColorChannel(float Value)
+	{
+		const float Clamped = (std::max)(0.0f, (std::min)(Value, 1.0f));
+		return static_cast<uint32>(Clamped * 255.0f + 0.5f);
+	}
+
+	FColor ToDebugColor(const FVector& Color)
+	{
+		return FColor(ToDebugColorChannel(Color.X), ToDebugColorChannel(Color.Y), ToDebugColorChannel(Color.Z));
+	}
+
+	void AddClothDebugLinesToScene(FScene& Scene, const TArray<FPhysicsDebugLine>& Lines)
+	{
+		for (const FPhysicsDebugLine& Line : Lines)
+		{
+			Scene.AddDebugLine(Line.Start, Line.End, ToDebugColor(Line.Color));
+		}
+	}
+}
 
 // ============================================================
 // UpdateProxyLOD — LOD 갱신 공통 헬퍼 (Collector + Builder 공유)
@@ -38,6 +65,7 @@ void FRenderCollector::Collect(UWorld* World, const FFrameContext& Frame, FColle
 	FScene& Scene = World->GetScene();
 	Scene.UpdateDirtyProxies();
 
+	Output.ClothStats = FClothStats();
 	Output.FrustumVisibleProxies.clear();
 	{
 		SCOPE_STAT_CAT("FrustumCulling", "3_Collect");
@@ -187,6 +215,35 @@ void FRenderCollector::FilterVisibleProxies(const FFrameContext& Frame, FScene& 
 		{
 			const FParticleSystemSceneProxy* ParticleProxy = static_cast<const FParticleSystemSceneProxy*>(Proxy);
 			Output.ParticleStats.Accumulate(ParticleProxy->GetStats());
+		}
+
+		if (Proxy->HasProxyFlag(EPrimitiveProxyFlags::SkeletalMesh))
+		{
+			const FSkeletalMeshSceneProxy* SkeletalProxy = static_cast<const FSkeletalMeshSceneProxy*>(Proxy);
+			USkeletalMeshComponent* SkeletalComponent = SkeletalProxy ? SkeletalProxy->GetSkeletalMeshComponent() : nullptr;
+			if (SkeletalComponent)
+			{
+				FClothStats ClothStats;
+				if (SkeletalComponent->GetSkeletalClothStats(ClothStats))
+				{
+					Output.ClothStats.Accumulate(ClothStats);
+				}
+
+				const FShowFlags& ShowFlags = Frame.RenderOptions.ShowFlags;
+				if (ShowFlags.bDebugDraw && ShowFlags.bClothDebug)
+				{
+					FClothDebugDrawOptions DebugOptions;
+					DebugOptions.bParticles = ShowFlags.bClothParticles;
+					DebugOptions.bConstraints = ShowFlags.bClothConstraints;
+					DebugOptions.bCollision = ShowFlags.bClothCollision;
+
+					TArray<FPhysicsDebugLine> ClothDebugLines;
+					if (SkeletalComponent->ExtractSkeletalClothDebugLines(ClothDebugLines, DebugOptions))
+					{
+						AddClothDebugLinesToScene(Scene, ClothDebugLines);
+					}
+				}
+			}
 		}
 
 		Output.RenderableProxies.push_back(Proxy);

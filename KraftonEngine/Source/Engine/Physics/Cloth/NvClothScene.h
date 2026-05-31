@@ -46,6 +46,11 @@ public:
 	bool GetClothParticlePositions(const FClothInstance* Instance, TArray<FVector>& OutPositions) const override;
 	bool GetClothRenderData(const FClothInstance* Instance, FClothRenderData& OutRenderData) const override;
 	void GetClothStats(FClothStats& OutStats) const override;
+	void GetClothStats(const FClothInstance* Instance, FClothStats& OutStats) const override;
+	void ExtractClothDebugLines(
+		const FClothInstance* Instance,
+		TArray<FPhysicsDebugLine>& OutLines,
+		const FClothDebugDrawOptions& Options) const override;
 
 private:
 	FNvClothFabricRecord* FindFabricRecord(FClothFabricHandle Handle);

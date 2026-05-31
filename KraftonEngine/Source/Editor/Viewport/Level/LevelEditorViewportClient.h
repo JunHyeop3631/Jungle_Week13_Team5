@@ -3,6 +3,7 @@
 #include "Editor/Viewport/EditorViewportClient.h"
 
 #include "Profiling/Stats/ParticleStats.h"
+#include "Physics/Cloth/ClothTypes.h"
 
 // UE의 FLevelEditorViewportClient 대응
 // 레벨 편집 전용 뷰포트 (카메라 조작, 기즈모, 액터 피킹 등)
@@ -16,7 +17,10 @@ public:
 public:
 	void SetParticleStats(const FParticleViewportStats& InStats) { ParticleStats = InStats; }
 	const FParticleViewportStats& GetParticleStats() const { return ParticleStats; }
+	void SetClothStats(const FClothStats& InStats) { ClothStats = InStats; }
+	const FClothStats& GetClothStats() const { return ClothStats; }
 
 private:
 	FParticleViewportStats ParticleStats;
+	FClothStats ClothStats;
 };

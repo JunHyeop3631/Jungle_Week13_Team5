@@ -99,6 +99,7 @@ private:
 	void HandleShowEditorOnly(const TArray<FString>& Args);
 	void HandleHideEditorOnly(const TArray<FString>& Args);
 	void HandleShowCollisionShape(const TArray<FString>& Args);
+	void HandleShowClothDebug(const TArray<FString>& Args);
 	void HandleContentBrowserRefresh(const TArray<FString>& Args);
 	void HandleContentBrowserIconSize(const TArray<FString>& Args);
 	void HandleObjList(const TArray<FString>& Args);
@@ -113,6 +114,7 @@ private:
 	void HandleStatShadow(const TArray<FString>& Args);
 	void HandleStatSkinning(const TArray<FString>& Args);
 	void HandleStatParticles(const TArray<FString>& Args);
+	void HandleStatCloth(const TArray<FString>& Args);
 	void HandleStatNone(const TArray<FString>& Args);
 	void HandleCauseCrash(const TArray<FString>& Args);
 	void HandleCSMResolution(const TArray<FString>& Args);

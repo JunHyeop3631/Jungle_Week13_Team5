@@ -41,6 +41,10 @@ namespace Key
 	constexpr const char* bCollision = "bCollision";
 	constexpr const char* bShowCollisionShape = "bShowCollisionShape";
 	constexpr const char* bParticle = "bParticle";
+	constexpr const char* bClothDebug = "bClothDebug";
+	constexpr const char* bClothParticles = "bClothParticles";
+	constexpr const char* bClothConstraints = "bClothConstraints";
+	constexpr const char* bClothCollision = "bClothCollision";
 	constexpr const char* GridSpacing = "GridSpacing";
 	constexpr const char* GridHalfLineCount = "GridHalfLineCount";
 	constexpr const char* CameraMoveSensitivity = "CameraMoveSensitivity";
@@ -173,6 +177,10 @@ json::JSON SaveRenderOptions(const FViewportRenderOptions& Opts)
 	Obj[Key::bCollision] = Opts.ShowFlags.bCollision;
 	Obj[Key::bShowCollisionShape] = Opts.ShowFlags.bShowCollisionShape;
 	Obj[Key::bParticle] = Opts.ShowFlags.bParticle;
+	Obj[Key::bClothDebug] = Opts.ShowFlags.bClothDebug;
+	Obj[Key::bClothParticles] = Opts.ShowFlags.bClothParticles;
+	Obj[Key::bClothConstraints] = Opts.ShowFlags.bClothConstraints;
+	Obj[Key::bClothCollision] = Opts.ShowFlags.bClothCollision;
 	Obj[Key::GridSpacing] = Opts.GridSpacing;
 	Obj[Key::GridHalfLineCount] = Opts.GridHalfLineCount;
 	Obj[Key::CameraMoveSensitivity] = Opts.CameraMoveSensitivity;
@@ -235,6 +243,14 @@ void LoadRenderOptions(json::JSON Obj, FViewportRenderOptions& Opts)
 		Opts.ShowFlags.bShowCollisionShape = Obj[Key::bShowCollisionShape].ToBool();
 	if (Obj.hasKey(Key::bParticle))
 		Opts.ShowFlags.bParticle = Obj[Key::bParticle].ToBool();
+	if (Obj.hasKey(Key::bClothDebug))
+		Opts.ShowFlags.bClothDebug = Obj[Key::bClothDebug].ToBool();
+	if (Obj.hasKey(Key::bClothParticles))
+		Opts.ShowFlags.bClothParticles = Obj[Key::bClothParticles].ToBool();
+	if (Obj.hasKey(Key::bClothConstraints))
+		Opts.ShowFlags.bClothConstraints = Obj[Key::bClothConstraints].ToBool();
+	if (Obj.hasKey(Key::bClothCollision))
+		Opts.ShowFlags.bClothCollision = Obj[Key::bClothCollision].ToBool();
 	if (Obj.hasKey(Key::GridSpacing))
 		Opts.GridSpacing = static_cast<float>(Obj[Key::GridSpacing].ToFloat());
 	if (Obj.hasKey(Key::GridHalfLineCount))

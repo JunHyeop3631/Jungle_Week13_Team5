@@ -51,6 +51,17 @@ struct FClothRenderData
 	}
 };
 
+struct FClothDebugDrawOptions
+{
+	bool bParticles = true;
+	bool bConstraints = true;
+	bool bCollision = true;
+
+	float ParticlePointSize = 2.0f;
+	uint32 MaxDebugParticles = 4096;
+	uint32 MaxDebugConstraintLines = 16384;
+};
+
 struct FClothFabricDesc
 {
 	FString Name;
@@ -185,6 +196,29 @@ struct FClothStats
 	uint32 NumFabrics = 0;
 	uint32 NumCloths = 0;
 	uint32 NumParticles = 0;
+	uint32 NumPinnedParticles = 0;
+	uint32 NumConstraints = 0;
+	uint32 NumMotionConstraints = 0;
+	uint32 NumSeparationConstraints = 0;
+	uint32 NumCollisionSpheres = 0;
+	uint32 NumCollisionCapsules = 0;
+	uint32 NumSolverChunks = 0;
 	float LastSimulationMs = 0.0f;
 	bool bSolverError = false;
+
+	void Accumulate(const FClothStats& Other)
+	{
+		NumFabrics += Other.NumFabrics;
+		NumCloths += Other.NumCloths;
+		NumParticles += Other.NumParticles;
+		NumPinnedParticles += Other.NumPinnedParticles;
+		NumConstraints += Other.NumConstraints;
+		NumMotionConstraints += Other.NumMotionConstraints;
+		NumSeparationConstraints += Other.NumSeparationConstraints;
+		NumCollisionSpheres += Other.NumCollisionSpheres;
+		NumCollisionCapsules += Other.NumCollisionCapsules;
+		NumSolverChunks = (NumSolverChunks > Other.NumSolverChunks) ? NumSolverChunks : Other.NumSolverChunks;
+		LastSimulationMs = (LastSimulationMs > Other.LastSimulationMs) ? LastSimulationMs : Other.LastSimulationMs;
+		bSolverError = bSolverError || Other.bSolverError;
+	}
 };
