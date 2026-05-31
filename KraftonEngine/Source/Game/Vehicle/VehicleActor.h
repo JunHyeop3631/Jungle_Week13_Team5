@@ -27,9 +27,13 @@ private:
 	//Render
 	UStaticMeshComponent* BodyMeshComponent = nullptr;
 
+	UPROPERTY(Save, Category = "Vehicle", DisplayName = "Wheel Mesh")
 	UStaticMeshComponent* WheelMeshComponent_FL = nullptr;
+	UPROPERTY(Save, Category = "Vehicle", DisplayName = "Wheel Mesh")
 	UStaticMeshComponent* WheelMeshComponent_FR = nullptr;
+	UPROPERTY(Save, Category = "Vehicle", DisplayName = "Wheel Mesh")
 	UStaticMeshComponent* WheelMeshComponent_BL = nullptr;
+	UPROPERTY(Save, Category = "Vehicle", DisplayName = "Wheel Mesh")
 	UStaticMeshComponent* WheelMeshComponent_BR = nullptr;
 
 	FVehicle4WInput BuildVehicleInput() const;

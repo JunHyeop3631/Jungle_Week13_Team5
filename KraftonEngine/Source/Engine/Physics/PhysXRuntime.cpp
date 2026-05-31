@@ -1123,6 +1123,8 @@ FVehicle4WInstance* FPhysXRuntime::CreateVehicle4W(const FVehicle4WDesc& Desc)
 
 	Drive4W->setup(Physics, Actor, *WheelsSimData, DriveData, 0);
 	Drive4W->setToRestState();
+	Drive4W->mDriveDynData.setUseAutoGears(true);
+	Drive4W->mDriveDynData.forceGearChange(PxVehicleGearsData::eFIRST);
 	WheelsSimData->free();
 
 	PxVehicleDrivableSurfaceType SurfaceTypes[1];
