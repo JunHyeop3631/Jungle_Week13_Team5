@@ -133,6 +133,81 @@ bool ValidateCapsules(const TArray<FClothCollisionCapsule>& Capsules, uint32 Num
 
 	return true;
 }
+
+FVector NormalizeOrFallback(const FVector& Value, const FVector& Fallback)
+{
+	if (Value.LengthSquared() <= 1.0e-8f)
+	{
+		return Fallback;
+	}
+
+	return Value.Normalized();
+}
+
+bool BuildGridDescriptions(const FClothGridDesc& Desc, FClothFabricDesc& OutFabricDesc, FClothInstanceDesc& OutInstanceDesc)
+{
+	if (Desc.NumColumns < 2 || Desc.NumRows < 2 || Desc.Spacing <= 0.0f)
+	{
+		return false;
+	}
+
+	const FVector AxisX = NormalizeOrFallback(Desc.AxisX, FVector::RightVector);
+	const FVector AxisY = NormalizeOrFallback(Desc.AxisY, FVector::DownVector);
+	const uint32 ParticleCount = Desc.NumColumns * Desc.NumRows;
+
+	OutFabricDesc = FClothFabricDesc();
+	OutFabricDesc.Name = Desc.Name + "_Fabric";
+	OutFabricDesc.GravityDirection = Desc.Settings.Gravity;
+	OutFabricDesc.Particles.reserve(ParticleCount);
+	OutFabricDesc.UVs.reserve(ParticleCount);
+
+	OutInstanceDesc = FClothInstanceDesc();
+	OutInstanceDesc.Name = Desc.Name;
+	OutInstanceDesc.Settings = Desc.Settings;
+	OutInstanceDesc.Collision = Desc.Collision;
+	OutInstanceDesc.InitialParticles.reserve(ParticleCount);
+
+	for (uint32 Row = 0; Row < Desc.NumRows; ++Row)
+	{
+		for (uint32 Column = 0; Column < Desc.NumColumns; ++Column)
+		{
+			const float U = Desc.NumColumns > 1 ? static_cast<float>(Column) / static_cast<float>(Desc.NumColumns - 1) : 0.0f;
+			const float V = Desc.NumRows > 1 ? static_cast<float>(Row) / static_cast<float>(Desc.NumRows - 1) : 0.0f;
+			const FVector Position = Desc.Origin + AxisX * (Column * Desc.Spacing) + AxisY * (Row * Desc.Spacing);
+			const bool bPinned = Desc.bPinTopRow && Row == 0;
+
+			FClothParticle Particle;
+			Particle.Position = Position;
+			Particle.InvMass = bPinned ? 0.0f : 1.0f;
+
+			OutFabricDesc.Particles.emplace_back(Particle);
+			OutFabricDesc.UVs.emplace_back(U, V);
+			OutInstanceDesc.InitialParticles.emplace_back(Particle);
+		}
+	}
+
+	OutFabricDesc.Indices.reserve((Desc.NumColumns - 1) * (Desc.NumRows - 1) * 6);
+	for (uint32 Row = 0; Row + 1 < Desc.NumRows; ++Row)
+	{
+		for (uint32 Column = 0; Column + 1 < Desc.NumColumns; ++Column)
+		{
+			const uint32 I0 = Row * Desc.NumColumns + Column;
+			const uint32 I1 = I0 + 1;
+			const uint32 I2 = I0 + Desc.NumColumns;
+			const uint32 I3 = I2 + 1;
+
+			OutFabricDesc.Indices.emplace_back(I0);
+			OutFabricDesc.Indices.emplace_back(I2);
+			OutFabricDesc.Indices.emplace_back(I1);
+
+			OutFabricDesc.Indices.emplace_back(I1);
+			OutFabricDesc.Indices.emplace_back(I2);
+			OutFabricDesc.Indices.emplace_back(I3);
+		}
+	}
+
+	return true;
+}
 }
 
 struct FNvClothFabricRecord
@@ -141,6 +216,8 @@ struct FNvClothFabricRecord
 	nv::cloth::Fabric* Fabric = nullptr;
 	uint32 NumParticles = 0;
 	FString Name;
+	TArray<uint32> Indices;
+	TArray<FVector2> UVs;
 };
 
 struct FNvClothInstanceRecord
@@ -152,6 +229,8 @@ struct FNvClothInstanceRecord
 	TArray<physx::PxVec4> SphereScratch;
 	TArray<uint32_t> CapsuleScratch;
 };
+
+FNvClothScene::FNvClothScene() = default;
 
 FNvClothScene::~FNvClothScene()
 {
@@ -243,6 +322,11 @@ FClothFabricHandle FNvClothScene::CreateClothFabric(const FClothFabricDesc& Desc
 		return {};
 	}
 
+	if (!Desc.UVs.empty() && Desc.UVs.size() != Desc.Particles.size())
+	{
+		return {};
+	}
+
 	for (uint32 Index : Desc.Indices)
 	{
 		if (Index >= Desc.Particles.size())
@@ -290,6 +374,8 @@ FClothFabricHandle FNvClothScene::CreateClothFabric(const FClothFabricDesc& Desc
 	Record->Fabric = Fabric;
 	Record->NumParticles = static_cast<uint32>(Desc.Particles.size());
 	Record->Name = Desc.Name;
+	Record->Indices = Desc.Indices;
+	Record->UVs = Desc.UVs;
 	Record->Handle = { Fabric, NextFabricSerial++ };
 
 	const FClothFabricHandle Handle = Record->Handle;
@@ -389,6 +475,37 @@ FClothInstance* FNvClothScene::CreateClothInstance(const FClothInstanceDesc& Des
 	return Instance;
 }
 
+FClothInstance* FNvClothScene::CreateGridCloth(const FClothGridDesc& Desc, FClothFabricHandle* OutFabric)
+{
+	FClothFabricDesc FabricDesc;
+	FClothInstanceDesc InstanceDesc;
+	if (!BuildGridDescriptions(Desc, FabricDesc, InstanceDesc))
+	{
+		return nullptr;
+	}
+
+	const FClothFabricHandle Fabric = CreateClothFabric(FabricDesc);
+	if (!Fabric.IsValid())
+	{
+		return nullptr;
+	}
+
+	InstanceDesc.Fabric = Fabric;
+	FClothInstance* Instance = CreateClothInstance(InstanceDesc);
+	if (!Instance)
+	{
+		DestroyClothFabric(Fabric);
+		return nullptr;
+	}
+
+	if (OutFabric)
+	{
+		*OutFabric = Fabric;
+	}
+
+	return Instance;
+}
+
 void FNvClothScene::DestroyClothInstance(FClothInstance* Instance)
 {
 	if (!Instance)
@@ -443,6 +560,67 @@ bool FNvClothScene::SetClothParticles(FClothInstance* Instance, const TArray<FCl
 		PreviousParticles[Index] = Particle;
 	}
 
+	return true;
+}
+
+bool FNvClothScene::SetPinnedParticlePositions(FClothInstance* Instance, const TArray<FClothPinnedParticle>& Pins, bool bResetPreviousParticles)
+{
+	FNvClothInstanceRecord* Record = FindInstanceRecord(Instance);
+	if (!Record || !Record->Cloth)
+	{
+		return false;
+	}
+
+	for (const FClothPinnedParticle& Pin : Pins)
+	{
+		if (Pin.ParticleIndex >= Instance->NumParticles)
+		{
+			return false;
+		}
+	}
+
+	nv::cloth::MappedRange<physx::PxVec4> CurrentParticles = Record->Cloth->getCurrentParticles();
+	if (CurrentParticles.size() != Instance->NumParticles)
+	{
+		return false;
+	}
+
+	if (bResetPreviousParticles)
+	{
+		nv::cloth::MappedRange<physx::PxVec4> PreviousParticles = Record->Cloth->getPreviousParticles();
+		if (PreviousParticles.size() != Instance->NumParticles)
+		{
+			return false;
+		}
+
+		for (const FClothPinnedParticle& Pin : Pins)
+		{
+			const physx::PxVec4 PinnedParticle(Pin.Position.X, Pin.Position.Y, Pin.Position.Z, 0.0f);
+			CurrentParticles[Pin.ParticleIndex] = PinnedParticle;
+			PreviousParticles[Pin.ParticleIndex] = PinnedParticle;
+		}
+	}
+	else
+	{
+		for (const FClothPinnedParticle& Pin : Pins)
+		{
+			CurrentParticles[Pin.ParticleIndex] = physx::PxVec4(Pin.Position.X, Pin.Position.Y, Pin.Position.Z, 0.0f);
+		}
+	}
+
+	return true;
+}
+
+bool FNvClothScene::SetClothSettings(FClothInstance* Instance, const FClothSettings& Settings)
+{
+	FNvClothInstanceRecord* Record = FindInstanceRecord(Instance);
+	if (!Record || !Record->Cloth)
+	{
+		return false;
+	}
+
+	Instance->Settings = Settings;
+	ApplyClothSettings(*Record);
 	return true;
 }
 
@@ -517,6 +695,7 @@ void FNvClothScene::SimulateCloth(float DeltaTime)
 		return;
 	}
 
+	DeltaTime = std::min(DeltaTime, 1.0f / 30.0f);
 	const auto StartTime = std::chrono::high_resolution_clock::now();
 
 	if (Solver->beginSimulation(DeltaTime))
@@ -549,6 +728,75 @@ bool FNvClothScene::GetClothParticlePositions(const FClothInstance* Instance, TA
 	for (uint32 Index = 0; Index < CurrentParticles.size(); ++Index)
 	{
 		OutPositions.emplace_back(ToFVector(CurrentParticles[Index]));
+	}
+
+	return true;
+}
+
+bool FNvClothScene::GetClothRenderData(const FClothInstance* Instance, FClothRenderData& OutRenderData) const
+{
+	const FNvClothInstanceRecord* Record = FindInstanceRecord(Instance);
+	if (!Record || !Record->Cloth || !Record->FabricRecord)
+	{
+		OutRenderData.Reset();
+		return false;
+	}
+
+	const nv::cloth::Cloth* Cloth = Record->Cloth;
+	nv::cloth::MappedRange<const physx::PxVec4> CurrentParticles = Cloth->getCurrentParticles();
+	if (CurrentParticles.size() != Record->Instance.NumParticles)
+	{
+		OutRenderData.Reset();
+		return false;
+	}
+
+	OutRenderData.Reset();
+	OutRenderData.Vertices.resize(CurrentParticles.size());
+	OutRenderData.Indices = Record->FabricRecord->Indices;
+
+	for (uint32 Index = 0; Index < CurrentParticles.size(); ++Index)
+	{
+		FClothRenderVertex& Vertex = OutRenderData.Vertices[Index];
+		Vertex.Position = ToFVector(CurrentParticles[Index]);
+		Vertex.Normal = FVector::ZeroVector;
+		Vertex.UV = Index < Record->FabricRecord->UVs.size() ? Record->FabricRecord->UVs[Index] : FVector2();
+	}
+
+	for (uint32 Index = 0; Index + 2 < OutRenderData.Indices.size(); Index += 3)
+	{
+		const uint32 I0 = OutRenderData.Indices[Index + 0];
+		const uint32 I1 = OutRenderData.Indices[Index + 1];
+		const uint32 I2 = OutRenderData.Indices[Index + 2];
+		if (I0 >= OutRenderData.Vertices.size() || I1 >= OutRenderData.Vertices.size() || I2 >= OutRenderData.Vertices.size())
+		{
+			continue;
+		}
+
+		const FVector& P0 = OutRenderData.Vertices[I0].Position;
+		const FVector& P1 = OutRenderData.Vertices[I1].Position;
+		const FVector& P2 = OutRenderData.Vertices[I2].Position;
+		FVector FaceNormal = (P1 - P0).Cross(P2 - P0);
+		if (FaceNormal.LengthSquared() <= 1.0e-8f)
+		{
+			continue;
+		}
+
+		FaceNormal.Normalize();
+		OutRenderData.Vertices[I0].Normal += FaceNormal;
+		OutRenderData.Vertices[I1].Normal += FaceNormal;
+		OutRenderData.Vertices[I2].Normal += FaceNormal;
+	}
+
+	for (FClothRenderVertex& Vertex : OutRenderData.Vertices)
+	{
+		if (Vertex.Normal.LengthSquared() <= 1.0e-8f)
+		{
+			Vertex.Normal = FVector::UpVector;
+		}
+		else
+		{
+			Vertex.Normal.Normalize();
+		}
 	}
 
 	return true;
@@ -628,6 +876,9 @@ void FNvClothScene::ApplyClothSettings(FNvClothInstanceRecord& Record)
 	const FClothSettings& Settings = Record.Instance.Settings;
 	Record.Cloth->setGravity(ToPxVec3(Settings.Gravity));
 	Record.Cloth->setDamping(physx::PxVec3(Settings.Damping, Settings.Damping, Settings.Damping));
+	Record.Cloth->setWindVelocity(ToPxVec3(Settings.WindVelocity));
+	Record.Cloth->setDragCoefficient(Settings.DragCoefficient);
+	Record.Cloth->setLiftCoefficient(Settings.LiftCoefficient);
 	Record.Cloth->setSolverFrequency(std::max(Settings.SolverFrequency, 1.0f));
 	Record.Cloth->setStiffnessFrequency(std::max(Settings.StiffnessFrequency, 1.0f));
 	Record.Cloth->setTetherConstraintScale(Settings.TetherScale);
@@ -730,10 +981,6 @@ bool FNvClothScene::ApplyClothCollision(FNvClothInstanceRecord& Record, const FC
 	}
 
 	const uint32_t ExistingSpheres = Record.Cloth->getNumSpheres();
-	if (ExistingSpheres > 0)
-	{
-		Record.Cloth->setSpheres(nv::cloth::Range<const physx::PxVec4>(), 0, ExistingSpheres);
-	}
 
 	Record.SphereScratch.clear();
 	Record.SphereScratch.reserve(Collision.Spheres.size());
@@ -742,10 +989,7 @@ bool FNvClothScene::ApplyClothCollision(FNvClothInstanceRecord& Record, const FC
 		Record.SphereScratch.emplace_back(ToPxSphere(Sphere));
 	}
 
-	if (!Record.SphereScratch.empty())
-	{
-		Record.Cloth->setSpheres(MakeConstRange(Record.SphereScratch), 0, static_cast<uint32_t>(Record.SphereScratch.size()));
-	}
+	Record.Cloth->setSpheres(MakeConstRange(Record.SphereScratch), 0, ExistingSpheres);
 
 	Record.CapsuleScratch.clear();
 	Record.CapsuleScratch.reserve(Collision.Capsules.size() * 2);
@@ -757,7 +1001,7 @@ bool FNvClothScene::ApplyClothCollision(FNvClothInstanceRecord& Record, const FC
 
 	if (!Record.CapsuleScratch.empty())
 	{
-		Record.Cloth->setCapsules(MakeConstRange(Record.CapsuleScratch), 0, static_cast<uint32_t>(Collision.Capsules.size()));
+		Record.Cloth->setCapsules(MakeConstRange(Record.CapsuleScratch), 0, 0);
 	}
 
 	Record.Cloth->clearInterpolation();

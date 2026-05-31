@@ -32,11 +32,31 @@ struct FClothParticle
 	float InvMass = 1.0f;
 };
 
+struct FClothRenderVertex
+{
+	FVector Position;
+	FVector Normal = FVector::UpVector;
+	FVector2 UV;
+};
+
+struct FClothRenderData
+{
+	TArray<FClothRenderVertex> Vertices;
+	TArray<uint32> Indices;
+
+	void Reset()
+	{
+		Vertices.clear();
+		Indices.clear();
+	}
+};
+
 struct FClothFabricDesc
 {
 	FString Name;
 	TArray<FClothParticle> Particles;
 	TArray<uint32> Indices;
+	TArray<FVector2> UVs;
 	FVector GravityDirection = FVector(0.0f, 0.0f, -1.0f);
 	bool bUseGeodesicTether = true;
 };
@@ -81,13 +101,22 @@ struct FClothCollisionDesc
 	TArray<FClothCollisionCapsule> Capsules;
 };
 
+struct FClothPinnedParticle
+{
+	uint32 ParticleIndex = 0;
+	FVector Position;
+};
+
 struct FClothSettings
 {
 	FVector Gravity = FVector(0.0f, 0.0f, -980.0f);
+	FVector WindVelocity = FVector::ZeroVector;
 
 	float SolverFrequency = 120.0f;
 	float StiffnessFrequency = 60.0f;
 	float Damping = 0.1f;
+	float DragCoefficient = 0.0f;
+	float LiftCoefficient = 0.0f;
 
 	float PhaseStiffness = 1.0f;
 	float PhaseStiffnessMultiplier = 1.0f;
@@ -107,6 +136,23 @@ struct FClothInstanceDesc
 	TArray<FClothParticle> InitialParticles;
 	FClothSettings Settings;
 	FClothConstraintDesc Constraints;
+	FClothCollisionDesc Collision;
+};
+
+struct FClothGridDesc
+{
+	FString Name = "GridCloth";
+
+	uint32 NumColumns = 20;
+	uint32 NumRows = 20;
+	float Spacing = 10.0f;
+
+	FVector Origin = FVector(0.0f, 0.0f, 200.0f);
+	FVector AxisX = FVector::RightVector;
+	FVector AxisY = FVector::DownVector;
+
+	bool bPinTopRow = true;
+	FClothSettings Settings;
 	FClothCollisionDesc Collision;
 };
 

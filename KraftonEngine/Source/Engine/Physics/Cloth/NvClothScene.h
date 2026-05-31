@@ -21,7 +21,7 @@ struct FNvClothInstanceRecord;
 class FNvClothScene : public IClothScene
 {
 public:
-	FNvClothScene() = default;
+	FNvClothScene();
 	~FNvClothScene() override;
 
 	bool Initialize(EClothBackend Backend = EClothBackend::CPU) override;
@@ -31,9 +31,12 @@ public:
 	void DestroyClothFabric(FClothFabricHandle Fabric) override;
 
 	FClothInstance* CreateClothInstance(const FClothInstanceDesc& Desc) override;
+	FClothInstance* CreateGridCloth(const FClothGridDesc& Desc, FClothFabricHandle* OutFabric = nullptr) override;
 	void DestroyClothInstance(FClothInstance* Instance) override;
 
 	bool SetClothParticles(FClothInstance* Instance, const TArray<FClothParticle>& Particles) override;
+	bool SetPinnedParticlePositions(FClothInstance* Instance, const TArray<FClothPinnedParticle>& Pins, bool bResetPreviousParticles = true) override;
+	bool SetClothSettings(FClothInstance* Instance, const FClothSettings& Settings) override;
 	bool SetClothConstraints(FClothInstance* Instance, const FClothConstraintDesc& Constraints) override;
 	bool SetClothCollisionSpheres(FClothInstance* Instance, const TArray<FClothCollisionSphere>& Spheres) override;
 	bool SetClothCollisionCapsules(FClothInstance* Instance, const TArray<FClothCollisionCapsule>& Capsules) override;
@@ -41,6 +44,7 @@ public:
 
 	void SimulateCloth(float DeltaTime) override;
 	bool GetClothParticlePositions(const FClothInstance* Instance, TArray<FVector>& OutPositions) const override;
+	bool GetClothRenderData(const FClothInstance* Instance, FClothRenderData& OutRenderData) const override;
 	void GetClothStats(FClothStats& OutStats) const override;
 
 private:
