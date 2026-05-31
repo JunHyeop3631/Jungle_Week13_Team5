@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Component/Primitive/SkinnedMeshComponent.h"
 #include "Animation/AnimationMode.h"
@@ -11,7 +11,7 @@ class UAnimInstance;
 class UAnimSingleNodeInstance;
 class UAnimSequenceBase;
 class UClass;
-class IPhysicsRuntime;
+class IPhysicsScene;
 class UPhysicsAsset;
 
 // SkeletalMesh 전용 render proxy만 제공하는 얇은 wrapper.
@@ -71,10 +71,10 @@ public:
     void PostEditProperty(const char* PropertyName) override;
     void Serialize(FArchive& Ar) override;
 
-    // PhysicsAsset/Ragdoll runtime instancing. Bodies are indexed by skeleton bone index
+    // PhysicsAsset/Ragdoll scene instancing. Bodies are indexed by skeleton bone index
     // so ragdoll write-back can cheaply map physics poses back to bones.
-    bool InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runtime);
-    bool InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runtime, UPhysicsAsset* PhysicsAsset);
+    bool InstantiatePhysicsAssetBodies(IPhysicsScene& Scene);
+    bool InstantiatePhysicsAssetBodies(IPhysicsScene& Scene, UPhysicsAsset* PhysicsAsset);
     void DestroyPhysicsAssetBodies();
     FBodyInstance* GetBodyInstanceByBoneIndex(int32 BoneIndex) const;
     FBodyInstance* GetBodyInstanceByBoneName(const FString& BoneName) const;
@@ -116,7 +116,7 @@ protected:
 
 	TArray<FBodyInstance*> Bodies;
 	TArray<FConstraintInstance*> Constraints;
-    IPhysicsRuntime* PhysicsRuntimeOwner = nullptr;
+    IPhysicsScene* PhysicsSceneOwner = nullptr;
 
     // Passive ragdoll on/off. CreateRagdoll 이 true 로 켜고, 이후 TickComponent 가 ApplyPhysicsToBones 경로로 갈린다.
     bool bSimulatingPhysics = false;

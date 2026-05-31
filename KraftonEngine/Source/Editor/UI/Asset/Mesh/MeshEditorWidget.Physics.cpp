@@ -1,8 +1,8 @@
-﻿#include "MeshEditorWidget.h"
+#include "MeshEditorWidget.h"
 #include "Physics/Asset/PhysicsAsset.h"
 #include "Physics/Asset/BodySetup.h"
 #include "Physics/Asset/PhysicsConstraintSetup.h"
-#include "Physics/IPhysicsRuntime.h"
+#include "Physics/IPhysicsScene.h"
 #include "Asset/AssetPackage.h"
 #include "GameFramework/World.h"
 #include "Serialization/WindowsArchive.h"
@@ -1073,10 +1073,10 @@ void FMeshEditorWidget::GeneratePhysicsBodies()
 //   실제 시뮬레이션 로직(PhysX 런타임 생성/바디·조인트 구성/스텝/포즈 복원)은
 //   시뮬레이션 담당자가 구현한다. 현재는 UI hook 만 열어둔 stub 상태.
 // ─────────────────────────────────────────────────────────────────────────────
-// 진단 사슬: World가 PhysicsRuntime 생성·관리 → PhysicsAsset 확보 → InstantiatePhysicsAssetBodies
+// 진단 사슬: World가 PhysicsScene 생성·관리 → PhysicsAsset 확보 → InstantiatePhysicsAssetBodies
 //   → CreateRagdoll(bSimulatingPhysics=true) → Simulate(dt) → ApplyPhysicsToBones write-back.
 // 본 진입점은 진단 사슬의 마지막 두 화살표(Simulate / write-back trigger)를 잇는 역할만 한다.
-// Phyics 코어(PhysXRuntime)/SkeletalMeshComponent 의 공개 API를 호출만 한다.
+// Physics scene/SkeletalMeshComponent 의 공개 API를 호출만 한다.
 void FMeshEditorWidget::StartPhysicsSimulation()
 {
 	if (bSimulating)
@@ -1094,10 +1094,10 @@ void FMeshEditorWidget::StartPhysicsSimulation()
 		return;
 	}
 
-	IPhysicsRuntime* Runtime = PreviewWorld->GetPhysicsRuntime();
-	if (!Runtime)
+	IPhysicsScene* Scene = PreviewWorld->GetPhysicsScene();
+	if (!Scene)
 	{
-		UE_LOG("[Physics] StartPhysicsSimulation skipped: PreviewWorld has no IPhysicsRuntime.");
+		UE_LOG("[Physics] StartPhysicsSimulation skipped: PreviewWorld has no IPhysicsScene.");
 		return;
 	}
 
@@ -1110,7 +1110,7 @@ void FMeshEditorWidget::StartPhysicsSimulation()
 		return;
 	}
 
-	const bool bInstantiated = MeshComp->InstantiatePhysicsAssetBodies(*Runtime, PA);
+	const bool bInstantiated = MeshComp->InstantiatePhysicsAssetBodies(*Scene, PA);
 	if (!bInstantiated)
 	{
 		// InstantiatePhysicsAssetBodies 내부 early-return 사유(bone 못 찾음, AggregateGeom empty 등)는
@@ -1122,7 +1122,7 @@ void FMeshEditorWidget::StartPhysicsSimulation()
 	MeshComp->CreateRagdoll();
 	if (!MeshComp->IsSimulatingPhysics())
 	{
-		// CreateRagdoll 가드(PhysicsRuntimeOwner / Bodies.empty()) 에 막힌 경우 — 이론상 위 instantiate 가
+		// CreateRagdoll 가드(PhysicsSceneOwner / Bodies.empty()) 에 막힌 경우 — 이론상 위 instantiate 가
 		// true 였다면 통과하지만 방어적으로 체크하고 정리한다.
 		UE_LOG("[Physics] StartPhysicsSimulation: CreateRagdoll did not enter simulating state. Reverting.");
 		MeshComp->DestroyPhysicsAssetBodies();
@@ -1179,8 +1179,8 @@ void FMeshEditorWidget::TickPhysicsSimulation(float DeltaTime)
 		return;
 	}
 
-	IPhysicsRuntime* Runtime = PreviewWorld->GetPhysicsRuntime();
-	if (!Runtime)
+	IPhysicsScene* Scene = PreviewWorld->GetPhysicsScene();
+	if (!Scene)
 	{
 		return;
 	}
@@ -1191,12 +1191,12 @@ void FMeshEditorWidget::TickPhysicsSimulation(float DeltaTime)
 		return;
 	}
 
-	// UWorld::Tick 의 `bHasBegunPlay && PhysicsRuntime` 가드 때문에 에디터 PreviewWorld
-	// (InitWorld 만 호출, BeginPlay 미호출)에서는 World::Tick 안에서 Runtime->Simulate 가 돌지 않는다.
+	// UWorld::Tick 의 `bHasBegunPlay && PhysicsScene` 가드 때문에 에디터 PreviewWorld
+	// (InitWorld 만 호출, BeginPlay 미호출)에서는 World::Tick 안에서 Scene->Simulate 가 돌지 않는다.
 	// 또한 PreviewWorld->Tick 의 TickManager 경로도 HasActorBegunPlay() 가드에 막혀 PreviewMeshComponent
-	// ::TickComponent 를 디스패치하지 못한다. 따라서 Runtime 스텝과 write-back 을 모두 여기서 직접 돌린다:
+	// ::TickComponent 를 디스패치하지 못한다. 따라서 scene 스텝과 write-back 을 모두 여기서 직접 돌린다:
 	// Simulate(fetchResults 포함) 직후 같은 틱에서 ApplyPhysicsToBones 를 호출해 body pose 를 본에 푸시한다.
-	Runtime->Simulate(SimDt);
+	Scene->Simulate(SimDt);
 	MeshComp->ApplyPhysicsToBones();
 }
 

@@ -658,9 +658,7 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClCompile Include="Source\Engine\Physics\Asset\PhysicsConstraintSetup.cpp" />
     <ClCompile Include="Source\Engine\Physics\Asset\PhysicsGeometry.cpp" />
     <ClCompile Include="Source\Engine\Physics\Cloth\NvClothScene.cpp" />
-    <ClCompile Include="Source\Engine\Physics\NativePhysicsScene.cpp" />
     <ClCompile Include="Source\Engine\Physics\PhysXCore.cpp" />
-    <ClCompile Include="Source\Engine\Physics\PhysXPhysicsScene.cpp" />
     <ClCompile Include="Source\Engine\Physics\PhysXRuntime.cpp" />
     <ClCompile Include="Source\Engine\Platform\CrashDump.cpp" />
     <ClCompile Include="Source\Engine\Platform\DirectoryWatcher.cpp" />
@@ -1071,11 +1069,8 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClInclude Include="Source\Engine\Physics\BodyInstance.h" />
     <ClInclude Include="Source\Engine\Physics\ConstraintInstance.h" />
     <ClInclude Include="Source\Engine\Physics\IPhysicsScene.h" />
-    <ClInclude Include="Source\Engine\Physics\IPhysicsRuntime.h" />
-    <ClInclude Include="Source\Engine\Physics\NativePhysicsScene.h" />
     <ClInclude Include="Source\Engine\Physics\PhysXCore.h" />
     <ClInclude Include="Source\Engine\Physics\PhysXHelpers.h" />
-    <ClInclude Include="Source\Engine\Physics\PhysXPhysicsScene.h" />
     <ClInclude Include="Source\Engine\Physics\Asset\BodySetup.h" />
     <ClInclude Include="Source\Engine\Physics\Asset\PhysicsAsset.h" />
     <ClInclude Include="Source\Engine\Physics\Asset\PhysicsConstraintSetup.h" />

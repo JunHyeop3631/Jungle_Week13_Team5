@@ -1,4 +1,4 @@
-﻿#include "GameFramework/World.h"
+#include "GameFramework/World.h"
 #include "Object/Reflection/ObjectFactory.h"
 #include "Object/ReferenceCollector.h"
 #include "Component/PrimitiveComponent.h"
@@ -221,24 +221,24 @@ bool UWorld::RaycastPrimitives(const FRay& Ray, FHitResult& OutHitResult, AActor
 bool UWorld::PhysicsRaycast(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
 	ECollisionChannel TraceChannel, const AActor* IgnoreActor) const
 {
-	if (PhysicsRuntime)
-		return PhysicsRuntime->Raycast(Start, Dir, MaxDist, OutHit, TraceChannel, IgnoreActor);
+	if (PhysicsScene)
+		return PhysicsScene->Raycast(Start, Dir, MaxDist, OutHit, TraceChannel, IgnoreActor);
 	return false;
 }
 
 bool UWorld::PhysicsRaycastByObjectTypes(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,
 	uint32 ObjectTypeMask, const AActor* IgnoreActor) const
 {
-	if (PhysicsRuntime)
-		return PhysicsRuntime->RaycastByObjectTypes(Start, Dir, MaxDist, OutHit, ObjectTypeMask, IgnoreActor);
+	if (PhysicsScene)
+		return PhysicsScene->RaycastByObjectTypes(Start, Dir, MaxDist, OutHit, ObjectTypeMask, IgnoreActor);
 	return false;
 }
 
 bool UWorld::PhysicsSphereSweepShapeComponents(const FVector& Start, const FVector& Dir, float MaxDist, float Radius,
 	FHitResult& OutHit, ECollisionChannel TraceChannel, const AActor* IgnoreActor) const
 {
-	if (PhysicsRuntime)
-		return PhysicsRuntime->SphereSweepShapeComponents(Start, Dir, MaxDist, Radius, OutHit, TraceChannel, IgnoreActor);
+	if (PhysicsScene)
+		return PhysicsScene->SphereSweepShapeComponents(Start, Dir, MaxDist, Radius, OutHit, TraceChannel, IgnoreActor);
 	return false;
 }
 
@@ -302,9 +302,9 @@ void UWorld::InitWorld()
 
 	// E.2/3: CameraManager spawn 은 PC 의 BeginPlay 가 담당. World 는 보유하지 않음.
 
-	// 물리 시스템 초기화 — IPhysicsRuntime 단일 경로.
-	PhysicsRuntime = std::make_unique<FPhysXRuntime>();
-	PhysicsRuntime->Initialize();
+	// 물리 시스템 초기화 — IPhysicsScene 단일 경로.
+	PhysicsScene = std::make_unique<FPhysXRuntime>();
+	PhysicsScene->Initialize();
 }
 
 void UWorld::BeginPlay()
@@ -343,7 +343,7 @@ void UWorld::Tick(float DeltaTime, ELevelTick TickType)
 
 	Scene.GetDebugDrawQueue().Tick(DeltaTime);
 
-	// bPaused 동안 PhysicsRuntime + TickManager skip — GameMode 타이머, Lua Tick, 차량
+	// bPaused 동안 PhysicsScene + TickManager skip — GameMode 타이머, Lua Tick, 차량
 	// 이동, PhysX 시뮬레이션 모두 정지. Render / UI / Input poll 은 호출자 (UEngine::Tick)
 	// 가 따로 돌리므로 영향 없음 → 메뉴/인트로 위에서 화면 보이고 클릭 가능.
 	if (bPaused)
@@ -352,10 +352,10 @@ void UWorld::Tick(float DeltaTime, ELevelTick TickType)
 		return;
 	}
 
-	if (bHasBegunPlay && PhysicsRuntime)
+	if (bHasBegunPlay && PhysicsScene)
 	{
-		SCOPE_STAT_CAT("PhysicsRuntime", "1_WorldTick");
-		PhysicsRuntime->Simulate(DeltaTime);
+		SCOPE_STAT_CAT("PhysicsScene", "1_WorldTick");
+		PhysicsScene->Simulate(DeltaTime);
 	}
 
 	TickManager.Tick(this, DeltaTime, TickType);
@@ -399,9 +399,9 @@ void UWorld::EndPlay()
 	PersistentLevel->EndPlay();
 
 	// 물리 시스템 정리 — 액터/컴포넌트가 아직 살아있는 동안 해제
-	if (PhysicsRuntime)
+	if (PhysicsScene)
 	{
-		PhysicsRuntime->Shutdown();
+		PhysicsScene->Shutdown();
 	}
 
 	// Clear spatial partition while actors/components are still alive.

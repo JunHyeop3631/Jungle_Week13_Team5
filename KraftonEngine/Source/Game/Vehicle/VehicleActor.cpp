@@ -1,7 +1,7 @@
-﻿#include "VehicleActor.h"
+#include "VehicleActor.h"
 #include "Component/Primitive/StaticMeshComponent.h"
 #include "GameFramework/World.h"
-#include "Physics/PhysXRuntime.h"
+#include "Physics/IPhysicsScene.h"
 
 #include "Physics/PhysXHelpers.h"
 
@@ -34,13 +34,13 @@ void AVehicleActor::BeginPlay()
 {
 	Super::BeginPlay();
 
-	IPhysicsRuntime* PhysXRuntime = GetWorld()->GetPhysicsRuntime();
+	IPhysicsScene* PhysicsScene = GetWorld()->GetPhysicsScene();
 
 	//Create Body
 	FPhysicsBodyDesc PhysicsBodyDesc;
 	PhysicsBodyDesc.BodyType = EPhysicsBodyType::Dynamic;
 	PhysicsBodyDesc.Mass = 1500.0f;
-	FBodyInstance* VehicleBody = PhysXRuntime->CreateRigidBody(PhysicsBodyDesc);
+	FBodyInstance* VehicleBody = PhysicsScene->CreateRigidBody(PhysicsBodyDesc);
 	VehicleRigidActor = PhysXHelpers::GetPxDynamic(VehicleBody);
 
 	//Create Vehicle
@@ -52,7 +52,7 @@ void AVehicleActor::BeginPlay()
 	VehicleDesc.WheelCenterOffsets[2] = WheelOffset_BL;
 	VehicleDesc.WheelCenterOffsets[3] = WheelOffset_BR;
 
-	FVehicle4WInstance* VehicleInstance = PhysXRuntime->CreateVehicle4W(VehicleDesc);
+	FVehicle4WInstance* VehicleInstance = PhysicsScene->CreateVehicle4W(VehicleDesc);
 	Vehicle = PhysXHelpers::GetPxVehicleDrive4W(VehicleInstance);
 }
 

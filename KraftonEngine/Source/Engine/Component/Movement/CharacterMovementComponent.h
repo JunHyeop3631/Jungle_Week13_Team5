@@ -19,7 +19,7 @@ enum class EMovementMode : uint8
 //     착지 시 자동 Walking + Velocity.Z = 0.
 //   - Jump: 후속 phase (F-5).
 //
-// Floor detection: IPhysicsRuntime::Raycast — capsule 중심에서 down 으로 (HalfHeight + Probe).
+// Floor detection: IPhysicsScene::Raycast — capsule 중심에서 down 으로 (HalfHeight + Probe).
 // Owner 는 ignore 해서 자기 capsule 안 잡힘. Wall sweep 은 없으므로 벽 통과 가능 (minimal).
 
 #include "Source/Engine/Component/Movement/CharacterMovementComponent.generated.h"

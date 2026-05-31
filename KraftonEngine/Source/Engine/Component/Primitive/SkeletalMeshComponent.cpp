@@ -1,4 +1,4 @@
-﻿#include "SkeletalMeshComponent.h"
+#include "SkeletalMeshComponent.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 
 #include "Animation/AnimationManager.h"
@@ -20,7 +20,7 @@
 #include "Physics/Asset/BodySetup.h"
 #include "Physics/Asset/PhysicsAsset.h"
 #include "Physics/Asset/PhysicsConstraintSetup.h"
-#include "Physics/IPhysicsRuntime.h"
+#include "Physics/IPhysicsScene.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 #include "Serialization/Archive.h"
 
@@ -380,13 +380,13 @@ void USkeletalMeshComponent::ClearAnimInstance()
     }
 }
 
-bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runtime)
+bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene)
 {
     USkeletalMesh* Mesh = GetSkeletalMesh();
-    return Mesh ? InstantiatePhysicsAssetBodies(Runtime, Mesh->PhysicsAsset) : false;
+    return Mesh ? InstantiatePhysicsAssetBodies(Scene, Mesh->PhysicsAsset) : false;
 }
 
-bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runtime, UPhysicsAsset* PhysicsAsset)
+bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene, UPhysicsAsset* PhysicsAsset)
 {
     DestroyPhysicsAssetBodies();
 
@@ -397,7 +397,7 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runt
         return false;
     }
 
-    PhysicsRuntimeOwner = &Runtime;
+    PhysicsSceneOwner = &Scene;
     Bodies.assign(Asset->Bones.size(), nullptr);
     Constraints.clear();
 
@@ -444,7 +444,7 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runt
             continue;
         }
 
-        FBodyInstance* Body = Runtime.CreateRigidBody(BodyDesc);
+        FBodyInstance* Body = Scene.CreateRigidBody(BodyDesc);
         if (!Body)
         {
             UE_LOG("PhysicsAsset body creation failed. Bone=%s", BodySetup->BoneName.c_str());
@@ -458,7 +458,7 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runt
     if (!bCreatedAnyBody)
     {
         Bodies.clear();
-        PhysicsRuntimeOwner = nullptr;
+        PhysicsSceneOwner = nullptr;
         return false;
     }
 
@@ -483,8 +483,8 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runt
 
         FTransform ParentBodyWorld;
         FTransform ChildBodyWorld;
-        if (!Runtime.GetBodyTransform(ParentBody, ParentBodyWorld) ||
-            !Runtime.GetBodyTransform(ChildBody, ChildBodyWorld))
+        if (!Scene.GetBodyTransform(ParentBody, ParentBodyWorld) ||
+            !Scene.GetBodyTransform(ChildBody, ChildBodyWorld))
         {
             UE_LOG("PhysicsAsset constraint skipped: body transform unavailable. Parent=%s Child=%s",
                 Setup->ParentBoneName.c_str(),
@@ -517,7 +517,7 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runt
         ConstraintDesc.Swing1LimitRadians = DegreesToRadians(Setup->Swing1LimitAngle);
         ConstraintDesc.Swing2LimitRadians = DegreesToRadians(Setup->Swing2LimitAngle);
 
-        FConstraintInstance* Constraint = Runtime.CreateD6Joint(ConstraintDesc);
+        FConstraintInstance* Constraint = Scene.CreateD6Joint(ConstraintDesc);
         if (!Constraint)
         {
             UE_LOG("PhysicsAsset constraint creation failed. Parent=%s Child=%s",
@@ -534,13 +534,13 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsRuntime& Runt
 
 void USkeletalMeshComponent::DestroyPhysicsAssetBodies()
 {
-    if (PhysicsRuntimeOwner)
+    if (PhysicsSceneOwner)
     {
         for (FConstraintInstance* Constraint : Constraints)
         {
             if (Constraint)
             {
-                PhysicsRuntimeOwner->DestroyJoint(Constraint);
+                PhysicsSceneOwner->DestroyJoint(Constraint);
             }
         }
 
@@ -548,14 +548,14 @@ void USkeletalMeshComponent::DestroyPhysicsAssetBodies()
         {
             if (Body)
             {
-                PhysicsRuntimeOwner->DestroyRigidBody(Body);
+                PhysicsSceneOwner->DestroyRigidBody(Body);
             }
         }
     }
 
     Constraints.clear();
     Bodies.clear();
-    PhysicsRuntimeOwner = nullptr;
+    PhysicsSceneOwner = nullptr;
 }
 
 FBodyInstance* USkeletalMeshComponent::GetBodyInstanceByBoneIndex(int32 BoneIndex) const
@@ -575,8 +575,8 @@ FBodyInstance* USkeletalMeshComponent::GetBodyInstanceByBoneName(const FString& 
 
 void USkeletalMeshComponent::CreateRagdoll()
 {
-    // 패시브 ragdoll 진입: PhysicsAsset 이 이미 인스턴스화돼 있어야 한다 (Bodies / PhysicsRuntimeOwner).
-    if (!PhysicsRuntimeOwner || Bodies.empty())
+    // 패시브 ragdoll 진입: PhysicsAsset 이 이미 인스턴스화돼 있어야 한다 (Bodies / PhysicsSceneOwner).
+    if (!PhysicsSceneOwner || Bodies.empty())
     {
         UE_LOG("CreateRagdoll skipped: physics asset bodies are not instantiated.");
         return;
@@ -604,10 +604,10 @@ void USkeletalMeshComponent::CreateRagdoll()
         FTransform BoneWorldTransform;
         if (GetBoneWorldTransformByIndex(BoneIndex, BoneWorldTransform))
         {
-            PhysicsRuntimeOwner->SetBodyTransform(Body, BoneWorldTransform, /*bTeleport*/ true);
+            PhysicsSceneOwner->SetBodyTransform(Body, BoneWorldTransform, /*bTeleport*/ true);
         }
 
-        PhysicsRuntimeOwner->SetBodyType(Body, EPhysicsBodyType::Dynamic);
+        PhysicsSceneOwner->SetBodyType(Body, EPhysicsBodyType::Dynamic);
     }
 
     // 3) 애니메이션 평가 차단 — 다음 TickComponent 부터 ApplyPhysicsToBones 경로로 분기된다.
@@ -635,7 +635,7 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 void USkeletalMeshComponent::ApplyPhysicsToBones()
 {
-    if (!PhysicsRuntimeOwner)
+    if (!PhysicsSceneOwner)
     {
         return;
     }
@@ -677,7 +677,7 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
         if (Body && Body->bValid)
         {
             FTransform BodyWorld;
-            if (PhysicsRuntimeOwner->GetBodyTransform(Body, BodyWorld))
+            if (PhysicsSceneOwner->GetBodyTransform(Body, BodyWorld))
             {
                 // body world → component-local global → parent global inverse 곱으로 local pose 산출.
                 // 루트(ParentIndex < 0)는 ParentGlobal == Identity 이므로 component global 이 곧 local 이 된다.

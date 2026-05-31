@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Physics/IPhysicsRuntime.h"
+#include "Physics/IPhysicsScene.h"
 
 namespace physx
 {
@@ -11,7 +11,7 @@ namespace physx
 	class PxScene;
 }
 
-class FPhysXRuntime : public IPhysicsRuntime
+class FPhysXRuntime : public IPhysicsScene
 {
 public:
 	FPhysXRuntime() = default;

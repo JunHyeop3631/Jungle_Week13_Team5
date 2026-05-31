@@ -9,12 +9,6 @@
 	Settings/ProjectSettings.ini에 독립 직렬화됩니다.
 */
 
-enum class EPhysicsBackend : uint8
-{
-	Native,
-	PhysX,
-};
-
 class FProjectSettings : public TSingleton<FProjectSettings>
 {
 	friend class TSingleton<FProjectSettings>;
@@ -28,12 +22,6 @@ class FProjectSettings : public TSingleton<FProjectSettings>
 		uint32 PointAtlasResolution = 4096;	// Point Light Atlas page 해상도
 		uint32 MaxSpotAtlasPages   = 4;		// Spot Light Atlas 최대 page 수
 		uint32 MaxPointAtlasPages  = 4;		// Point Light Atlas 최대 page 수
-	};
-
-	// --- Physics ---
-	struct FPhysicsOption
-	{
-		EPhysicsBackend Backend = EPhysicsBackend::Native;
 	};
 
 	// --- Game ---
@@ -51,7 +39,6 @@ class FProjectSettings : public TSingleton<FProjectSettings>
 
 public:
 	FShadowOption Shadow;
-	FPhysicsOption Physics;
 	FGameOption Game;
 	FDiagnosticsOption Diagnostics;
 
