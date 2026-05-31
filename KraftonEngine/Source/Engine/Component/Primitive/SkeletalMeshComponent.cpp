@@ -20,6 +20,7 @@
 #include "Physics/Asset/BodySetup.h"
 #include "Physics/Asset/PhysicsAsset.h"
 #include "Physics/Asset/PhysicsConstraintSetup.h"
+#include "Physics/Cloth/IClothScene.h"
 #include "Physics/IPhysicsScene.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 #include "Serialization/Archive.h"
@@ -109,10 +110,16 @@ namespace
             BodyDesc.Shapes.push_back(ShapeDesc);
         }
     }
+
+    FVector TransformPoint(const FMatrix& Matrix, const FVector& Point)
+    {
+        return Matrix.TransformPositionWithW(Point);
+    }
 }
 
 USkeletalMeshComponent::~USkeletalMeshComponent()
 {
+    ClearSkeletalClothBinding();
     DestroyPhysicsAssetBodies();
     ClearAnimInstance();
 }
@@ -124,6 +131,7 @@ FPrimitiveSceneProxy* USkeletalMeshComponent::CreateSceneProxy()
 
 void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InMesh)
 {
+    ClearSkeletalClothBinding();
     DestroyPhysicsAssetBodies();
     Super::SetSkeletalMesh(InMesh);
     // Mesh 가 바뀌면 이전 AnimInstance 가 가리키던 본 인덱스/카운트가 무의미해진다.
@@ -380,6 +388,290 @@ void USkeletalMeshComponent::ClearAnimInstance()
     }
 }
 
+bool USkeletalMeshComponent::ResolveSkeletalClothAttachment(FSkeletalClothParticleAttachment& Attachment) const
+{
+    if (Attachment.BoneIndex < 0 && !Attachment.BoneName.empty())
+    {
+        Attachment.BoneIndex = FindBoneIndex(Attachment.BoneName);
+    }
+
+    USkeletalMesh* Mesh = GetSkeletalMesh();
+    FSkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+    return Asset && Attachment.BoneIndex >= 0 && Attachment.BoneIndex < static_cast<int32>(Asset->Bones.size());
+}
+
+FMatrix USkeletalMeshComponent::GetSkeletalClothWorldMatrix() const
+{
+    return SkeletalClothBinding.ClothLocalTransform.ToMatrix() * GetWorldMatrix();
+}
+
+bool USkeletalMeshComponent::BindSkeletalCloth(
+    IClothScene& ClothScene,
+    FClothInstance* ClothInstance,
+    const FSkeletalClothBindingDesc& Desc)
+{
+    ClearSkeletalClothBinding();
+
+    if (!ClothInstance || !ClothInstance->bValid || ClothInstance->NumParticles == 0)
+    {
+        return false;
+    }
+
+    SkeletalClothBinding = Desc;
+    for (FSkeletalClothParticleAttachment& Attachment : SkeletalClothBinding.Attachments)
+    {
+        if (Attachment.ParticleIndex >= ClothInstance->NumParticles)
+        {
+            ClearSkeletalClothBinding();
+            return false;
+        }
+
+        if (!ResolveSkeletalClothAttachment(Attachment))
+        {
+            ClearSkeletalClothBinding();
+            return false;
+        }
+    }
+
+    SkeletalClothSceneOwner = &ClothScene;
+    SkeletalClothInstance = ClothInstance;
+    bSkeletalClothBound = true;
+    bResetSkeletalClothPinsNextTick = true;
+
+    TickSkeletalCloth(0.0f);
+    return true;
+}
+
+void USkeletalMeshComponent::ClearSkeletalClothBinding()
+{
+    SkeletalClothBinding = FSkeletalClothBindingDesc();
+    SkeletalClothSceneOwner = nullptr;
+    SkeletalClothInstance = nullptr;
+    CachedSkeletalClothRenderData.Reset();
+    CachedSkeletalClothParticlePositions.clear();
+    bSkeletalClothBound = false;
+    bResetSkeletalClothPinsNextTick = false;
+}
+
+bool USkeletalMeshComponent::BuildSkeletalClothPinnedParticles(
+    TArray<FClothPinnedParticle>& OutPins,
+    FClothConstraintDesc* OutConstraints) const
+{
+    OutPins.clear();
+    if (OutConstraints)
+    {
+        *OutConstraints = FClothConstraintDesc();
+    }
+
+    if (!bSkeletalClothBound || !SkeletalClothInstance || !SkeletalClothInstance->bValid)
+    {
+        return false;
+    }
+
+    const uint32 NumParticles = SkeletalClothInstance->NumParticles;
+    if (OutConstraints && SkeletalClothBinding.bUpdateMotionConstraints)
+    {
+        OutConstraints->MotionConstraints.resize(NumParticles);
+        for (FClothMotionConstraint& Constraint : OutConstraints->MotionConstraints)
+        {
+            Constraint.Center = FVector::ZeroVector;
+            Constraint.Radius = 1000000.0f;
+        }
+
+        OutConstraints->MotionConstraintScale = 1.0f;
+        OutConstraints->MotionConstraintBias = 0.0f;
+        OutConstraints->MotionConstraintStiffness = SkeletalClothBinding.MotionConstraintStiffness;
+    }
+
+    const FMatrix ClothWorldInv = GetSkeletalClothWorldMatrix().GetInverse();
+    for (const FSkeletalClothParticleAttachment& Attachment : SkeletalClothBinding.Attachments)
+    {
+        if (Attachment.ParticleIndex >= NumParticles)
+        {
+            continue;
+        }
+
+        FTransform BoneWorld;
+        if (!GetBoneWorldTransformByIndex(Attachment.BoneIndex, BoneWorld))
+        {
+            continue;
+        }
+
+        const FVector TargetWorld = TransformPoint(BoneWorld.ToMatrix(), Attachment.LocalPosition);
+        const FVector TargetClothLocal = TransformPoint(ClothWorldInv, TargetWorld);
+
+        if (Attachment.bPinned)
+        {
+            FClothPinnedParticle Pin;
+            Pin.ParticleIndex = Attachment.ParticleIndex;
+            Pin.Position = TargetClothLocal;
+            OutPins.push_back(Pin);
+        }
+
+        if (OutConstraints &&
+            SkeletalClothBinding.bUpdateMotionConstraints &&
+            Attachment.bMotionConstrained &&
+            Attachment.ParticleIndex < OutConstraints->MotionConstraints.size())
+        {
+            FClothMotionConstraint& Constraint = OutConstraints->MotionConstraints[Attachment.ParticleIndex];
+            Constraint.Center = TargetClothLocal;
+            Constraint.Radius = (std::max)(0.0f, Attachment.MaxDistance);
+        }
+    }
+
+    return true;
+}
+
+bool USkeletalMeshComponent::BuildSkeletalClothCollision(FClothCollisionDesc& OutCollision) const
+{
+    OutCollision = FClothCollisionDesc();
+    if (!bSkeletalClothBound || !SkeletalClothBinding.bUsePhysicsAssetCollision)
+    {
+        return false;
+    }
+
+    UPhysicsAsset* PhysicsAsset = SkeletalClothBinding.CollisionPhysicsAsset;
+    if (!PhysicsAsset)
+    {
+        USkeletalMesh* Mesh = GetSkeletalMesh();
+        PhysicsAsset = Mesh ? Mesh->PhysicsAsset : nullptr;
+    }
+
+    if (!PhysicsAsset)
+    {
+        return false;
+    }
+
+    const uint32 MaxSpheres = SkeletalClothBinding.MaxCollisionSpheres > 0
+        ? SkeletalClothBinding.MaxCollisionSpheres
+        : 32;
+    const FMatrix ClothWorldInv = GetSkeletalClothWorldMatrix().GetInverse();
+
+    auto HasSphereCapacity = [&OutCollision, MaxSpheres](uint32 Count)
+    {
+        return static_cast<uint32>(OutCollision.Spheres.size()) + Count <= MaxSpheres;
+    };
+
+    for (const UBodySetup* BodySetup : PhysicsAsset->GetBodySetups())
+    {
+        if (!BodySetup)
+        {
+            continue;
+        }
+
+        const int32 BoneIndex = FindBoneIndex(BodySetup->BoneName);
+        FTransform BoneWorld;
+        if (BoneIndex < 0 || !GetBoneWorldTransformByIndex(BoneIndex, BoneWorld))
+        {
+            continue;
+        }
+
+        const FQuat BoneWorldRot = BoneWorld.Rotation;
+        const FVector BoneWorldPos = BoneWorld.Location;
+
+        for (const FKSphereElem& Sphere : BodySetup->AggregateGeom.SphereElems)
+        {
+            if (!HasSphereCapacity(1) || Sphere.Radius <= 0.0f)
+            {
+                continue;
+            }
+
+            FClothCollisionSphere ClothSphere;
+            ClothSphere.Center = TransformPoint(ClothWorldInv, BoneWorldPos + BoneWorldRot.RotateVector(Sphere.Center));
+            ClothSphere.Radius = Sphere.Radius * SkeletalClothBinding.CollisionRadiusScale;
+            OutCollision.Spheres.push_back(ClothSphere);
+        }
+
+        for (const FKCapsuleElem& Capsule : BodySetup->AggregateGeom.CapsuleElems)
+        {
+            if (!HasSphereCapacity(2) || Capsule.Radius <= 0.0f || Capsule.HalfHeight <= 0.0f)
+            {
+                continue;
+            }
+
+            const FQuat CapsuleWorldRot = BoneWorldRot * Capsule.Rotation;
+            const FVector CapsuleWorldCenter = BoneWorldPos + BoneWorldRot.RotateVector(Capsule.Center);
+            const FVector CapsuleAxis = CapsuleWorldRot.RotateVector(FVector::UpVector);
+            const float HalfHeight = (std::max)(0.0f, Capsule.HalfHeight);
+            const float Radius = Capsule.Radius * SkeletalClothBinding.CollisionRadiusScale;
+
+            const uint32 SphereBase = static_cast<uint32>(OutCollision.Spheres.size());
+
+            FClothCollisionSphere SphereA;
+            SphereA.Center = TransformPoint(ClothWorldInv, CapsuleWorldCenter + CapsuleAxis * HalfHeight);
+            SphereA.Radius = Radius;
+            OutCollision.Spheres.push_back(SphereA);
+
+            FClothCollisionSphere SphereB;
+            SphereB.Center = TransformPoint(ClothWorldInv, CapsuleWorldCenter - CapsuleAxis * HalfHeight);
+            SphereB.Radius = Radius;
+            OutCollision.Spheres.push_back(SphereB);
+
+            FClothCollisionCapsule ClothCapsule;
+            ClothCapsule.SphereA = SphereBase;
+            ClothCapsule.SphereB = SphereBase + 1;
+            OutCollision.Capsules.push_back(ClothCapsule);
+        }
+    }
+
+    return !OutCollision.Spheres.empty();
+}
+
+bool USkeletalMeshComponent::TickSkeletalCloth(float DeltaTime)
+{
+    if (!bSkeletalClothBound || !SkeletalClothSceneOwner || !SkeletalClothInstance || !SkeletalClothInstance->bValid)
+    {
+        return false;
+    }
+
+    TArray<FClothPinnedParticle> Pins;
+    FClothConstraintDesc Constraints;
+    if (BuildSkeletalClothPinnedParticles(Pins, &Constraints))
+    {
+        if (SkeletalClothBinding.bUpdatePinnedParticles && !Pins.empty())
+        {
+            const bool bResetPrevious = bResetSkeletalClothPinsNextTick ||
+                SkeletalClothBinding.bResetPreviousPinnedParticlesEveryFrame;
+            if (SkeletalClothSceneOwner->SetPinnedParticlePositions(SkeletalClothInstance, Pins, bResetPrevious))
+            {
+                bResetSkeletalClothPinsNextTick = false;
+            }
+        }
+
+        if (SkeletalClothBinding.bUpdateMotionConstraints && !Constraints.MotionConstraints.empty())
+        {
+            SkeletalClothSceneOwner->SetClothConstraints(SkeletalClothInstance, Constraints);
+        }
+    }
+
+    FClothCollisionDesc Collision;
+    if (BuildSkeletalClothCollision(Collision))
+    {
+        SkeletalClothSceneOwner->SetClothCollision(SkeletalClothInstance, Collision);
+    }
+
+    if (SkeletalClothBinding.bAutoSimulate && DeltaTime > 0.0f)
+    {
+        SkeletalClothSceneOwner->SimulateCloth(DeltaTime);
+    }
+
+    SkeletalClothSceneOwner->GetClothParticlePositions(SkeletalClothInstance, CachedSkeletalClothParticlePositions);
+    SkeletalClothSceneOwner->GetClothRenderData(SkeletalClothInstance, CachedSkeletalClothRenderData);
+    return true;
+}
+
+bool USkeletalMeshComponent::GetSkeletalClothRenderData(FClothRenderData& OutRenderData) const
+{
+    if (!bSkeletalClothBound || CachedSkeletalClothRenderData.Vertices.empty())
+    {
+        OutRenderData.Reset();
+        return false;
+    }
+
+    OutRenderData = CachedSkeletalClothRenderData;
+    return true;
+}
+
 bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene)
 {
     USkeletalMesh* Mesh = GetSkeletalMesh();
@@ -620,17 +912,20 @@ void USkeletalMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType,
     {
         // Passive ragdoll: AnimInstance 평가 skip, PhysX body → 본 local pose write-back.
         ApplyPhysicsToBones();
+        TickSkeletalCloth(DeltaTime);
         UMeshComponent::TickComponent(DeltaTime, TickType, ThisTickFunction);
         return;
     }
 
     if (EvaluateAnimInstance(DeltaTime))
     {
+        TickSkeletalCloth(DeltaTime);
         UMeshComponent::TickComponent(DeltaTime, TickType, ThisTickFunction);
         return;
     }
 
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    TickSkeletalCloth(DeltaTime);
 }
 
 void USkeletalMeshComponent::ApplyPhysicsToBones()

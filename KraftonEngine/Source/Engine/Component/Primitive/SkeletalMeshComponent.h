@@ -4,6 +4,7 @@
 #include "Animation/AnimationMode.h"
 #include "Object/Ptr/SubclassOf.h"
 #include "Physics/ConstraintInstance.h"
+#include "Physics/Cloth/ClothTypes.h"
 
 #include "Source/Engine/Component/Primitive/SkeletalMeshComponent.generated.h"
 
@@ -11,8 +12,37 @@ class UAnimInstance;
 class UAnimSingleNodeInstance;
 class UAnimSequenceBase;
 class UClass;
+class IClothScene;
 class IPhysicsScene;
 class UPhysicsAsset;
+
+struct FSkeletalClothParticleAttachment
+{
+    uint32 ParticleIndex = 0;
+    FString BoneName;
+    int32 BoneIndex = -1;
+    FVector LocalPosition = FVector::ZeroVector;
+    float MaxDistance = 0.0f;
+    bool bPinned = true;
+    bool bMotionConstrained = true;
+};
+
+struct FSkeletalClothBindingDesc
+{
+    TArray<FSkeletalClothParticleAttachment> Attachments;
+    FTransform ClothLocalTransform;
+    UPhysicsAsset* CollisionPhysicsAsset = nullptr;
+
+    bool bUsePhysicsAssetCollision = true;
+    bool bUpdatePinnedParticles = true;
+    bool bUpdateMotionConstraints = true;
+    bool bAutoSimulate = true;
+    bool bResetPreviousPinnedParticlesEveryFrame = false;
+
+    float MotionConstraintStiffness = 0.8f;
+    float CollisionRadiusScale = 1.0f;
+    uint32 MaxCollisionSpheres = 32;
+};
 
 // SkeletalMesh 전용 render proxy만 제공하는 얇은 wrapper.
 // Skinning/bone/material/bounds 상태는 모두 USkinnedMeshComponent가 소유한다.
@@ -81,6 +111,17 @@ public:
     const TArray<FBodyInstance*>& GetPhysicsBodies() const { return Bodies; }
     const TArray<FConstraintInstance*>& GetPhysicsConstraints() const { return Constraints; }
 
+    // Skeletal cloth bridge. The cloth instance itself is owned by IClothScene; this component
+    // only supplies animated pins, motion constraints, and PhysicsAsset capsule collision.
+    bool BindSkeletalCloth(IClothScene& ClothScene, FClothInstance* ClothInstance, const FSkeletalClothBindingDesc& Desc);
+    void ClearSkeletalClothBinding();
+    bool IsSkeletalClothBound() const { return bSkeletalClothBound; }
+    bool TickSkeletalCloth(float DeltaTime);
+    bool BuildSkeletalClothPinnedParticles(TArray<FClothPinnedParticle>& OutPins, FClothConstraintDesc* OutConstraints = nullptr) const;
+    bool BuildSkeletalClothCollision(FClothCollisionDesc& OutCollision) const;
+    bool GetSkeletalClothRenderData(FClothRenderData& OutRenderData) const;
+    const TArray<FVector>& GetSkeletalClothParticlePositions() const { return CachedSkeletalClothParticlePositions; }
+
 	void CreateRagdoll();
 
 	// 시뮬레이션 결과 → 본 local pose. 본 인덱스 오름차순 = parent-first 보장에 의존한다.
@@ -102,6 +143,8 @@ protected:
 
 private:
     void LoadAnimationFromPath();
+    bool ResolveSkeletalClothAttachment(FSkeletalClothParticleAttachment& Attachment) const;
+    FMatrix GetSkeletalClothWorldMatrix() const;
 
 protected:
     // Animation 런타임 상태.
@@ -117,6 +160,14 @@ protected:
 	TArray<FBodyInstance*> Bodies;
 	TArray<FConstraintInstance*> Constraints;
     IPhysicsScene* PhysicsSceneOwner = nullptr;
+
+    FSkeletalClothBindingDesc SkeletalClothBinding;
+    IClothScene* SkeletalClothSceneOwner = nullptr;
+    FClothInstance* SkeletalClothInstance = nullptr;
+    FClothRenderData CachedSkeletalClothRenderData;
+    TArray<FVector> CachedSkeletalClothParticlePositions;
+    bool bSkeletalClothBound = false;
+    bool bResetSkeletalClothPinsNextTick = false;
 
     // Passive ragdoll on/off. CreateRagdoll 이 true 로 켜고, 이후 TickComponent 가 ApplyPhysicsToBones 경로로 갈린다.
     bool bSimulatingPhysics = false;
