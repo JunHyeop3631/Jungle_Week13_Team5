@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Core/Types/CoreTypes.h"
 #include "Math/Matrix.h"
@@ -44,6 +44,8 @@ struct FFrameContext
 	float ViewportHeight = 0.0f;
 	float BloomWidth     = 0.0f;
 	float BloomHeight    = 0.0f;
+	float DofWidth       = 0.0f;
+	float DofHeight      = 0.0f;
 
 	ID3D11RenderTargetView*   ViewportRTV          = nullptr;
 	ID3D11DepthStencilView*   ViewportDSV          = nullptr;
@@ -70,6 +72,11 @@ struct FFrameContext
 	ID3D11ShaderResourceView* BloomSRVA             = nullptr;
 	ID3D11RenderTargetView*   BloomRTVB             = nullptr;
 	ID3D11ShaderResourceView* BloomSRVB             = nullptr;
+
+	ID3D11RenderTargetView*   DofFarRTV             = nullptr;
+	ID3D11ShaderResourceView* DofFarSRV             = nullptr;
+	ID3D11RenderTargetView*   DofNearRTV            = nullptr;
+	ID3D11ShaderResourceView* DofNearSRV            = nullptr;
 
 	// Cursor position relative to viewport (for debug visualization)
 	uint32 CursorViewportX = UINT32_MAX;
@@ -127,6 +134,8 @@ struct FFrameContext
 		ViewportDSV             = nullptr;
 		BloomWidth              = 0.0f;
 		BloomHeight             = 0.0f;
+		DofWidth                = 0.0f;
+		DofHeight               = 0.0f;
 		SceneColorCopySRV       = nullptr;
 		SceneColorCopyTexture   = nullptr;
 		ViewportRenderTexture   = nullptr;
@@ -142,5 +151,9 @@ struct FFrameContext
 		BloomSRVA               = nullptr;
 		BloomRTVB               = nullptr;
 		BloomSRVB               = nullptr;
+		DofFarRTV               = nullptr;
+		DofFarSRV               = nullptr;
+		DofNearRTV              = nullptr;
+		DofNearSRV              = nullptr;
 	}
 };

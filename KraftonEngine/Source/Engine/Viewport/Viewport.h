@@ -32,6 +32,8 @@ public:
 	uint32 GetHeight() const { return Height; }
 	uint32 GetBloomWidth() const { return BloomWidth; }
 	uint32 GetBloomHeight() const { return BloomHeight; }
+	uint32 GetDofWidth() const { return DofWidth; }
+	uint32 GetDofHeight() const { return DofHeight; }
 
 	// D3D 리소스 접근자
 	ID3D11RenderTargetView* GetRTV() const { return RTV; }
@@ -60,6 +62,12 @@ public:
 	ID3D11ShaderResourceView* GetBloomSRVA() const { return BloomSRVA; }
 	ID3D11RenderTargetView* GetBloomRTVB() const { return BloomRTVB; }
 	ID3D11ShaderResourceView* GetBloomSRVB() const { return BloomSRVB; }
+
+	// Depth of field half-res layers
+	ID3D11RenderTargetView* GetDofFarRTV() const { return DofFarRTV; }
+	ID3D11ShaderResourceView* GetDofFarSRV() const { return DofFarSRV; }
+	ID3D11RenderTargetView* GetDofNearRTV() const { return DofNearRTV; }
+	ID3D11ShaderResourceView* GetDofNearSRV() const { return DofNearSRV; }
 
 	const D3D11_VIEWPORT& GetViewportRect() const { return ViewportRect; }
 
@@ -109,12 +117,23 @@ private:
 	ID3D11RenderTargetView* BloomRTVB = nullptr;
 	ID3D11ShaderResourceView* BloomSRVB = nullptr;
 
+	// Depth of field 전용 half-res layer 텍스처
+	ID3D11Texture2D* DofFarTexture = nullptr;
+	ID3D11RenderTargetView* DofFarRTV = nullptr;
+	ID3D11ShaderResourceView* DofFarSRV = nullptr;
+
+	ID3D11Texture2D* DofNearTexture = nullptr;
+	ID3D11RenderTargetView* DofNearRTV = nullptr;
+	ID3D11ShaderResourceView* DofNearSRV = nullptr;
+
 	D3D11_VIEWPORT ViewportRect = {};
 
 	uint32 Width = 0;
 	uint32 Height = 0;
 	uint32 BloomWidth = 0;
 	uint32 BloomHeight = 0;
+	uint32 DofWidth = 0;
+	uint32 DofHeight = 0;
 
 	// 지연 리사이즈 요청
 	uint32 PendingWidth = 0;

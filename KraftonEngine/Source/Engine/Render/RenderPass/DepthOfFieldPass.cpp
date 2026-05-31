@@ -1,4 +1,4 @@
-#include "DepthOfFieldPass.h"
+﻿#include "DepthOfFieldPass.h"
 #include "RenderPassRegistry.h"
 
 #include "Render/Device/D3DDevice.h"
@@ -39,12 +39,12 @@ bool FDepthOfFieldPass::BeginPass(const FPassContext& Ctx)
 		&& Frame.DepthTexture
 		&& Frame.DepthCopyTexture
 		&& Frame.DepthCopySRV
-		&& Frame.BloomRTVA
-		&& Frame.BloomSRVA
-		&& Frame.BloomRTVB
-		&& Frame.BloomSRVB
-		&& Frame.BloomWidth > 0.0f
-		&& Frame.BloomHeight > 0.0f;
+		&& Frame.DofFarRTV
+		&& Frame.DofFarSRV
+		&& Frame.DofNearRTV
+		&& Frame.DofNearSRV
+		&& Frame.DofWidth > 0.0f
+		&& Frame.DofHeight > 0.0f;
 }
 
 void FDepthOfFieldPass::Execute(const FPassContext& Ctx)
@@ -92,8 +92,8 @@ void FDepthOfFieldPass::Execute(const FPassContext& Ctx)
 	DC->PSSetConstantBuffers(ECBSlot::PerShader0, 1, &DofCBRaw);
 
 	D3D11_VIEWPORT DofViewport = {};
-	DofViewport.Width = Frame.BloomWidth;
-	DofViewport.Height = Frame.BloomHeight;
+	DofViewport.Width = Frame.DofWidth;
+	DofViewport.Height = Frame.DofHeight;
 	DofViewport.MinDepth = 0.0f;
 	DofViewport.MaxDepth = 1.0f;
 
@@ -109,14 +109,14 @@ void FDepthOfFieldPass::Execute(const FPassContext& Ctx)
 
 	// Far layer: half-res blurred background into Bloom A.
 	DC->RSSetViewports(1, &DofViewport);
-	DC->OMSetRenderTargets(1, &Frame.BloomRTVA, nullptr);
+	DC->OMSetRenderTargets(1, &Frame.DofFarRTV, nullptr);
 	DC->PSSetShaderResources(ESystemTexSlot::SceneColor, 1, &Frame.SceneColorCopySRV);
 	DC->PSSetShaderResources(ESystemTexSlot::SceneDepth, 1, &Frame.DepthCopySRV);
 	FarLayerShader->Bind(DC);
 	DrawFullscreenTriangle(DC);
 
 	// Near layer: half-res foreground veil into Bloom B.
-	DC->OMSetRenderTargets(1, &Frame.BloomRTVB, nullptr);
+	DC->OMSetRenderTargets(1, &Frame.DofNearRTV, nullptr);
 	NearLayerShader->Bind(DC);
 	DrawFullscreenTriangle(DC);
 
@@ -127,13 +127,13 @@ void FDepthOfFieldPass::Execute(const FPassContext& Ctx)
 	DC->RSSetViewports(1, &SceneViewport);
 	DC->OMSetRenderTargets(1, &Ctx.Cache.RTV, Ctx.Cache.DSV);
 	DC->PSSetShaderResources(ESystemTexSlot::SceneColor, 1, &Frame.SceneColorCopySRV);
-	DC->PSSetShaderResources(ESystemTexSlot::Bloom, 1, &Frame.BloomSRVA);
-	DC->PSSetShaderResources(ESystemTexSlot::DofNear, 1, &Frame.BloomSRVB);
+	DC->PSSetShaderResources(ESystemTexSlot::DofFar, 1, &Frame.DofFarSRV);
+	DC->PSSetShaderResources(ESystemTexSlot::DofNear, 1, &Frame.DofNearSRV);
 	CompositeShader->Bind(DC);
 	DrawFullscreenTriangle(DC);
 
 	DC->PSSetShaderResources(ESystemTexSlot::SceneColor, 1, &NullSRV);
-	DC->PSSetShaderResources(ESystemTexSlot::Bloom, 1, &NullSRV);
+	DC->PSSetShaderResources(ESystemTexSlot::DofFar, 1, &NullSRV);
 	DC->PSSetShaderResources(ESystemTexSlot::DofNear, 1, &NullSRV);
 	DC->PSSetShaderResources(0, ARRAYSIZE(NullSystemSRVs), NullSystemSRVs);
 	ID3D11Buffer* NullCB = nullptr;
@@ -149,6 +149,6 @@ void FDepthOfFieldPass::EndPass(const FPassContext& Ctx)
 	ID3D11DeviceContext* DC = Ctx.Device.GetDeviceContext();
 	DC->PSSetShaderResources(ESystemTexSlot::SceneColor, 1, &NullSRV);
 	DC->PSSetShaderResources(ESystemTexSlot::SceneDepth, 1, &NullSRV);
-	DC->PSSetShaderResources(ESystemTexSlot::Bloom, 1, &NullSRV);
+	DC->PSSetShaderResources(ESystemTexSlot::DofFar, 1, &NullSRV);
 	DC->PSSetShaderResources(ESystemTexSlot::DofNear, 1, &NullSRV);
 }

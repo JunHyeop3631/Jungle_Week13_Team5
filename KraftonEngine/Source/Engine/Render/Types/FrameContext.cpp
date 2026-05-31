@@ -1,4 +1,4 @@
-#include "FrameContext.h"
+﻿#include "FrameContext.h"
 #include "Component/Camera/CameraComponent.h"
 #include "Render/Types/MinimalViewInfo.h"
 #include "Viewport/Viewport.h"
@@ -38,6 +38,8 @@ void FFrameContext::SetViewportInfo(const FViewport* VP)
 	ViewportHeight   = static_cast<float>(VP->GetHeight());
 	BloomWidth       = static_cast<float>(VP->GetBloomWidth());
 	BloomHeight      = static_cast<float>(VP->GetBloomHeight());
+	DofWidth         = static_cast<float>(VP->GetDofWidth());
+	DofHeight        = static_cast<float>(VP->GetDofHeight());
 	ViewportRTV             = VP->GetRTV();
 	ViewportDSV             = VP->GetDSV();
 	SceneColorCopySRV       = VP->GetSceneColorCopySRV();
@@ -55,4 +57,8 @@ void FFrameContext::SetViewportInfo(const FViewport* VP)
 	BloomSRVA               = VP->GetBloomSRVA();
 	BloomRTVB               = VP->GetBloomRTVB();
 	BloomSRVB               = VP->GetBloomSRVB();
+	DofFarRTV               = VP->GetDofFarRTV();
+	DofFarSRV               = VP->GetDofFarSRV();
+	DofNearRTV              = VP->GetDofNearRTV();
+	DofNearSRV              = VP->GetDofNearSRV();
 }

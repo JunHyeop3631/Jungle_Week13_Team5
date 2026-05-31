@@ -2,8 +2,8 @@
 #include "Common/SystemResources.hlsli"
 #include "Common/SystemSamplers.hlsli"
 
-Texture2D<float4> DofFarLayerTexture : register(t26);
-Texture2D<float4> DofNearLayerTexture : register(t27);
+Texture2D<float4> DofFarLayerTexture : register(t27);
+Texture2D<float4> DofNearLayerTexture : register(t28);
 
 cbuffer DofCB : register(b2)
 {

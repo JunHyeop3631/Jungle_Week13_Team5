@@ -276,6 +276,37 @@ bool FViewport::CreateResources()
 	if (FAILED(hr)) return false;
 	BloomSRVB->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ViewportBloomSRVB")), "ViewportBloomSRVB");
 
+	//Bloom과 동일한 절반 해상도로 Depth of Field 레이어 생성 (DofFar/DofNear)
+	DofWidth = BloomWidth;
+	DofHeight = BloomHeight;
+
+	D3D11_TEXTURE2D_DESC DofDesc = BloomDesc;
+	DofDesc.Width = DofWidth;
+	DofDesc.Height = DofHeight;
+
+	hr = Device->CreateTexture2D(&DofDesc, nullptr, &DofFarTexture);
+	if (FAILED(hr)) return false;
+	DofFarTexture->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ViewportDofFarTexture")), "ViewportDofFarTexture");
+
+	hr = Device->CreateRenderTargetView(DofFarTexture, nullptr, &DofFarRTV);
+	if (FAILED(hr)) return false;
+	DofFarRTV->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ViewportDofFarRTV")), "ViewportDofFarRTV");
+
+	hr = Device->CreateShaderResourceView(DofFarTexture, nullptr, &DofFarSRV);
+	if (FAILED(hr)) return false;
+	DofFarSRV->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ViewportDofFarSRV")), "ViewportDofFarSRV");
+
+	hr = Device->CreateTexture2D(&DofDesc, nullptr, &DofNearTexture);
+	if (FAILED(hr)) return false;
+	DofNearTexture->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ViewportDofNearTexture")), "ViewportDofNearTexture");
+
+	hr = Device->CreateRenderTargetView(DofNearTexture, nullptr, &DofNearRTV);
+	if (FAILED(hr)) return false;
+	DofNearRTV->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ViewportDofNearRTV")), "ViewportDofNearRTV");
+
+	hr = Device->CreateShaderResourceView(DofNearTexture, nullptr, &DofNearSRV);
+	if (FAILED(hr)) return false;
+	DofNearSRV->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(strlen("ViewportDofNearSRV")), "ViewportDofNearSRV");
 
 	// ── 뷰포트 렉트 ──
 	ViewportRect.TopLeftX = 0.0f;
@@ -290,6 +321,14 @@ bool FViewport::CreateResources()
 
 void FViewport::ReleaseResources()
 {
+	if (DofNearSRV) { DofNearSRV->Release(); DofNearSRV = nullptr; }
+	if (DofNearRTV) { DofNearRTV->Release(); DofNearRTV = nullptr; }
+	if (DofNearTexture) { DofNearTexture->Release(); DofNearTexture = nullptr; }
+
+	if (DofFarSRV) { DofFarSRV->Release(); DofFarSRV = nullptr; }
+	if (DofFarRTV) { DofFarRTV->Release(); DofFarRTV = nullptr; }
+	if (DofFarTexture) { DofFarTexture->Release(); DofFarTexture = nullptr; }
+
 	if (BloomSRVB) { BloomSRVB->Release(); BloomSRVB = nullptr; }
 	if (BloomRTVB) { BloomRTVB->Release(); BloomRTVB = nullptr; }
 	if (BloomTextureB) { BloomTextureB->Release(); BloomTextureB = nullptr; }
@@ -316,4 +355,6 @@ void FViewport::ReleaseResources()
 	if (SceneColorCopyTexture) { SceneColorCopyTexture->Release(); SceneColorCopyTexture = nullptr; }
 	BloomWidth = 0;
 	BloomHeight = 0;
+	DofWidth = 0;
+	DofHeight = 0;
 }
