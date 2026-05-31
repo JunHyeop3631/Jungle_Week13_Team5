@@ -47,6 +47,7 @@ enum class ERenderPass : uint32
 	PostProcess,	// 아웃라인 풀스크린, Fog, SceneDepth
 	FXAA,			// FXAA 안티앨리어싱 (SceneColor 복사 후 실행)
 	Bloom,
+	DepthOfField,
 	GizmoOuter,		// 기즈모 외곽 (깊이 테스트 O)
 	GizmoInner,		// 기즈모 내부 (깊이 무시)
 	OverlayFont,	// 스크린 공간 텍스트 (깊이 무시)
@@ -71,6 +72,7 @@ inline const char* GetRenderPassName(ERenderPass Pass)
 		"RenderPass::PostProcess",
 		"RenderPass::FXAA",
 		"RenderPass::Bloom",
+		"RenderPass::DepthOfField",
 		"RenderPass::GizmoOuter",
 		"RenderPass::GizmoInner",
 		"RenderPass::OverlayFont",
@@ -98,6 +100,7 @@ namespace RenderStateStrings
 		{ "PostProcess",   (int)ERenderPass::PostProcess },
 		{ "FXAA",          (int)ERenderPass::FXAA },
 		{ "Bloom",         (int)ERenderPass::Bloom },
+		{ "DepthOfField",  (int)ERenderPass::DepthOfField },
 		{ "GizmoOuter",    (int)ERenderPass::GizmoOuter },
 		{ "GizmoInner",    (int)ERenderPass::GizmoInner },
 		{ "OverlayFont",   (int)ERenderPass::OverlayFont },

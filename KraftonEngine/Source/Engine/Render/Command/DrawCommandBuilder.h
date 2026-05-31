@@ -117,7 +117,6 @@ private:
 	FConstantBuffer CameraVignetteCB;
 	FConstantBuffer CameraLetterboxCB;
 	FConstantBuffer BoneHeatMapCB;
-	FConstantBuffer DepthOfFieldCB;
 
 	// D3D 디바이스 캐시 (Create 시 설정, 변하지 않음)
 	ID3D11Device*        CachedDevice  = nullptr;

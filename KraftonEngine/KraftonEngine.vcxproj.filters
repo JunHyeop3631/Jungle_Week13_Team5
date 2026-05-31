@@ -1493,6 +1493,9 @@
     <ClCompile Include="Source\Engine\Render\RenderPass\DecalPass.cpp">
       <Filter>Source\Engine\Render\RenderPass</Filter>
     </ClCompile>
+    <ClCompile Include="Source\Engine\Render\RenderPass\DepthOfFieldPass.cpp">
+      <Filter>Source\Engine\Render\RenderPass</Filter>
+    </ClCompile>
     <ClCompile Include="Source\Engine\Render\RenderPass\EditorLinesPass.cpp">
       <Filter>Source\Engine\Render\RenderPass</Filter>
     </ClCompile>
@@ -2763,6 +2766,9 @@
       <Filter>Source\Engine\Render\RenderPass</Filter>
     </ClInclude>
     <ClInclude Include="Source\Engine\Render\RenderPass\DecalPass.h">
+      <Filter>Source\Engine\Render\RenderPass</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Engine\Render\RenderPass\DepthOfFieldPass.h">
       <Filter>Source\Engine\Render\RenderPass</Filter>
     </ClInclude>
     <ClInclude Include="Source\Engine\Render\RenderPass\EditorLinesPass.h">
