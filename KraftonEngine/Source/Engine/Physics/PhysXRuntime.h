@@ -89,4 +89,5 @@ private:
 	uint64 AllocateSerial() { return NextSerial++; }
 	FBodyInstance* FindBodyByComponent(const UPrimitiveComponent* Comp) const;
 	bool BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysicsBodyDesc& OutDesc) const;
+	FPhysicsShapeHandle CreateShape_AssumesLocked(FBodyInstance* Body, const FPhysicsShapeDesc& Desc);
 };

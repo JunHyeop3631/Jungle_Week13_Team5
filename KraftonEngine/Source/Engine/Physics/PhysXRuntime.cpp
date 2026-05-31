@@ -1,6 +1,7 @@
 ﻿#include "Physics/PhysXRuntime.h"
 #include "Physics/PhysXCore.h"
 #include "Physics/PhysXHelpers.h"
+#include "Physics/PhysXSceneLock.h"
 #include "Component/PrimitiveComponent.h"
 #include "Component/Shape/BoxComponent.h"
 #include "Component/Shape/CapsuleComponent.h"
@@ -360,9 +361,7 @@ bool FPhysXRuntime::Initialize()
 	SceneDesc.gravity = PxVec3(0.0f, 0.0f, -9.81f);
 	SceneDesc.cpuDispatcher = Dispatcher;
 	SceneDesc.filterShader = PxDefaultSimulationFilterShader;
-	SceneDesc.flags |= PxSceneFlag::eENABLE_ACTIVE_ACTORS;
-	SceneDesc.flags |= PxSceneFlag::eENABLE_CCD;
-	SceneDesc.flags |= PxSceneFlag::eENABLE_PCM;
+	ConfigurePhysXSceneDesc(SceneDesc);
 
 	Scene = Physics->createScene(SceneDesc);
 	if (!Scene)
@@ -389,25 +388,27 @@ void FPhysXRuntime::Shutdown()
 		DestroyVehicle4W(Vehicles.back());
 	}
 
-	for (FConstraintInstance* Joint : Joints)
+	while (!Joints.empty())
 	{
-		if (!Joint) continue;
-		if (PxJoint* PxJointPtr = static_cast<PxJoint*>(Joint->JointHandle.NativePtr))
+		FConstraintInstance* Joint = Joints.back();
+		if (!Joint)
 		{
-			PxJointPtr->release();
+			Joints.pop_back();
+			continue;
 		}
-		delete Joint;
+		DestroyJoint(Joint);
 	}
 	Joints.clear();
 
-	for (FBodyInstance* Body : Bodies)
+	while (!Bodies.empty())
 	{
-		if (!Body) continue;
-		if (PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body))
+		FBodyInstance* Body = Bodies.back();
+		if (!Body)
 		{
-			Actor->release();
+			Bodies.pop_back();
+			continue;
 		}
-		delete Body;
+		DestroyRigidBody(Body);
 	}
 	Bodies.clear();
 
@@ -552,6 +553,16 @@ void FPhysXRuntime::Simulate(float DeltaTime)
 		return;
 	}
 
+	struct FPendingBodySync
+	{
+		FBodyInstance* Body = nullptr;
+		UPrimitiveComponent* OwnerComponent = nullptr;
+		FTransform Transform;
+		bool bApplyToComponent = false;
+	};
+
+	TArray<FPendingBodySync> KinematicSyncs;
+	KinematicSyncs.reserve(Bodies.size());
 	for (FBodyInstance* Body : Bodies)
 	{
 		if (!Body || !Body->OwnerComponent || Body->BoneIndex >= 0 || Body->BodyType == EPhysicsBodyType::Dynamic)
@@ -559,90 +570,127 @@ void FPhysXRuntime::Simulate(float DeltaTime)
 			continue;
 		}
 
-		if (PxRigidActor* Actor = GetPxActor(Body))
-		{
-			const FTransform ComponentWorld(
-				Body->OwnerComponent->GetWorldLocation(),
-				Body->OwnerComponent->GetWorldRotation(),
-				FVector(1.0f, 1.0f, 1.0f));
-			Actor->setGlobalPose(ToPxTransform(ComponentWorld));
-			Body->CachedWorldTransform = ComponentWorld;
-		}
+		FPendingBodySync Sync;
+		Sync.Body = Body;
+		Sync.OwnerComponent = Body->OwnerComponent;
+		Sync.Transform = FTransform(
+			Body->OwnerComponent->GetWorldLocation(),
+			Body->OwnerComponent->GetWorldRotation(),
+			FVector(1.0f, 1.0f, 1.0f));
+		KinematicSyncs.push_back(Sync);
 	}
 
-	for (FVehicle4WInstance* VehicleInstance : Vehicles)
 	{
-		FPhysXVehicle4WData* Data = GetVehicleData(VehicleInstance);
-		if (!VehicleInstance || !Data || !Data->Vehicle || !Data->SuspensionBatchQuery || !Data->FrictionPairs)
-		{
-			continue;
-		}
+		PHYSX_SCENE_WRITE_LOCK(Scene);
 
-		ApplyVehicleInputToRawData(VehicleInstance->LastInput, Data->RawInput);
-		PxVehicleDrive4WSmoothDigitalRawInputsAndSetAnalogInputs(
-			Data->KeySmoothingData,
-			Data->SteerVsForwardSpeedTable,
-			Data->RawInput,
-			DeltaTime,
-			false,
-			*Data->Vehicle);
-
-		if (PxRigidDynamic* Actor = GetPxDynamic(VehicleInstance->ChassisBody))
+		for (const FPendingBodySync& Sync : KinematicSyncs)
 		{
-			if (VehicleInstance->LastInput.bAccelerate || VehicleInstance->LastInput.bBrake ||
-				VehicleInstance->LastInput.bSteerLeft || VehicleInstance->LastInput.bSteerRight ||
-				VehicleInstance->LastInput.bHandbrake)
+			if (PxRigidActor* Actor = GetPxActor(Sync.Body))
 			{
-				Actor->wakeUp();
+				Actor->setGlobalPose(ToPxTransform(Sync.Transform));
 			}
 		}
 
-		PxVehicleWheels* VehicleArray[1] = { Data->Vehicle };
-		PxVehicleSuspensionRaycasts(
-			Data->SuspensionBatchQuery,
-			1,
-			VehicleArray,
-			NumVehicle4WWheels,
-			Data->RaycastResults.data());
-
-		PxVehicleWheelQueryResult VehicleQueryResults[1];
-		VehicleQueryResults[0].wheelQueryResults = Data->WheelQueryResults.data();
-		VehicleQueryResults[0].nbWheelQueryResults = NumVehicle4WWheels;
-
-		PxVehicleUpdates(
-			DeltaTime,
-			Scene->getGravity(),
-			*Data->FrictionPairs,
-			1,
-			VehicleArray,
-			VehicleQueryResults);
-	}
-
-	Scene->simulate(DeltaTime);
-	Scene->fetchResults(true);
-
-	for (FBodyInstance* Body : Bodies)
-	{
-		if (!Body) continue;
-		FTransform Transform;
-		if (GetBodyTransform(Body, Transform))
+		for (FVehicle4WInstance* VehicleInstance : Vehicles)
 		{
-			Body->CachedWorldTransform = Transform;
-			if (Body->OwnerComponent && Body->BoneIndex < 0 && Body->BodyType == EPhysicsBodyType::Dynamic)
+			FPhysXVehicle4WData* Data = GetVehicleData(VehicleInstance);
+			if (!VehicleInstance || !Data || !Data->Vehicle || !Data->SuspensionBatchQuery || !Data->FrictionPairs)
 			{
-				PxRigidDynamic* Dynamic = GetPxDynamic(Body);
-				if (Dynamic && !Dynamic->isSleeping())
+				continue;
+			}
+
+			ApplyVehicleInputToRawData(VehicleInstance->LastInput, Data->RawInput);
+			PxVehicleDrive4WSmoothDigitalRawInputsAndSetAnalogInputs(
+				Data->KeySmoothingData,
+				Data->SteerVsForwardSpeedTable,
+				Data->RawInput,
+				DeltaTime,
+				false,
+				*Data->Vehicle);
+
+			if (PxRigidDynamic* Actor = GetPxDynamic(VehicleInstance->ChassisBody))
+			{
+				if (VehicleInstance->LastInput.bAccelerate || VehicleInstance->LastInput.bBrake ||
+					VehicleInstance->LastInput.bSteerLeft || VehicleInstance->LastInput.bSteerRight ||
+					VehicleInstance->LastInput.bHandbrake)
 				{
-					Body->OwnerComponent->SetWorldLocation(Transform.Location);
-					Body->OwnerComponent->SetRelativeRotation(Transform.Rotation);
+					Actor->wakeUp();
 				}
 			}
+
+			PxVehicleWheels* VehicleArray[1] = { Data->Vehicle };
+			PxVehicleSuspensionRaycasts(
+				Data->SuspensionBatchQuery,
+				1,
+				VehicleArray,
+				NumVehicle4WWheels,
+				Data->RaycastResults.data());
+
+			PxVehicleWheelQueryResult VehicleQueryResults[1];
+			VehicleQueryResults[0].wheelQueryResults = Data->WheelQueryResults.data();
+			VehicleQueryResults[0].nbWheelQueryResults = NumVehicle4WWheels;
+
+			PxVehicleUpdates(
+				DeltaTime,
+				Scene->getGravity(),
+				*Data->FrictionPairs,
+				1,
+				VehicleArray,
+				VehicleQueryResults);
+		}
+
+		Scene->simulate(DeltaTime);
+		Scene->fetchResults(true);
+	}
+
+	TArray<FPendingBodySync> BodySyncs;
+	BodySyncs.reserve(Bodies.size());
+	{
+		PHYSX_SCENE_READ_LOCK(Scene);
+
+		for (FBodyInstance* Body : Bodies)
+		{
+			if (!Body)
+			{
+				continue;
+			}
+
+			const PxRigidActor* Actor = GetPxActor(Body);
+			if (!Actor)
+			{
+				continue;
+			}
+
+			FPendingBodySync Sync;
+			Sync.Body = Body;
+			Sync.OwnerComponent = Body->OwnerComponent;
+			Sync.Transform = ToFTransform(Actor->getGlobalPose());
+			if (Body->OwnerComponent && Body->BoneIndex < 0 && Body->BodyType == EPhysicsBodyType::Dynamic)
+			{
+				const PxRigidDynamic* Dynamic = GetPxDynamic(Body);
+				Sync.bApplyToComponent = Dynamic && !Dynamic->isSleeping();
+			}
+			BodySyncs.push_back(Sync);
+		}
+
+		for (FVehicle4WInstance* VehicleInstance : Vehicles)
+		{
+			UpdateCachedVehicleWheelTransforms(VehicleInstance);
 		}
 	}
 
-	for (FVehicle4WInstance* VehicleInstance : Vehicles)
+	for (const FPendingBodySync& Sync : BodySyncs)
 	{
-		UpdateCachedVehicleWheelTransforms(VehicleInstance);
+		if (Sync.Body)
+		{
+			Sync.Body->CachedWorldTransform = Sync.Transform;
+		}
+
+		if (Sync.bApplyToComponent && Sync.OwnerComponent)
+		{
+			Sync.OwnerComponent->SetWorldLocation(Sync.Transform.Location);
+			Sync.OwnerComponent->SetRelativeRotation(Sync.Transform.Rotation);
+		}
 	}
 }
 
@@ -652,6 +700,8 @@ FBodyInstance* FPhysXRuntime::CreateRigidBody(const FPhysicsBodyDesc& Desc)
 	{
 		return nullptr;
 	}
+
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 
 	const PxTransform Pose = PhysXHelpers::ToPxTransform(Desc.WorldTransform);
 	PxRigidActor* Actor = nullptr;
@@ -696,7 +746,7 @@ FBodyInstance* FPhysXRuntime::CreateRigidBody(const FPhysicsBodyDesc& Desc)
 
 	for (const FPhysicsShapeDesc& ShapeDesc : Desc.Shapes)
 	{
-		CreateShape(Body, ShapeDesc);
+		CreateShape_AssumesLocked(Body, ShapeDesc);
 	}
 
 	if (PxRigidDynamic* Dynamic = Actor->is<PxRigidDynamic>())
@@ -724,13 +774,32 @@ void FPhysXRuntime::DestroyRigidBody(FBodyInstance* Body)
 
 	if (PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body))
 	{
-		Actor->release();
+		if (Scene)
+		{
+			PHYSX_SCENE_WRITE_LOCK(Scene);
+			Actor->release();
+		}
+		else
+		{
+			Actor->release();
+		}
 	}
 
 	delete Body;
 }
 
 FPhysicsShapeHandle FPhysXRuntime::CreateShape(FBodyInstance* Body, const FPhysicsShapeDesc& Desc)
+{
+	if (!Scene)
+	{
+		return {};
+	}
+
+	PHYSX_SCENE_WRITE_LOCK(Scene);
+	return CreateShape_AssumesLocked(Body, Desc);
+}
+
+FPhysicsShapeHandle FPhysXRuntime::CreateShape_AssumesLocked(FBodyInstance* Body, const FPhysicsShapeDesc& Desc)
 {
 	if (!Physics || !Body)
 	{
@@ -775,7 +844,7 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape(FBodyInstance* Body, const FPhysi
 
 FConstraintInstance* FPhysXRuntime::CreateD6Joint(const FPhysicsConstraintDesc& Desc)
 {
-	if (!Physics || !Desc.ParentBody || !Desc.ChildBody)
+	if (!Physics || !Scene || !Desc.ParentBody || !Desc.ChildBody)
 	{
 		return nullptr;
 	}
@@ -786,6 +855,8 @@ FConstraintInstance* FPhysXRuntime::CreateD6Joint(const FPhysicsConstraintDesc& 
 	{
 		return nullptr;
 	}
+
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 
 	PxD6Joint* Joint = PxD6JointCreate(
 		*Physics,
@@ -836,7 +907,15 @@ void FPhysXRuntime::DestroyJoint(FConstraintInstance* Joint)
 
 	if (PxJoint* PxJointPtr = static_cast<PxJoint*>(Joint->JointHandle.NativePtr))
 	{
-		PxJointPtr->release();
+		if (Scene)
+		{
+			PHYSX_SCENE_WRITE_LOCK(Scene);
+			PxJointPtr->release();
+		}
+		else
+		{
+			PxJointPtr->release();
+		}
 	}
 
 	delete Joint;
@@ -848,6 +927,8 @@ FVehicle4WInstance* FPhysXRuntime::CreateVehicle4W(const FVehicle4WDesc& Desc)
 	{
 		return nullptr;
 	}
+
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 
 	FVehicle4WInstance* Instance = new FVehicle4WInstance();
 	Instance->Name = Desc.Name;
@@ -1103,20 +1184,33 @@ void FPhysXRuntime::DestroyVehicle4W(FVehicle4WInstance* Vehicle)
 	FPhysXVehicle4WData* Data = GetVehicleData(Vehicle);
 	if (Data)
 	{
-		if (Data->SuspensionBatchQuery)
+		auto ReleaseVehicleData = [Data]()
 		{
-			Data->SuspensionBatchQuery->release();
-			Data->SuspensionBatchQuery = nullptr;
+			if (Data->SuspensionBatchQuery)
+			{
+				Data->SuspensionBatchQuery->release();
+				Data->SuspensionBatchQuery = nullptr;
+			}
+			if (Data->FrictionPairs)
+			{
+				Data->FrictionPairs->release();
+				Data->FrictionPairs = nullptr;
+			}
+			if (Data->Vehicle)
+			{
+				Data->Vehicle->free();
+				Data->Vehicle = nullptr;
+			}
+		};
+
+		if (Scene)
+		{
+			PHYSX_SCENE_WRITE_LOCK(Scene);
+			ReleaseVehicleData();
 		}
-		if (Data->FrictionPairs)
+		else
 		{
-			Data->FrictionPairs->release();
-			Data->FrictionPairs = nullptr;
-		}
-		if (Data->Vehicle)
-		{
-			Data->Vehicle->free();
-			Data->Vehicle = nullptr;
+			ReleaseVehicleData();
 		}
 		delete Data;
 	}
@@ -1153,32 +1247,40 @@ bool FPhysXRuntime::GetVehicle4WWheelTransforms(
 
 void FPhysXRuntime::AddForce(UPrimitiveComponent* Comp, const FVector& Force)
 {
-	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_WRITE_LOCK(Scene);
 		Dynamic->addForce(ToPxVec3(Force));
 	}
 }
 
 void FPhysXRuntime::AddForceAtLocation(UPrimitiveComponent* Comp, const FVector& Force, const FVector& WorldLocation)
 {
-	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_WRITE_LOCK(Scene);
 		PxRigidBodyExt::addForceAtPos(*Dynamic, ToPxVec3(Force), ToPxVec3(WorldLocation));
 	}
 }
 
 void FPhysXRuntime::AddTorque(UPrimitiveComponent* Comp, const FVector& Torque)
 {
-	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_WRITE_LOCK(Scene);
 		Dynamic->addTorque(ToPxVec3(Torque));
 	}
 }
 
 FVector FPhysXRuntime::GetLinearVelocity(UPrimitiveComponent* Comp) const
 {
-	if (const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_READ_LOCK(Scene);
 		return ToFVector(Dynamic->getLinearVelocity());
 	}
 	return FVector(0.0f, 0.0f, 0.0f);
@@ -1186,16 +1288,20 @@ FVector FPhysXRuntime::GetLinearVelocity(UPrimitiveComponent* Comp) const
 
 void FPhysXRuntime::SetLinearVelocity(UPrimitiveComponent* Comp, const FVector& Vel)
 {
-	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_WRITE_LOCK(Scene);
 		Dynamic->setLinearVelocity(ToPxVec3(Vel));
 	}
 }
 
 FVector FPhysXRuntime::GetAngularVelocity(UPrimitiveComponent* Comp) const
 {
-	if (const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_READ_LOCK(Scene);
 		return ToFVector(Dynamic->getAngularVelocity());
 	}
 	return FVector(0.0f, 0.0f, 0.0f);
@@ -1203,24 +1309,30 @@ FVector FPhysXRuntime::GetAngularVelocity(UPrimitiveComponent* Comp) const
 
 void FPhysXRuntime::SetAngularVelocity(UPrimitiveComponent* Comp, const FVector& Vel)
 {
-	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_WRITE_LOCK(Scene);
 		Dynamic->setAngularVelocity(ToPxVec3(Vel));
 	}
 }
 
 void FPhysXRuntime::SetMass(UPrimitiveComponent* Comp, float Mass)
 {
-	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_WRITE_LOCK(Scene);
 		PxRigidBodyExt::updateMassAndInertia(*Dynamic, (std::max)(0.001f, Mass));
 	}
 }
 
 float FPhysXRuntime::GetMass(UPrimitiveComponent* Comp) const
 {
-	if (const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_READ_LOCK(Scene);
 		return Dynamic->getMass();
 	}
 	return 0.0f;
@@ -1228,16 +1340,20 @@ float FPhysXRuntime::GetMass(UPrimitiveComponent* Comp) const
 
 void FPhysXRuntime::SetCenterOfMass(UPrimitiveComponent* Comp, const FVector& LocalOffset)
 {
-	if (PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_WRITE_LOCK(Scene);
 		Dynamic->setCMassLocalPose(PxTransform(ToPxVec3(LocalOffset)));
 	}
 }
 
 FVector FPhysXRuntime::GetCenterOfMass(UPrimitiveComponent* Comp) const
 {
-	if (const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp)))
+	const PxRigidDynamic* Dynamic = GetPxDynamic(FindBodyByComponent(Comp));
+	if (Scene && Dynamic)
 	{
+		PHYSX_SCENE_READ_LOCK(Scene);
 		return ToFVector(Dynamic->getCMassLocalPose().p);
 	}
 	return FVector(0.0f, 0.0f, 0.0f);
@@ -1290,14 +1406,17 @@ bool FPhysXRuntime::Raycast(const FVector& Start, const FVector& Dir, float MaxD
 	FilterCallback.TraceBit = 1u << static_cast<PxU32>(TraceChannel);
 
 	PxRaycastBuffer Hit;
-	const bool bStatus = Scene->raycast(ToPxVec3(Start), PxDir.getNormalized(), MaxDist, Hit,
-		PxHitFlag::eDEFAULT, PxQueryFilterData(), &FilterCallback);
-	if (!bStatus || !Hit.hasBlock)
 	{
-		return false;
-	}
+		PHYSX_SCENE_READ_LOCK(Scene);
+		const bool bStatus = Scene->raycast(ToPxVec3(Start), PxDir.getNormalized(), MaxDist, Hit,
+			PxHitFlag::eDEFAULT, PxQueryFilterData(), &FilterCallback);
+		if (!bStatus || !Hit.hasBlock)
+		{
+			return false;
+		}
 
-	FillHitResult(Hit.block, OutHit);
+		FillHitResult(Hit.block, OutHit);
+	}
 	return OutHit.bHit;
 }
 
@@ -1349,14 +1468,17 @@ bool FPhysXRuntime::RaycastByObjectTypes(const FVector& Start, const FVector& Di
 	FilterCallback.ObjectTypeMask = ObjectTypeMask;
 
 	PxRaycastBuffer Hit;
-	const bool bStatus = Scene->raycast(ToPxVec3(Start), PxDir.getNormalized(), MaxDist, Hit,
-		PxHitFlag::eDEFAULT, PxQueryFilterData(), &FilterCallback);
-	if (!bStatus || !Hit.hasBlock)
 	{
-		return false;
-	}
+		PHYSX_SCENE_READ_LOCK(Scene);
+		const bool bStatus = Scene->raycast(ToPxVec3(Start), PxDir.getNormalized(), MaxDist, Hit,
+			PxHitFlag::eDEFAULT, PxQueryFilterData(), &FilterCallback);
+		if (!bStatus || !Hit.hasBlock)
+		{
+			return false;
+		}
 
-	FillHitResult(Hit.block, OutHit);
+		FillHitResult(Hit.block, OutHit);
+	}
 	return OutHit.bHit;
 }
 
@@ -1408,25 +1530,29 @@ bool FPhysXRuntime::SphereSweepShapeComponents(const FVector& Start, const FVect
 
 	PxSweepBuffer Hit;
 	const PxSphereGeometry SweepGeometry(Radius);
-	const bool bStatus = Scene->sweep(SweepGeometry, PxTransform(ToPxVec3(Start)), PxDir.getNormalized(), MaxDist, Hit,
-		PxHitFlag::eDEFAULT, PxQueryFilterData(), &FilterCallback);
-	if (!bStatus || !Hit.hasBlock)
 	{
-		return false;
-	}
+		PHYSX_SCENE_READ_LOCK(Scene);
+		const bool bStatus = Scene->sweep(SweepGeometry, PxTransform(ToPxVec3(Start)), PxDir.getNormalized(), MaxDist, Hit,
+			PxHitFlag::eDEFAULT, PxQueryFilterData(), &FilterCallback);
+		if (!bStatus || !Hit.hasBlock)
+		{
+			return false;
+		}
 
-	FillHitResult(Hit.block, OutHit);
+		FillHitResult(Hit.block, OutHit);
+	}
 	return OutHit.bHit;
 }
 
 bool FPhysXRuntime::GetBodyTransform(const FBodyInstance* Body, FTransform& OutTransform) const
 {
 	const PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body);
-	if (!Actor)
+	if (!Scene || !Actor)
 	{
 		return false;
 	}
 
+	PHYSX_SCENE_READ_LOCK(Scene);
 	OutTransform = PhysXHelpers::ToFTransform(Actor->getGlobalPose());
 	return true;
 }
@@ -1434,7 +1560,7 @@ bool FPhysXRuntime::GetBodyTransform(const FBodyInstance* Body, FTransform& OutT
 void FPhysXRuntime::SetBodyTransform(FBodyInstance* Body, const FTransform& Transform, bool bTeleport)
 {
 	PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body);
-	if (!Actor)
+	if (!Scene || !Actor)
 	{
 		return;
 	}
@@ -1445,6 +1571,7 @@ void FPhysXRuntime::SetBodyTransform(FBodyInstance* Body, const FTransform& Tran
 		return;
 	}
 
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	Actor->setGlobalPose(PhysXHelpers::ToPxTransform(Transform));
 	Body->CachedWorldTransform = Transform;
 }
@@ -1452,11 +1579,12 @@ void FPhysXRuntime::SetBodyTransform(FBodyInstance* Body, const FTransform& Tran
 void FPhysXRuntime::SetKinematicTarget(FBodyInstance* Body, const FTransform& Transform)
 {
 	PxRigidDynamic* Dynamic = PhysXHelpers::GetPxDynamic(Body);
-	if (!Dynamic)
+	if (!Scene || !Dynamic)
 	{
 		return;
 	}
 
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	Dynamic->setRigidBodyFlag(PxRigidBodyFlag::eKINEMATIC, true);
 	Dynamic->setKinematicTarget(PhysXHelpers::ToPxTransform(Transform));
 	Body->BodyType = EPhysicsBodyType::Kinematic;
@@ -1478,11 +1606,12 @@ void FPhysXRuntime::SetBodyType(FBodyInstance* Body, EPhysicsBodyType NewType)
 	}
 
 	PxRigidDynamic* Dynamic = GetPxDynamic(Body);
-	if (!Dynamic)
+	if (!Scene || !Dynamic)
 	{
 		return;
 	}
 
+	PHYSX_SCENE_WRITE_LOCK(Scene);
 	if (Body->BodyType == NewType)
 	{
 		// 이미 같은 타입이라도 Dynamic 진입 시점에 잠들어 있을 수 있으니 wake만 보장.
@@ -1513,6 +1642,7 @@ void FPhysXRuntime::GetPhysicsStats(FPhysicsStats& OutStats) const
 		return;
 	}
 
+	PHYSX_SCENE_READ_LOCK(Scene);
 	OutStats.NumRigidStatics = Scene->getNbActors(PxActorTypeFlag::eRIGID_STATIC);
 	OutStats.NumRigidDynamics = Scene->getNbActors(PxActorTypeFlag::eRIGID_DYNAMIC);
 	OutStats.NumActors = OutStats.NumRigidStatics + OutStats.NumRigidDynamics;
@@ -1538,6 +1668,7 @@ void FPhysXRuntime::ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines
 		return;
 	}
 
+	PHYSX_SCENE_READ_LOCK(Scene);
 	const PxRenderBuffer& RenderBuffer = Scene->getRenderBuffer();
 	const PxU32 NumLines = RenderBuffer.getNbLines();
 	const PxDebugLine* Lines = RenderBuffer.getLines();
@@ -1567,7 +1698,12 @@ void FPhysXRuntime::ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines
 void FPhysXRuntime::ExtractVehicleDebugLines(TArray<FPhysicsDebugLine>& OutLines) const
 {
 	OutLines.clear();
+	if (!Scene)
+	{
+		return;
+	}
 
+	PHYSX_SCENE_READ_LOCK(Scene);
 	for (const FVehicle4WInstance* Vehicle : Vehicles)
 	{
 		AppendVehicleDebugLines(Vehicle, OutLines);
