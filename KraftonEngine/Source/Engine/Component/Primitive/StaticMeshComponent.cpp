@@ -245,6 +245,34 @@ void UStaticMeshComponent::PostDuplicate()
 	MarkWorldBoundsDirty();
 }
 
+void UStaticMeshComponent::PostEditChangeProperty(const FPropertyChangedEvent& Event)
+{
+	const bool bMaterialSlotsChanged =
+		(Event.PropertyName && strcmp(Event.PropertyName, "MaterialSlots") == 0)
+		|| (Event.Property && Event.Property->Name && strcmp(Event.Property->Name, "MaterialSlots") == 0)
+		|| Event.PropertyPath.rfind("MaterialSlots[", 0) == 0;
+
+	if (bMaterialSlotsChanged && Event.ArrayIndex >= 0)
+	{
+		const int32 Index = Event.ArrayIndex;
+		if (Index >= 0 && Index < static_cast<int32>(MaterialSlots.size()))
+		{
+			const FString& NewMatPath = MaterialSlots[Index];
+			if (NewMatPath.empty() || NewMatPath == "None")
+			{
+				SetMaterial(Index, nullptr);
+			}
+			else if (UMaterial* LoadedMat = FMaterialManager::Get().GetOrCreateMaterial(NewMatPath))
+			{
+				SetMaterial(Index, LoadedMat);
+			}
+		}
+		return;
+	}
+
+	UMeshComponent::PostEditChangeProperty(Event);
+}
+
 void UStaticMeshComponent::PostEditProperty(const char* PropertyName)
 {
 	UPrimitiveComponent::PostEditProperty(PropertyName);

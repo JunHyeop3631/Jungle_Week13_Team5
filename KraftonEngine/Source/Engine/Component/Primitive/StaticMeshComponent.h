@@ -43,6 +43,7 @@ public:
 	void PostDuplicate() override;
 
 	// Property Editor 지원
+	void PostEditChangeProperty(const FPropertyChangedEvent& Event) override;
 	void PostEditProperty(const char* PropertyName) override;
 
 	const FString& GetStaticMeshPath() const { return StaticMeshPath.ToString(); }
