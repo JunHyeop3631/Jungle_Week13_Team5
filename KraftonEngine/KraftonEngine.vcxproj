@@ -754,7 +754,6 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClCompile Include="Source\Engine\Viewport\GameViewportClient.cpp" />
     <ClCompile Include="Source\Engine\Viewport\Viewport.cpp" />
     <ClCompile Include="Source\Engine\Viewport\ViewportClient.cpp" />
-    <ClCompile Include="Source\Game\Cloth\TempClothTestActor.cpp" />
     <ClCompile Include="Source\Game\GameActorPlacements.cpp" />
     <ClCompile Include="Source\Game\Lua\GameLuaBindings.cpp" />
     <ClCompile Include="Source\ObjViewer\ObjViewerEngine.cpp" />
@@ -1203,7 +1202,6 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClInclude Include="Source\Engine\Viewport\GameViewportClient.h" />
     <ClInclude Include="Source\Engine\Viewport\Viewport.h" />
     <ClInclude Include="Source\Engine\Viewport\ViewportClient.h" />
-    <ClInclude Include="Source\Game\Cloth\TempClothTestActor.h" />
     <ClInclude Include="Source\Game\GameActorPlacements.h" />
     <ClInclude Include="Source\Game\Lua\GameLuaBindings.h" />
     <ClInclude Include="Source\ObjViewer\ObjViewerEngine.h" />

@@ -2,7 +2,6 @@
 
 #include "Engine/Runtime/ActorPlacementRegistry.h"
 #include "Engine/Runtime/EngineInitHooks.h"
-#include "Game/Cloth/TempClothTestActor.h"
 #include "GameFramework/World.h"
 
 // ============================================================
@@ -14,25 +13,6 @@
 // ============================================================
 void RegisterGameActorPlacements()
 {
-	// TEMP CLOTH TEST - DELETE LATER.
-	FActorPlacementRegistry::Get().RegisterEntry("TEMP Cloth Test (delete later)",
-		[](UWorld* World, const FVector& Location) -> AActor*
-		{
-			if (!World)
-			{
-				return nullptr;
-			}
-
-			ATempClothTestActor* Actor = World->SpawnActor<ATempClothTestActor>();
-			if (!Actor)
-			{
-				return nullptr;
-			}
-
-			Actor->InitDefaultComponents();
-			Actor->SetActorLocation(Location);
-			return Actor;
-		});
 }
 
 // 자기-등록 — Editor / Game 측이 함수명을 모르고도 FEngineInitHooks::RunAll() 로 호출됨.
