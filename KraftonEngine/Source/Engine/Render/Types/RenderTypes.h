@@ -53,6 +53,7 @@ enum class ERenderPass : uint32
 	OverlayFont,	// 스크린 공간 텍스트 (깊이 무시)
 	UI,				// RmlUi 기반 게임 UI
 	GammaCorrection,// 최종 선형 SceneColor를 디스플레이용 감마 공간으로 변환
+	Outline,		// 선택/피킹 아웃라인 오버레이 (실행 순서는 DOF 이후)
 	MAX
 };
 
@@ -78,6 +79,7 @@ inline const char* GetRenderPassName(ERenderPass Pass)
 		"RenderPass::OverlayFont",
 		"RenderPass::UI",
 		"RenderPass::GammaCorrection",
+		"RenderPass::Outline",
 	};
 	static_assert(ARRAYSIZE(Names) == (uint32)ERenderPass::MAX, "Names must match ERenderPass entries");
 	return Names[(uint32)Pass];
@@ -106,6 +108,7 @@ namespace RenderStateStrings
 		{ "OverlayFont",   (int)ERenderPass::OverlayFont },
 		{ "UI",            (int)ERenderPass::UI },
 		{ "GammaCorrection",(int)ERenderPass::GammaCorrection },
+		{ "Outline",       (int)ERenderPass::Outline },
 	};
 
 	static_assert(ARRAYSIZE(RenderPassMap) == (int)ERenderPass::MAX, "RenderPassMap must match ERenderPass entries");

@@ -22,7 +22,7 @@ public:
 	// 팩토리 등록 (정적 초기화 시 호출)
 	void Register(FRenderPassFactory Factory);
 
-	// 등록된 모든 패스 인스턴스 생성 → PassType 순 정렬
+	// 등록된 모든 패스 인스턴스 생성 → 실행 순서 정렬
 	TArray<std::unique_ptr<FRenderPassBase>> CreateAll() const;
 
 private:

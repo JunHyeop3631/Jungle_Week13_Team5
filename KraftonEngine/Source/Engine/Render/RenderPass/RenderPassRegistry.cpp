@@ -23,11 +23,28 @@ TArray<std::unique_ptr<FRenderPassBase>> FRenderPassRegistry::CreateAll() const
 		Passes.push_back(Factory());
 	}
 
-	// ERenderPass enum 순서 = 실행 순서
-	std::sort(Passes.begin(), Passes.end(),
-		[](const std::unique_ptr<FRenderPassBase>& A, const std::unique_ptr<FRenderPassBase>& B)
+	// Most passes follow enum order. Outline is a selection overlay, so keep its
+	// serialized enum value stable while executing it after DOF.
+	auto PassOrder = [](ERenderPass Pass) -> uint32
+	{
+		if (Pass == ERenderPass::Outline)
 		{
-			return static_cast<uint32>(A->GetPassType()) < static_cast<uint32>(B->GetPassType());
+			return static_cast<uint32>(ERenderPass::DepthOfField) + 1;
+		}
+
+		uint32 Order = static_cast<uint32>(Pass);
+		if (Order > static_cast<uint32>(ERenderPass::DepthOfField)
+			&& Order < static_cast<uint32>(ERenderPass::Outline))
+		{
+			++Order;
+		}
+		return Order;
+	};
+
+	std::sort(Passes.begin(), Passes.end(),
+		[PassOrder](const std::unique_ptr<FRenderPassBase>& A, const std::unique_ptr<FRenderPassBase>& B)
+		{
+			return PassOrder(A->GetPassType()) < PassOrder(B->GetPassType());
 		});
 
 	return Passes;
