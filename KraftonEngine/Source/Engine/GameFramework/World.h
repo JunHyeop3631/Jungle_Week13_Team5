@@ -15,6 +15,7 @@
 #include <Collision/Octree/Octree.h>
 #include <Collision/Octree/SpatialPartition.h>
 #include "GameFramework/WorldSettings.h"
+#include "Physics/Cloth/IClothScene.h"
 #include "Physics/IPhysicsScene.h"
 #include "Source/Engine/GameFramework/World.generated.h"
 #include <memory>
@@ -134,6 +135,7 @@ private:
 
 	FSpatialPartition Partition;
 	std::unique_ptr<IPhysicsScene> PhysicsScene;
+	std::unique_ptr<IClothScene> ClothScene;
 
 	// Game flow — Editor 월드에서는 nullptr로 유지된다.
 	AGameModeBase* GameMode = nullptr;
@@ -141,6 +143,7 @@ private:
 
 public:
 	IPhysicsScene* GetPhysicsScene() const { return PhysicsScene.get(); }
+	IClothScene* GetClothScene() const { return ClothScene.get(); }
 
 	// Physics raycast convenience — delegates to IPhysicsScene::Raycast
 	bool PhysicsRaycast(const FVector& Start, const FVector& Dir, float MaxDist, FHitResult& OutHit,

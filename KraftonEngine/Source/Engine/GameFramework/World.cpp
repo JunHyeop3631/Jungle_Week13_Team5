@@ -5,6 +5,7 @@
 #include "Component/Primitive/StaticMeshComponent.h"
 #include "Engine/Component/Camera/CameraComponent.h"
 #include "Render/Types/LODContext.h"
+#include "Physics/Cloth/NvClothScene.h"
 #include "Physics/PhysXRuntime.h"
 #include "GameFramework/GameMode/GameModeBase.h"
 #include "GameFramework/GameMode/GameStateBase.h"
@@ -314,6 +315,12 @@ void UWorld::InitWorld()
 	// 물리 시스템 초기화 — IPhysicsScene 단일 경로.
 	PhysicsScene = std::make_unique<FPhysXRuntime>();
 	PhysicsScene->Initialize();
+
+	ClothScene = std::make_unique<FNvClothScene>();
+	if (!ClothScene->Initialize(EClothBackend::CPU))
+	{
+		ClothScene.reset();
+	}
 }
 
 void UWorld::BeginPlay()
@@ -411,6 +418,10 @@ void UWorld::EndPlay()
 	if (PhysicsScene)
 	{
 		PhysicsScene->Shutdown();
+	}
+	if (ClothScene)
+	{
+		ClothScene->Shutdown();
 	}
 
 	// Clear spatial partition while actors/components are still alive.
