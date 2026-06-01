@@ -2,12 +2,32 @@
 
 #include "Core/Types/CoreTypes.h"
 #include "Math/Vector.h"
+#include "Object/Reflection/ObjectMacros.h"
 
 enum class EClothBackend : uint8
 {
 	CPU,
 	CUDA,
 	DX11,
+};
+
+UENUM()
+enum class EClothPinMode : uint8
+{
+	None,
+	TopRow,
+	BottomRow,
+	LeftRow,
+	RightRow,
+	TopLeft,
+	TopRight,
+	BottomLeft,
+	BottomRight,
+	TopCorners,
+	BottomCorners,
+	LeftCorners,
+	RightCorners,
+	AllCorners,
 };
 
 struct FClothFabricHandle
@@ -162,7 +182,7 @@ struct FClothGridDesc
 	FVector AxisX = FVector::RightVector;
 	FVector AxisY = FVector::DownVector;
 
-	bool bPinTopRow = true;
+	EClothPinMode PinMode = EClothPinMode::TopRow;
 	FClothSettings Settings;
 	FClothCollisionDesc Collision;
 };

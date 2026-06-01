@@ -66,8 +66,8 @@ private:
 	UPROPERTY(Edit, Save, Category="Cloth", DisplayName="Spacing")
 	float Spacing = 10.0f;
 
-	UPROPERTY(Edit, Save, Category="Cloth", DisplayName="Pin Top Row")
-	bool bPinTopRow = true;
+	UPROPERTY(Edit, Save, Category="Cloth", DisplayName="Pin Mode", Enum=EClothPinMode)
+	EClothPinMode PinMode = EClothPinMode::TopRow;
 
 	UPROPERTY(Edit, Save, Category="Cloth", DisplayName="Origin")
 	FVector ClothOrigin = FVector(0.0f, 0.0f, 200.0f);

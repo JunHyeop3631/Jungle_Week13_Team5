@@ -142,7 +142,7 @@ FClothGridDesc UClothComponent::BuildGridDesc() const
 	Desc.Origin = ClothOrigin;
 	Desc.AxisX = FVector::RightVector;
 	Desc.AxisY = FVector::DownVector;
-	Desc.bPinTopRow = bPinTopRow;
+	Desc.PinMode = PinMode;
 	Desc.Settings = BuildClothSettings();
 	return Desc;
 }
