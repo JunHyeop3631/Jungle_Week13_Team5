@@ -65,6 +65,14 @@ struct FPhysicsVehicleHandle
 	bool IsValid() const { return NativePtr != nullptr; }
 };
 
+struct FPhysicsAggregateHandle
+{
+	void* NativePtr = nullptr;
+	uint64 Serial = 0;
+
+	bool IsValid() const { return NativePtr != nullptr; }
+};
+
 enum class EVehicle4WWheelIndex : uint8
 {
 	FrontLeft = 0,
@@ -118,6 +126,9 @@ struct FPhysicsBodyDesc
 	bool bUseGravity = true;
 	bool bEnableCCD = false;
 	bool bStartAwake = true;
+
+	// 유효하면 이 바디를 해당 PxAggregate 에 추가(씬 직접 추가 대신). 래그돌 자기충돌 일괄 제어용.
+	FPhysicsAggregateHandle Aggregate;
 
 	TArray<FPhysicsShapeDesc> Shapes;
 };

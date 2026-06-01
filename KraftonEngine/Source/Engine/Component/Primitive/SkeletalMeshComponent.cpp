@@ -738,6 +738,23 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
 
     bool bCreatedAnyBody = false;
 
+    // ── 자기충돌 제어: 같은 메시의 모든 바디를 하나의 PxAggregate 로 묶는다 ──
+    //   enableSelfCollision = PhysicsAsset->bEnableSelfCollision.
+    //     false → aggregate 내부(같은 메시) 바디끼리 충돌하지 않음(월드와는 충돌) — 래그돌 폭발 방지.
+    //     true  → 종전처럼 모두 충돌(조인트 직결 쌍만 PhysX 기본 제외).
+    //   PhysX 4.1 aggregate 상한(128) 초과 시 aggregate 없이 진행(자기충돌 끄기 불가 → 경고).
+    {
+        const int32 MaxActors = (int32)PhysicsAsset->GetBodySetups().size();
+        if (MaxActors > 0 && MaxActors <= 128)
+        {
+            PhysicsAggregate = Scene.CreateAggregate(MaxActors, PhysicsAsset->bEnableSelfCollision);
+        }
+        else if (MaxActors > 128 && !PhysicsAsset->bEnableSelfCollision)
+        {
+            UE_LOG("PhysicsAsset self-collision disable skipped: body count %d exceeds PxAggregate max (128).", MaxActors);
+        }
+    }
+
     for (UBodySetup* BodySetup : PhysicsAsset->GetBodySetups())
     {
         if (!BodySetup || BodySetup->AggregateGeom.IsEmpty())
@@ -772,6 +789,7 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
         BodyDesc.bUseGravity = true;
         BodyDesc.bEnableCCD = true;
         BodyDesc.bStartAwake = true;
+        BodyDesc.Aggregate = PhysicsAggregate;   // 무효 핸들이면 CreateRigidBody 가 씬 직접 추가로 폴백
 
         AppendPhysicsShapes(*BodySetup, BodyDesc);
         if (BodyDesc.Shapes.empty())
@@ -792,6 +810,12 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
 
     if (!bCreatedAnyBody)
     {
+        // 바디가 하나도 안 생겼으면 위에서 만든 빈 aggregate 도 정리(누수/씬 잔류 방지).
+        if (PhysicsAggregate.IsValid())
+        {
+            Scene.DestroyAggregate(PhysicsAggregate);
+            PhysicsAggregate = {};
+        }
         Bodies.clear();
         PhysicsSceneOwner = nullptr;
         return false;
@@ -886,8 +910,15 @@ void USkeletalMeshComponent::DestroyPhysicsAssetBodies()
                 PhysicsSceneOwner->DestroyRigidBody(Body);
             }
         }
+
+        // 바디(actor) release 후 빈 aggregate 해제 (actor release 가 aggregate 에서 자동 제거되므로 이 순서).
+        if (PhysicsAggregate.IsValid())
+        {
+            PhysicsSceneOwner->DestroyAggregate(PhysicsAggregate);
+        }
     }
 
+    PhysicsAggregate = {};
     Constraints.clear();
     Bodies.clear();
     PhysicsSceneOwner = nullptr;
@@ -1160,6 +1191,16 @@ void USkeletalMeshComponent::GetEditableProperties(TArray<FPropertyValue>& OutPr
     // AnimInstance 자체 properties (Speed 등) 도 패널에 같이 노출 — 컴포넌트가 forward.
     // 자식이 자기 카테고리(예: "Animation|Character") 로 그룹화.
     if (AnimInstance) AnimInstance->GetEditableProperties(OutProps);
+
+    // 연결된 PhysicsAsset 의 편집 속성(Enable Self Collision 등)도 노출 — AnimInstance 와 동일한 forward 패턴.
+    // 같은 에셋을 쓰는 모든 인스턴스가 공유하는 값(에셋에 저장)이다.
+    if (USkeletalMesh* Mesh = GetSkeletalMesh())
+    {
+        if (UPhysicsAsset* PA = Mesh->PhysicsAsset)
+        {
+            PA->GetEditableProperties(OutProps);
+        }
+    }
 }
 
 void USkeletalMeshComponent::PostEditProperty(const char* PropertyName)

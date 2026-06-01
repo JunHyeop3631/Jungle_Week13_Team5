@@ -412,6 +412,13 @@ void FPhysXRuntime::Shutdown()
 	}
 	Bodies.clear();
 
+	// 바디(actor) release 후 남은 aggregate 정리(이미 비어 있음). Scene->release 이전에 수행.
+	for (PxAggregate* Aggregate : Aggregates)
+	{
+		if (Aggregate) Aggregate->release();
+	}
+	Aggregates.clear();
+
 	if (DefaultMaterial)
 	{
 		DefaultMaterial->release();
@@ -758,7 +765,15 @@ FBodyInstance* FPhysXRuntime::CreateRigidBody(const FPhysicsBodyDesc& Desc)
 		}
 	}
 
-	Scene->addActor(*Actor);
+	if (PxAggregate* Aggregate = static_cast<PxAggregate*>(Desc.Aggregate.NativePtr))
+	{
+		// aggregate 가 씬에 속해 있으면 addActor 가 actor 를 씬에도 추가한다(PxAggregate 규약).
+		Aggregate->addActor(*Actor);
+	}
+	else
+	{
+		Scene->addActor(*Actor);
+	}
 	Bodies.push_back(Body);
 	return Body;
 }
@@ -786,6 +801,50 @@ void FPhysXRuntime::DestroyRigidBody(FBodyInstance* Body)
 	}
 
 	delete Body;
+}
+
+FPhysicsAggregateHandle FPhysXRuntime::CreateAggregate(int32 MaxActors, bool bEnableSelfCollision)
+{
+	if (!Physics || !Scene || MaxActors <= 0)
+	{
+		return {};
+	}
+
+	PHYSX_SCENE_WRITE_LOCK(Scene);
+
+	// PhysX 4.1 PxAggregate 의 maxSize 상한은 128. 초과하면 createAggregate 가 실패(null)하므로 호출측에서 폴백한다.
+	PxAggregate* Aggregate = Physics->createAggregate(static_cast<PxU32>(MaxActors), bEnableSelfCollision);
+	if (!Aggregate)
+	{
+		return {};
+	}
+
+	Scene->addAggregate(*Aggregate);
+	Aggregates.push_back(Aggregate);
+	return { Aggregate, AllocateSerial() };
+}
+
+void FPhysXRuntime::DestroyAggregate(const FPhysicsAggregateHandle& Handle)
+{
+	PxAggregate* Aggregate = static_cast<PxAggregate*>(Handle.NativePtr);
+	if (!Aggregate)
+	{
+		return;
+	}
+
+	Aggregates.erase(std::remove(Aggregates.begin(), Aggregates.end(), Aggregate), Aggregates.end());
+
+	// 내부 actor 는 DestroyRigidBody 로 이미 release 되어 비어 있어야 한다.
+	// (남은 actor 가 있으면 release 시 PhysX 가 씬으로 재삽입하므로 호출 순서를 지킨다.)
+	if (Scene)
+	{
+		PHYSX_SCENE_WRITE_LOCK(Scene);
+		Aggregate->release();
+	}
+	else
+	{
+		Aggregate->release();
+	}
 }
 
 FPhysicsShapeHandle FPhysXRuntime::CreateShape(FBodyInstance* Body, const FPhysicsShapeDesc& Desc)

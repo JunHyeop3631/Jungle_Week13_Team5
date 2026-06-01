@@ -1059,6 +1059,31 @@ void FMeshEditorWidget::RenderPhysicsToolsPanel()
 		ImGui::Checkbox("Show Body Wireframe", &PhysicsTabState.bShowBodyWire);
 	}
 
+	if (ImGui::CollapsingHeader("Collision", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		if (UPhysicsAsset* PA = PhysicsTabState.PhysicsAsset)
+		{
+			// 자기충돌 on/off (PhysicsAsset 에 저장). 끄면 InstantiatePhysicsAssetBodies 가
+			// 모든 바디를 PxAggregate(enableSelfCollision=false)로 묶어 같은 메시 바디끼리 충돌을 끈다.
+			if (ImGui::Checkbox("Enable Self Collision", &PA->bEnableSelfCollision))
+			{
+				MarkDirty();
+				// aggregate 는 생성 시점에만 self-collision 플래그가 적용되므로, 시뮬 중이면 재인스턴스해 즉시 반영.
+				if (bSimulating)
+				{
+					StopPhysicsSimulation();
+					StartPhysicsSimulation();
+				}
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("끄면 같은 메시 바디끼리 충돌하지 않음(월드와는 충돌). 래그돌 폭발/떨림 방지.");
+		}
+		else
+		{
+			ImGui::TextDisabled("No PhysicsAsset.");
+		}
+	}
+
 	if (ImGui::CollapsingHeader("Body Creation", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		ImGui::DragFloat("Min Bone Size", &S.MinBoneSize, 0.5f, 0.f, 1000.f);

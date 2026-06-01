@@ -17,6 +17,12 @@ public:
 
     FString AssetPathFileName;
 
+    // 래그돌 자기충돌(같은 메시 내 바디끼리) 일괄 on/off.
+    //   false → InstantiatePhysicsAssetBodies 가 모든 바디를 PxAggregate(enableSelfCollision=false)로 묶어 끔(월드와는 충돌).
+    //   true  → 종전처럼 모든 바디가 서로 충돌(조인트 직결 쌍만 PhysX 기본으로 제외).
+    UPROPERTY(Edit, Save, Category="Physics", DisplayName="Enable Self Collision")
+    bool bEnableSelfCollision = false;
+
     UBodySetup* FindBodySetup(const FString& BoneName) const;
     UPhysicsConstraintSetup* FindConstraintSetup(const FString& Parent, const FString& Child) const;
 

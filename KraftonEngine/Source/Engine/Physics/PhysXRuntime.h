@@ -4,6 +4,7 @@
 
 namespace physx
 {
+	class PxAggregate;
 	class PxDefaultCpuDispatcher;
 	class PxFoundation;
 	class PxMaterial;
@@ -27,6 +28,9 @@ public:
 
 	FBodyInstance* CreateRigidBody(const FPhysicsBodyDesc& Desc) override;
 	void DestroyRigidBody(FBodyInstance* Body) override;
+
+	FPhysicsAggregateHandle CreateAggregate(int32 MaxActors, bool bEnableSelfCollision) override;
+	void DestroyAggregate(const FPhysicsAggregateHandle& Handle) override;
 
 	FPhysicsShapeHandle CreateShape(FBodyInstance* Body, const FPhysicsShapeDesc& Desc) override;
 
@@ -84,6 +88,7 @@ private:
 	TArray<FBodyInstance*> Bodies;
 	TArray<FConstraintInstance*> Joints;
 	TArray<FVehicle4WInstance*> Vehicles;
+	TArray<physx::PxAggregate*> Aggregates;
 	uint64 NextSerial = 1;
 
 	uint64 AllocateSerial() { return NextSerial++; }

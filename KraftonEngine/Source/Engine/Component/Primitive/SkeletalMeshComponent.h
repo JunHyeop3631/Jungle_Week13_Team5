@@ -171,6 +171,7 @@ protected:
 	TArray<FBodyInstance*> Bodies;
 	TArray<FConstraintInstance*> Constraints;
     IPhysicsScene* PhysicsSceneOwner = nullptr;
+    FPhysicsAggregateHandle PhysicsAggregate;   // 래그돌 바디를 묶는 aggregate(자기충돌 제어). 무효면 직접 씬 추가.
 
     FSkeletalClothBindingDesc SkeletalClothBinding;
     IClothScene* SkeletalClothSceneOwner = nullptr;

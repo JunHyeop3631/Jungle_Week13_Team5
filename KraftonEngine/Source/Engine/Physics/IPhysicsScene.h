@@ -22,6 +22,11 @@ public:
 	virtual FBodyInstance* CreateRigidBody(const FPhysicsBodyDesc& Desc) = 0;
 	virtual void DestroyRigidBody(FBodyInstance* Body) = 0;
 
+	// 래그돌 등 다수 바디를 묶어 자기충돌을 일괄 제어하는 PxAggregate 래퍼.
+	// bEnableSelfCollision=false 면 aggregate 내부 바디끼리 충돌하지 않는다(월드와는 충돌).
+	virtual FPhysicsAggregateHandle CreateAggregate(int32 MaxActors, bool bEnableSelfCollision) = 0;
+	virtual void DestroyAggregate(const FPhysicsAggregateHandle& Handle) = 0;
+
 	virtual FPhysicsShapeHandle CreateShape(FBodyInstance* Body, const FPhysicsShapeDesc& Desc) = 0;
 
 	virtual FConstraintInstance* CreateD6Joint(const FPhysicsConstraintDesc& Desc) = 0;

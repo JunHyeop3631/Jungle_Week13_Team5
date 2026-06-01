@@ -132,4 +132,9 @@ void UPhysicsAsset::Serialize(FArchive& Ar)
         Ar << P.BoneA;
         Ar << P.BoneB;
     }
+
+    // ── bEnableSelfCollision (이후 버전 추가) ──────────────────
+    // 구버전 에셋엔 이 바이트가 없음 → 로드 시 ifstream.read 가 EOF 에서 버퍼를 건드리지 않아
+    // 멤버 기본값(false)이 유지된다. 재저장하면 이후 정상 기록/로드.
+    Ar << bEnableSelfCollision;
 }
