@@ -7,6 +7,7 @@
 #include "Component/Shape/CapsuleComponent.h"
 #include "Component/Shape/SphereComponent.h"
 #include "GameFramework/AActor.h"
+#include "Object/Object.h"
 
 #include <algorithm>
 #include <cmath>
@@ -102,6 +103,32 @@ namespace
 	// object-type enum 은 bit31 을 절대 쓰지 않으므로 센티넬로 사용한다.
 	constexpr PxU32 RAGDOLL_FILTER_TAG = 0x80000000u;
 
+	ECollisionResponse GetResponseFromFilter(const PxFilterData& Source, PxU32 TargetObjectType)
+	{
+		if (TargetObjectType >= 32)
+		{
+			return ECollisionResponse::Ignore;
+		}
+
+		const PxU32 TargetBit = 1u << TargetObjectType;
+		if ((Source.word1 & TargetBit) != 0)
+		{
+			return ECollisionResponse::Block;
+		}
+		if ((Source.word2 & TargetBit) != 0)
+		{
+			return ECollisionResponse::Overlap;
+		}
+		return ECollisionResponse::Ignore;
+	}
+
+	ECollisionResponse GetPairResponseFromFilter(const PxFilterData& FilterData0, const PxFilterData& FilterData1)
+	{
+		const ECollisionResponse Response0 = GetResponseFromFilter(FilterData0, FilterData1.word0);
+		const ECollisionResponse Response1 = GetResponseFromFilter(FilterData1, FilterData0.word0);
+		return (Response0 < Response1) ? Response0 : Response1;
+	}
+
 	// 커스텀 시뮬레이션 필터 셰이더.
 	//   - 같은 래그돌 그룹(word0 하위비트 일치)인 두 바디가 서로의 ignore-mask 에 들어 있으면 eKILL.
 	//   - 그 외 모든 쌍은 PxDefaultSimulationFilterShader 에 그대로 위임 → 비-래그돌 동작 무변경.
@@ -111,6 +138,9 @@ namespace
 		PxFilterObjectAttributes Attributes1, PxFilterData FilterData1,
 		PxPairFlags& PairFlags, const void* ConstantBlock, PxU32 ConstantBlockSize)
 	{
+		(void)ConstantBlock;
+		(void)ConstantBlockSize;
+
 		const bool bRagdoll0 = (FilterData0.word0 & RAGDOLL_FILTER_TAG) != 0;
 		const bool bRagdoll1 = (FilterData1.word0 & RAGDOLL_FILTER_TAG) != 0;
 
@@ -140,10 +170,31 @@ namespace
 			return PxFilterFlags();
 		}
 
-		// 비-래그돌 쌍: 원래 컴포넌트 필터 데이터 그대로 기본 셰이더에 위임 → 기존 동작 무변경.
-		return PxDefaultSimulationFilterShader(
-			Attributes0, FilterData0, Attributes1, FilterData1,
-			PairFlags, ConstantBlock, ConstantBlockSize);
+		if (PxFilterObjectIsTrigger(Attributes0) || PxFilterObjectIsTrigger(Attributes1))
+		{
+			PairFlags = PxPairFlag::eTRIGGER_DEFAULT;
+			return PxFilterFlags();
+		}
+
+		const ECollisionResponse PairResponse = GetPairResponseFromFilter(FilterData0, FilterData1);
+		if (PairResponse == ECollisionResponse::Ignore)
+		{
+			return PxFilterFlag::eSUPPRESS;
+		}
+
+		if (PairResponse == ECollisionResponse::Overlap)
+		{
+			PairFlags = PxPairFlag::eDETECT_DISCRETE_CONTACT
+				| PxPairFlag::eNOTIFY_TOUCH_FOUND
+				| PxPairFlag::eNOTIFY_TOUCH_LOST;
+			return PxFilterFlags();
+		}
+
+		PairFlags = PxPairFlag::eCONTACT_DEFAULT
+			| PxPairFlag::eNOTIFY_TOUCH_FOUND
+			| PxPairFlag::eNOTIFY_TOUCH_LOST
+			| PxPairFlag::eNOTIFY_CONTACT_POINTS;
+		return PxFilterFlags();
 	}
 
 	FBodyInstance* GetBodyFromActor(const PxRigidActor* Actor)
@@ -372,6 +423,225 @@ namespace
 	}
 }
 
+class FPhysXSimulationEventCallback final : public PxSimulationEventCallback
+{
+public:
+	void Clear()
+	{
+		Events.clear();
+	}
+
+	void Dispatch()
+	{
+		TArray<FPendingEvent> PendingEvents;
+		PendingEvents.swap(Events);
+
+		for (const FPendingEvent& Event : PendingEvents)
+		{
+			if (!IsValid(Event.A) || !IsValid(Event.B))
+			{
+				continue;
+			}
+
+			AActor* ActorA = Event.A->GetOwner();
+			AActor* ActorB = Event.B->GetOwner();
+			if (Event.Type == EEventType::BeginOverlap)
+			{
+				Event.A->NotifyComponentBeginOverlap(Event.A, ActorB, Event.B, 0, false, Event.HitForA);
+				Event.B->NotifyComponentBeginOverlap(Event.B, ActorA, Event.A, 0, false, Event.HitForB);
+			}
+			else if (Event.Type == EEventType::EndOverlap)
+			{
+				Event.A->NotifyComponentEndOverlap(Event.A, ActorB, Event.B, 0);
+				Event.B->NotifyComponentEndOverlap(Event.B, ActorA, Event.A, 0);
+			}
+			else if (Event.Type == EEventType::BeginHit)
+			{
+				Event.A->NotifyComponentHit(Event.A, ActorB, Event.B, Event.ImpulseForA, Event.HitForA);
+				Event.B->NotifyComponentHit(Event.B, ActorA, Event.A, Event.ImpulseForB, Event.HitForB);
+			}
+			else if (Event.Type == EEventType::EndHit)
+			{
+				Event.A->NotifyComponentEndHit(Event.A, ActorB, Event.B);
+				Event.B->NotifyComponentEndHit(Event.B, ActorA, Event.A);
+			}
+		}
+	}
+
+	void onContact(const PxContactPairHeader& PairHeader, const PxContactPair* Pairs, PxU32 NumPairs) override
+	{
+		UPrimitiveComponent* CompA = GetComponentFromActor(PairHeader.actors[0]);
+		UPrimitiveComponent* CompB = GetComponentFromActor(PairHeader.actors[1]);
+		if (!CompA || !CompB)
+		{
+			return;
+		}
+
+		const ECollisionResponse Response = UPrimitiveComponent::GetMinResponse(CompA, CompB);
+		if (Response == ECollisionResponse::Ignore)
+		{
+			return;
+		}
+		if (Response == ECollisionResponse::Overlap && !WantsOverlapEvent(CompA, CompB))
+		{
+			return;
+		}
+
+		for (PxU32 PairIndex = 0; PairIndex < NumPairs; ++PairIndex)
+		{
+			const PxContactPair& Pair = Pairs[PairIndex];
+			const bool bTouchFound = Pair.events.isSet(PxPairFlag::eNOTIFY_TOUCH_FOUND);
+			const bool bTouchLost = Pair.events.isSet(PxPairFlag::eNOTIFY_TOUCH_LOST);
+			if (!bTouchFound && !bTouchLost)
+			{
+				continue;
+			}
+
+			if (Response == ECollisionResponse::Overlap)
+			{
+				if (bTouchFound)
+				{
+					QueueOverlap(EEventType::BeginOverlap, CompA, CompB);
+				}
+				if (bTouchLost)
+				{
+					QueueOverlap(EEventType::EndOverlap, CompA, CompB);
+				}
+			}
+			else
+			{
+				if (bTouchFound)
+				{
+					QueueHit(CompA, CompB, Pair);
+				}
+				if (bTouchLost)
+				{
+					QueueSimple(EEventType::EndHit, CompA, CompB);
+				}
+			}
+		}
+	}
+
+	void onTrigger(PxTriggerPair* Pairs, PxU32 Count) override
+	{
+		for (PxU32 PairIndex = 0; PairIndex < Count; ++PairIndex)
+		{
+			const PxTriggerPair& Pair = Pairs[PairIndex];
+			if (Pair.flags & (PxTriggerPairFlag::eREMOVED_SHAPE_TRIGGER | PxTriggerPairFlag::eREMOVED_SHAPE_OTHER))
+			{
+				continue;
+			}
+
+			UPrimitiveComponent* TriggerComp = GetComponentFromActor(Pair.triggerActor);
+			UPrimitiveComponent* OtherComp = GetComponentFromActor(Pair.otherActor);
+			if (!TriggerComp || !OtherComp || !WantsOverlapEvent(TriggerComp, OtherComp))
+			{
+				continue;
+			}
+
+			if (Pair.status & PxPairFlag::eNOTIFY_TOUCH_FOUND)
+			{
+				QueueOverlap(EEventType::BeginOverlap, TriggerComp, OtherComp);
+			}
+			if (Pair.status & PxPairFlag::eNOTIFY_TOUCH_LOST)
+			{
+				QueueOverlap(EEventType::EndOverlap, TriggerComp, OtherComp);
+			}
+		}
+	}
+
+	void onConstraintBreak(PxConstraintInfo*, PxU32) override {}
+	void onWake(PxActor**, PxU32) override {}
+	void onSleep(PxActor**, PxU32) override {}
+	void onAdvance(const PxRigidBody* const*, const PxTransform*, const PxU32) override {}
+
+private:
+	enum class EEventType : uint8
+	{
+		BeginOverlap,
+		EndOverlap,
+		BeginHit,
+		EndHit,
+	};
+
+	struct FPendingEvent
+	{
+		EEventType Type = EEventType::BeginOverlap;
+		UPrimitiveComponent* A = nullptr;
+		UPrimitiveComponent* B = nullptr;
+		FHitResult HitForA;
+		FHitResult HitForB;
+		FVector ImpulseForA = FVector(0.0f, 0.0f, 0.0f);
+		FVector ImpulseForB = FVector(0.0f, 0.0f, 0.0f);
+	};
+
+	static bool WantsOverlapEvent(const UPrimitiveComponent* A, const UPrimitiveComponent* B)
+	{
+		return (A && A->GetGenerateOverlapEvents()) || (B && B->GetGenerateOverlapEvents());
+	}
+
+	static FHitResult MakeHitResult(UPrimitiveComponent* OtherComp, const PxVec3& Position, const PxVec3& Normal, float PenetrationDepth = 0.0f)
+	{
+		FHitResult Hit;
+		Hit.bHit = true;
+		Hit.HitComponent = OtherComp;
+		Hit.HitActor = OtherComp ? OtherComp->GetOwner() : nullptr;
+		Hit.WorldHitLocation = ToFVector(Position);
+		Hit.WorldNormal = ToFVector(Normal);
+		Hit.ImpactNormal = Hit.WorldNormal;
+		Hit.PenetrationDepth = PenetrationDepth;
+		return Hit;
+	}
+
+	void QueueSimple(EEventType Type, UPrimitiveComponent* A, UPrimitiveComponent* B)
+	{
+		FPendingEvent Event;
+		Event.Type = Type;
+		Event.A = A;
+		Event.B = B;
+		Events.push_back(Event);
+	}
+
+	void QueueOverlap(EEventType Type, UPrimitiveComponent* A, UPrimitiveComponent* B)
+	{
+		FPendingEvent Event;
+		Event.Type = Type;
+		Event.A = A;
+		Event.B = B;
+		const PxVec3 MidPoint = (ToPxVec3(A->GetWorldLocation()) + ToPxVec3(B->GetWorldLocation())) * 0.5f;
+		Event.HitForA = MakeHitResult(B, MidPoint, PxVec3(0.0f, 0.0f, 0.0f));
+		Event.HitForB = MakeHitResult(A, MidPoint, PxVec3(0.0f, 0.0f, 0.0f));
+		Events.push_back(Event);
+	}
+
+	void QueueHit(UPrimitiveComponent* A, UPrimitiveComponent* B, const PxContactPair& Pair)
+	{
+		FPendingEvent Event;
+		Event.Type = EEventType::BeginHit;
+		Event.A = A;
+		Event.B = B;
+
+		PxContactPairPoint ContactPoint;
+		if (Pair.contactCount > 0 && Pair.extractContacts(&ContactPoint, 1) > 0)
+		{
+			Event.HitForA = MakeHitResult(B, ContactPoint.position, ContactPoint.normal, -ContactPoint.separation);
+			Event.HitForB = MakeHitResult(A, ContactPoint.position, -ContactPoint.normal, -ContactPoint.separation);
+			Event.ImpulseForA = ToFVector(ContactPoint.impulse);
+			Event.ImpulseForB = ToFVector(-ContactPoint.impulse);
+		}
+		else
+		{
+			const PxVec3 MidPoint = (ToPxVec3(A->GetWorldLocation()) + ToPxVec3(B->GetWorldLocation())) * 0.5f;
+			Event.HitForA = MakeHitResult(B, MidPoint, PxVec3(0.0f, 0.0f, 0.0f));
+			Event.HitForB = MakeHitResult(A, MidPoint, PxVec3(0.0f, 0.0f, 0.0f));
+		}
+
+		Events.push_back(Event);
+	}
+
+	TArray<FPendingEvent> Events;
+};
+
 FPhysXRuntime::~FPhysXRuntime()
 {
 	Shutdown();
@@ -409,6 +679,8 @@ bool FPhysXRuntime::Initialize()
 	SceneDesc.gravity = PxVec3(0.0f, 0.0f, -9.81f);
 	SceneDesc.cpuDispatcher = Dispatcher;
 	SceneDesc.filterShader = KraftonRagdollFilterShader;
+	EventCallback = new FPhysXSimulationEventCallback();
+	SceneDesc.simulationEventCallback = EventCallback;
 	ConfigurePhysXSceneDesc(SceneDesc);
 
 	Scene = Physics->createScene(SceneDesc);
@@ -479,6 +751,13 @@ void FPhysXRuntime::Shutdown()
 		Scene = nullptr;
 	}
 
+	if (EventCallback)
+	{
+		EventCallback->Clear();
+		delete EventCallback;
+		EventCallback = nullptr;
+	}
+
 	if (Dispatcher)
 	{
 		Dispatcher->release();
@@ -515,7 +794,7 @@ FBodyInstance* FPhysXRuntime::FindBodyByComponent(const UPrimitiveComponent* Com
 
 bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysicsBodyDesc& OutDesc) const
 {
-	if (!Comp || !Comp->IsQueryCollisionEnabled())
+	if (!Comp || !Comp->IsCollisionEnabled())
 	{
 		return false;
 	}
@@ -546,10 +825,12 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 		return false;
 	}
 
-	const bool bTrigger = Comp->GetGenerateOverlapEvents() || !HasAnyBlockResponse(Comp);
+	const bool bHasBlockResponse = HasAnyBlockResponse(Comp);
+	const bool bTrigger = Comp->GetGenerateOverlapEvents()
+		&& (!Comp->IsPhysicsCollisionEnabled() || !bHasBlockResponse);
 	ShapeDesc.bTriggerShape = bTrigger;
-	ShapeDesc.bSimulationShape = !bTrigger && Comp->GetCollisionEnabled() != ECollisionEnabled::QueryOnly;
-	ShapeDesc.bSceneQueryShape = true;
+	ShapeDesc.bSimulationShape = !bTrigger && Comp->IsPhysicsCollisionEnabled();
+	ShapeDesc.bSceneQueryShape = Comp->IsQueryCollisionEnabled();
 
 	OutDesc = FPhysicsBodyDesc();
 	OutDesc.OwnerComponent = Comp;
@@ -592,7 +873,7 @@ void FPhysXRuntime::UnregisterComponent(UPrimitiveComponent* Comp)
 
 void FPhysXRuntime::RebuildBody(UPrimitiveComponent* Comp)
 {
-	if (!Comp || !Comp->IsQueryCollisionEnabled())
+	if (!Comp || !Comp->IsCollisionEnabled())
 	{
 		UnregisterComponent(Comp);
 		return;
@@ -696,6 +977,11 @@ void FPhysXRuntime::Simulate(float DeltaTime)
 
 		Scene->simulate(DeltaTime);
 		Scene->fetchResults(true);
+	}
+
+	if (EventCallback)
+	{
+		EventCallback->Dispatch();
 	}
 
 	TArray<FPendingBodySync> BodySyncs;

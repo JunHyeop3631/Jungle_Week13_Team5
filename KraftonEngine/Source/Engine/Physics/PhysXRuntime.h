@@ -12,6 +12,8 @@ namespace physx
 	class PxScene;
 }
 
+class FPhysXSimulationEventCallback;
+
 class FPhysXRuntime : public IPhysicsScene
 {
 public:
@@ -84,6 +86,7 @@ private:
 	physx::PxScene* Scene = nullptr;
 	physx::PxDefaultCpuDispatcher* Dispatcher = nullptr;
 	physx::PxMaterial* DefaultMaterial = nullptr;
+	FPhysXSimulationEventCallback* EventCallback = nullptr;
 	bool bVehicleSdkAvailable = false;
 
 	TArray<FBodyInstance*> Bodies;

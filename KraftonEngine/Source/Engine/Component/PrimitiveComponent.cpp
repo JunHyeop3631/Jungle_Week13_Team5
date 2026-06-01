@@ -59,7 +59,7 @@ void UPrimitiveComponent::BeginPlay()
 	// 직렬화나 InitDefaultComponents에서 CollisionEnabled가 이미 설정된 경우 등록.
 	// 이 시점에 SimulatePhysics/ObjectType/Response/Mass/COM 등 모든 셋업이 끝나있어
 	// PhysX/Native가 정확한 값으로 body를 생성한다.
-	if (IsQueryCollisionEnabled())
+	if (IsCollisionEnabled())
 	{
 		if (Owner)
 		{
@@ -185,6 +185,11 @@ void UPrimitiveComponent::PostEditProperty(const char* PropertyName)
 	// 베이스 클래스의 transform 등 공통 프로퍼티 처리 보장
 	USceneComponent::PostEditProperty(PropertyName);
 
+	if (!PropertyName)
+	{
+		return;
+	}
+
 	if (strcmp(PropertyName, "RelativeTransform.Scale") == 0 || strcmp(PropertyName, "Scale") == 0)
 	{
 		NotifyPhysicsBodyDirty();
@@ -225,7 +230,7 @@ void UPrimitiveComponent::PostEditProperty(const char* PropertyName)
 		{
 			if (UWorld* World = Owner->GetWorld())
 			{
-				if (IsQueryCollisionEnabled())
+				if (IsCollisionEnabled())
 				{
 					if (IPhysicsScene* Scene = World->GetPhysicsScene())
 					{
@@ -242,6 +247,22 @@ void UPrimitiveComponent::PostEditProperty(const char* PropertyName)
 			}
 		}
 	}
+	else if (strcmp(PropertyName, "bSimulatePhysics") == 0 || strcmp(PropertyName, "Simulate Physics") == 0)
+	{
+		NotifyPhysicsBodyDirty();
+	}
+	else if (strcmp(PropertyName, "bGenerateOverlapEvents") == 0 || strcmp(PropertyName, "Generate Overlap Events") == 0)
+	{
+		NotifyPhysicsBodyDirty();
+	}
+	else if (strcmp(PropertyName, "ObjectType") == 0 || strcmp(PropertyName, "Object Type") == 0)
+	{
+		NotifyPhysicsBodyDirty();
+	}
+	else if (strcmp(PropertyName, "ResponseContainer") == 0 || strcmp(PropertyName, "Collision Responses") == 0)
+	{
+		NotifyPhysicsBodyDirty();
+	}
 	else if (strcmp(PropertyName, "Mass") == 0 || strcmp(PropertyName, "Mass (kg)") == 0)
 	{
 		// 에디터 슬라이더로 값을 바꾼 경우 백엔드에 즉시 반영.
@@ -250,6 +271,18 @@ void UPrimitiveComponent::PostEditProperty(const char* PropertyName)
 	else if (strcmp(PropertyName, "CenterOfMassOffset") == 0 || strcmp(PropertyName, "Center Of Mass Offset") == 0)
 	{
 		SetCenterOfMass(CenterOfMassOffset);
+	}
+}
+
+void UPrimitiveComponent::PostEditChangeProperty(const FPropertyChangedEvent& Event)
+{
+	PostEditProperty(Event.PropertyName);
+
+	const FString& Path = Event.PropertyPath;
+	if (Path.find("ResponseContainer") != FString::npos
+		|| Path.find("Collision Responses") != FString::npos)
+	{
+		NotifyPhysicsBodyDirty();
 	}
 }
 
@@ -410,9 +443,9 @@ void UPrimitiveComponent::EnsureWorldAABBUpdated() const
 
 void UPrimitiveComponent::SetCollisionEnabled(ECollisionEnabled InEnabled)
 {
-	bool bWasQuery = IsQueryCollisionEnabled();
+	bool bWasEnabled = IsCollisionEnabled();
 	CollisionEnabled = InEnabled;
-	bool bIsQuery = IsQueryCollisionEnabled();
+	bool bIsEnabled = IsCollisionEnabled();
 
 	// 컴포넌트 BeginPlay 전이면 멤버만 변경. BeginPlay에서 한 번 등록되며 그 시점엔
 	// SimulatePhysics 등 다른 셋업이 모두 완료된 상태.
@@ -422,9 +455,9 @@ void UPrimitiveComponent::SetCollisionEnabled(ECollisionEnabled InEnabled)
 	UWorld* World = Owner->GetWorld();
 	if (!World) return;
 
-	if (bWasQuery != bIsQuery)
+	if (bWasEnabled != bIsEnabled)
 	{
-		if (bIsQuery)
+		if (bIsEnabled)
 		{
 			if (IPhysicsScene* Scene = World->GetPhysicsScene())
 			{
@@ -439,7 +472,7 @@ void UPrimitiveComponent::SetCollisionEnabled(ECollisionEnabled InEnabled)
 			}
 		}
 	}
-	else if (bWasQuery && bIsQuery)
+	else if (bWasEnabled && bIsEnabled)
 	{
 		// 이미 등록된 상태에서 enabled 종류 변경 (예: QueryOnly ↔ QueryAndPhysics) — 재구성
 		NotifyPhysicsBodyDirty();
@@ -455,6 +488,12 @@ void UPrimitiveComponent::SetRelativeScale(const FVector& NewScale)
 bool UPrimitiveComponent::IsQueryCollisionEnabled() const
 {
 	return CollisionEnabled == ECollisionEnabled::QueryOnly
+		|| CollisionEnabled == ECollisionEnabled::QueryAndPhysics;
+}
+
+bool UPrimitiveComponent::IsPhysicsCollisionEnabled() const
+{
+	return CollisionEnabled == ECollisionEnabled::PhysicsOnly
 		|| CollisionEnabled == ECollisionEnabled::QueryAndPhysics;
 }
 
@@ -585,7 +624,9 @@ float UPrimitiveComponent::GetMass() const
 
 void UPrimitiveComponent::SetGenerateOverlapEvents(bool bInGenerateOverlapEvents)
 {
+	if (bGenerateOverlapEvents == bInGenerateOverlapEvents) return;
 	bGenerateOverlapEvents = bInGenerateOverlapEvents;
+	NotifyPhysicsBodyDirty();
 }
 
 void UPrimitiveComponent::NotifyComponentBeginOverlap(
