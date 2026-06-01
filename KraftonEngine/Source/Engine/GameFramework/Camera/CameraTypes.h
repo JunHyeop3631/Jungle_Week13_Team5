@@ -106,8 +106,8 @@ struct FCameraDepthOfFieldSettings
 	UPROPERTY(Edit, Save, Category="Depth Of Field", DisplayName="Focus Length(mm)", Type=Float, Min=0.0f, Max=100000.0f, Speed=10.0f)
 	float FocalLength = 50.0f;
 	
-	UPROPERTY(Edit, Save, Category = "Depth Of Field", DisplayName = "Aperture", Type=Float, Min = 0.0f, Max = 100000.0f, Speed = 10.0f)
-	float Aperture = 1.6f;
+	UPROPERTY(Edit, Save, Category = "Depth Of Field", DisplayName = "Aperture Diameter(mm)", Type=Float, Min = 0.0f, Max = 100000.0f, Speed = 1.0f)
+	float Aperture = 31.25f;
 
 	UPROPERTY(Edit, Save, Category="Depth Of Field", DisplayName="Max Blur Size", Type=Float, Min=0.0f, Max=64.0f, Speed=0.1f)
 	float MaxBlurSize = 6.0f;

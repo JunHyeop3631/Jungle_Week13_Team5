@@ -51,7 +51,7 @@ float ComputeSignedCoC(float Depth)
     const float z = max(Depth * 10.0f, 0.001f);
     const float zf = max(FocusDistance * 10.0f, 0.001f);
     const float f = FocalLength;
-    const float ApertureDiameter = f / max(Aperture, 0.001f);
+    const float ApertureDiameter = max(Aperture, 0.001f);
 
     const float CoC = (ApertureDiameter * f * (z - zf)) / max(z * (zf - f), 0.001f);
     return clamp(CoC, -1.0f, 1.0f);
