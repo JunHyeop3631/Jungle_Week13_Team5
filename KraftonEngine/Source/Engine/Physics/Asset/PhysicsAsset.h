@@ -37,6 +37,7 @@ public:
     bool IsCollisionDisabled(const FString& BoneA, const FString& BoneB) const;
     void SetCollisionDisabled(const FString& BoneA, const FString& BoneB, bool bDisabled);
     int32 GetNumDisabledCollisionPairs() const { return (int32)DisabledCollisionPairs.size(); }
+    void  ClearDisabledCollisionPairs() { DisabledCollisionPairs.clear(); }   // 전체 재생성(②) 시 일괄 비움
 
     void Serialize(FArchive& Ar);
 

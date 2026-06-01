@@ -97,6 +97,43 @@ namespace
 // Physics tab
 // ─────────────────────────────────────────────────────────────────────────────
 
+// 자동 생성 공용 헬퍼 (AutoGen_*) — 자동(GeneratePhysicsBodies)·수동(CreateConstraintWith)
+//   컨스트레인트 경로가 공유하므로 첫 사용처보다 앞(파일 상단)에 둔다.
+namespace
+{
+	constexpr float kAutoGenSkinWeightMin = 0.2f;   // 정점→본 "스키닝됨" 가중치 하한
+	constexpr float kAutoGenMinRadius     = 0.01f;  // 최소 반지름(m), 퇴화 방지
+	constexpr float kAutoGenEps           = 1.0e-4f;
+	constexpr float kAutoGenPi            = 3.14159265358979323846f;
+
+	// UnitX → Dir 정렬 쿼터니언. PhysX 캡슐 로컬축 = X (진단문서 2.4).
+	FQuat AutoGen_AlignXToDir(const FVector& Dir)
+	{
+		const FVector X(1.0f, 0.0f, 0.0f);
+		const FVector d = Dir.Normalized();
+		const float   c = X.Dot(d);
+		if (c >  1.0f - kAutoGenEps) return FQuat::Identity;                                       // 동일 방향
+		if (c < -1.0f + kAutoGenEps) return FQuat::FromAxisAngle(FVector(0.0f, 0.0f, 1.0f), kAutoGenPi); // 반대 방향 180°
+		const FVector axis = X.Cross(d).Normalized();
+		const float   cc   = (c < -1.0f) ? -1.0f : ((c > 1.0f) ? 1.0f : c);
+		return FQuat::FromAxisAngle(axis, std::acos(cc));
+	}
+
+	float AutoGen_Clamp(float V, float Lo, float Hi)
+	{
+		return (std::max)(Lo, (std::min)(V, Hi));
+	}
+
+	// 컨스트레인트 앵커(부모 본 로컬): 위치=자식 본 원점, 회전=부모→자식 본방향 X정렬. (자동/수동 공유)
+	void AutoGen_ComputeConstraintAnchorLocal(const FBone& Child, const FBone& Parent,
+		FVector& OutPos, FQuat& OutRot)
+	{
+		const FMatrix Rel = Child.GetReferenceGlobalPose() * Parent.GetReferenceGlobalPose().GetInverse();
+		OutPos = Rel.GetLocation();
+		OutRot = (OutPos.Length() > kAutoGenEps) ? AutoGen_AlignXToDir(OutPos) : FQuat::Identity; // degenerate→identity
+	}
+}
+
 void FMeshEditorWidget::RenderPhysicsLayout()
 {
 	USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(EditedObject);
@@ -450,13 +487,16 @@ void FMeshEditorWidget::RenderPhysicsBoneTree(const FSkeletalMesh* Asset, int32 
 			// 선택된 타겟 본과 현재 본 사이에 컨스트레인트를 만든다. 조상을 Parent 로.
 			auto CreateConstraintWith = [&](int32 OtherIdx)
 			{
-				const FString& OtherName = Asset->Bones[OtherIdx].Name;
-				FString ParentName, ChildName;
-				if (IsAncestorOf(OtherIdx, BoneIndex))      { ParentName = OtherName;  ChildName = Bone.Name; }
-				else if (IsAncestorOf(BoneIndex, OtherIdx)) { ParentName = Bone.Name;  ChildName = OtherName; }
-				else                                        { ParentName = OtherName;  ChildName = Bone.Name; }
+				int32 ParentIdx, ChildIdx;
+				if      (IsAncestorOf(OtherIdx, BoneIndex)) { ParentIdx = OtherIdx;  ChildIdx = BoneIndex; }
+				else if (IsAncestorOf(BoneIndex, OtherIdx)) { ParentIdx = BoneIndex; ChildIdx = OtherIdx;  }
+				else                                        { ParentIdx = OtherIdx;  ChildIdx = BoneIndex; }
 
-				PhysicsAsset->GetOrCreateConstraintSetup(ParentName, ChildName);
+				UPhysicsConstraintSetup* CS = PhysicsAsset->GetOrCreateConstraintSetup(
+					Asset->Bones[ParentIdx].Name, Asset->Bones[ChildIdx].Name);
+				// (⑤) 앵커 산정 — C4 자동생성과 동일(자식 본 원점 + 본방향 X정렬). 이전엔 미설정(원점/identity)이었음.
+				AutoGen_ComputeConstraintAnchorLocal(Asset->Bones[ChildIdx], Asset->Bones[ParentIdx],
+					CS->ParentAnchorPos, CS->ParentAnchorRot);
 				PhysicsTabState.SelectedConstraintIndex = (int32)PhysicsAsset->GetConstraints().size() - 1;
 				PhysicsTabState.SelectedBodySetupIndex  = -1;
 				MarkDirty();
@@ -1046,6 +1086,8 @@ void FMeshEditorWidget::RenderPhysicsToolsPanel()
 		{
 			static const char* Modes[] = { "Locked", "Limited", "Free" };
 			ImGui::Combo("Angular Constraint Mode", &S.AngularConstraintMode, Modes, 3);
+			if (S.AngularConstraintMode == 1)  // Limited 일 때만 한계각이 의미
+				ImGui::DragFloat("Angular Limit (deg)", &S.DefaultAngularLimitDeg, 0.5f, 0.f, 180.f);
 		}
 	}
 
@@ -1067,32 +1109,6 @@ void FMeshEditorWidget::RenderPhysicsToolsPanel()
 //   제외(다음/별건): 인접쌍 충돌 비활성화(C5), 한계각 UI(④), 수동경로 앵커 보정(⑤).
 //   진단: Docs/GOAL4_AUTOGEN_DIAGNOSIS.md, Docs/diagnose_auto_constraint.md
 // ─────────────────────────────────────────────────────────────────────────────
-namespace
-{
-	constexpr float kAutoGenSkinWeightMin = 0.2f;   // 정점→본 "스키닝됨" 가중치 하한
-	constexpr float kAutoGenMinRadius     = 0.01f;  // 최소 반지름(m), 퇴화 방지
-	constexpr float kAutoGenEps           = 1.0e-4f;
-	constexpr float kAutoGenPi            = 3.14159265358979323846f;
-
-	// UnitX → Dir 정렬 쿼터니언. PhysX 캡슐 로컬축 = X (진단문서 2.4).
-	FQuat AutoGen_AlignXToDir(const FVector& Dir)
-	{
-		const FVector X(1.0f, 0.0f, 0.0f);
-		const FVector d = Dir.Normalized();
-		const float   c = X.Dot(d);
-		if (c >  1.0f - kAutoGenEps) return FQuat::Identity;                                       // 동일 방향
-		if (c < -1.0f + kAutoGenEps) return FQuat::FromAxisAngle(FVector(0.0f, 0.0f, 1.0f), kAutoGenPi); // 반대 방향 180°
-		const FVector axis = X.Cross(d).Normalized();
-		const float   cc   = (c < -1.0f) ? -1.0f : ((c > 1.0f) ? 1.0f : c);
-		return FQuat::FromAxisAngle(axis, std::acos(cc));
-	}
-
-	float AutoGen_Clamp(float V, float Lo, float Hi)
-	{
-		return (std::max)(Lo, (std::min)(V, Hi));
-	}
-}
-
 void FMeshEditorWidget::GeneratePhysicsBodies()
 {
 	// 자산/본/대상 PhysicsAsset 확보 (진단문서 2.1 경로)
@@ -1124,6 +1140,7 @@ void FMeshEditorWidget::GeneratePhysicsBodies()
 		PA->GetBodySetupsMutable().clear();
 		for (UPhysicsConstraintSetup* CS : PA->GetConstraintsMutable()) delete CS;
 		PA->GetConstraintsMutable().clear();
+		PA->ClearDisabledCollisionPairs();   // (C5/②) DisabledPairs 까지 완전 clear → 재생성 멱등
 	}
 
 	const auto& S = PhysicsTabState.BodyCreation;
@@ -1175,7 +1192,7 @@ void FMeshEditorWidget::GeneratePhysicsBodies()
 	};
 
 	// ── 본 순회 (parent-first 보장 → 단순 전방 순회, depth 큐 불필요) ──
-	int32 CreatedBodies = 0, SkippedSmall = 0, SkippedLeaf = 0, CreatedConstraints = 0;
+	int32 CreatedBodies = 0, SkippedSmall = 0, SkippedLeaf = 0, CreatedConstraints = 0, DisabledPairsCreated = 0;
 	TArray<float> AllSizes; AllSizes.reserve(BoneCount);
 	TArray<bool>  BoneHasBody; BoneHasBody.assign(BoneCount, false);   // (C4) 컨스트레인트용 바디 보유 추적
 
@@ -1268,17 +1285,22 @@ void FMeshEditorWidget::GeneratePhysicsBodies()
 					PA->GetOrCreateConstraintSetup(Asset->Bones[anc].Name, Asset->Bones[b].Name); // (anc,b) 일관 순서
 				const EConstraintMotion M = (EConstraintMotion)S.AngularConstraintMode;            // enum 값 일치(STEP0)
 				CS->TwistMotion = M; CS->Swing1Motion = M; CS->Swing2Motion = M;
-
-				// 앵커(①): 위치 = 자식 본 원점(조상 본 로컬), 회전 = 조상→자식 본방향에 트위스트축(X) 정렬.
-				//   Rel.GetLocation() 을 위치·방향 모두에 사용 → 동일 기준계(조상 로컬) 보장(좌표계 일관성).
-				const FMatrix Rel = Asset->Bones[b].GetReferenceGlobalPose()
-					* Asset->Bones[anc].GetReferenceGlobalPose().GetInverse();
-				const FVector AnchorLocal = Rel.GetLocation();
-				CS->ParentAnchorPos = AnchorLocal;
-				CS->ParentAnchorRot = (AnchorLocal.Length() > kAutoGenEps)
-					? AutoGen_AlignXToDir(AnchorLocal) : FQuat::Identity;   // degenerate(영벡터) → identity
-				// bLockLinearMotion / 한계각(45°) = UPhysicsConstraintSetup 기본값 유지 (④)
+				// (④) 한계각 = 설정값(Limited 모드에서만 효과). 인스턴스화가 deg→rad 변환.
+				CS->TwistLimitAngle  = S.DefaultAngularLimitDeg;
+				CS->Swing1LimitAngle = S.DefaultAngularLimitDeg;
+				CS->Swing2LimitAngle = S.DefaultAngularLimitDeg;
+				// 앵커(①): 자식 본 원점(조상 본 로컬) + 조상→자식 본방향 X정렬 (자동/수동 공유 헬퍼)
+				AutoGen_ComputeConstraintAnchorLocal(Asset->Bones[b], Asset->Bones[anc],
+					CS->ParentAnchorPos, CS->ParentAnchorRot);
+				// bLockLinearMotion = 기본값(true) 유지
 				++CreatedConstraints;
+
+				// (C5) 인접 컨스트레인트 쌍 충돌 비활성화 (래그돌 인접 바디 떨림 방지)
+				if (S.bDisableCollisionByDefault)
+				{
+					PA->SetCollisionDisabled(Asset->Bones[anc].Name, Asset->Bones[b].Name, true);
+					++DisabledPairsCreated;
+				}
 			}
 		}
 	}
@@ -1294,8 +1316,8 @@ void FMeshEditorWidget::GeneratePhysicsBodies()
 	};
 	UE_LOG("[Physics][AutoGen] boneSize(m) dist p0=%.3f p25=%.3f p50=%.3f p75=%.3f p100=%.3f (n=%d)",
 		Pct(0.0f), Pct(0.25f), Pct(0.5f), Pct(0.75f), Pct(1.0f), (int)AllSizes.size());
-	UE_LOG("[Physics][AutoGen] MinBoneSize=%.3f primitive=%d -> created=%d skipped_small=%d skipped_leaf=%d constraints=%d",
-		S.MinBoneSize, (int)S.PrimitiveType, CreatedBodies, SkippedSmall, SkippedLeaf, CreatedConstraints);
+	UE_LOG("[Physics][AutoGen] MinBoneSize=%.3f primitive=%d -> created=%d skipped_small=%d skipped_leaf=%d constraints=%d disabled_pairs=%d",
+		S.MinBoneSize, (int)S.PrimitiveType, CreatedBodies, SkippedSmall, SkippedLeaf, CreatedConstraints, DisabledPairsCreated);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
