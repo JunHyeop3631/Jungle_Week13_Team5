@@ -95,14 +95,14 @@ namespace
 	void AppendSolidCapsule(TArray<FColoredVertex>& Out, const FVector& C, const FQuat& Rot,
 	                        float Radius, float HalfH, const FVector4& Base)
 	{
-		const FVector Up      = Rot.RotateVector(FVector(0,0,1));
-		const FVector Right   = Rot.RotateVector(FVector(1,0,0));
-		const FVector Forward = Rot.RotateVector(FVector(0,1,0));
-		const FVector TopC = C + Up * HalfH, BotC = C - Up * HalfH;
+		const FVector Axis = Rot.RotateVector(FVector(1,0,0)); // 긴축 = X (PhysX/AlignXToDir 규약)
+		const FVector U    = Rot.RotateVector(FVector(0,1,0)); // 반경 평면
+		const FVector V    = Rot.RotateVector(FVector(0,0,1)); // 반경 평면
+		const FVector TopC = C + Axis * HalfH, BotC = C - Axis * HalfH;
 		constexpr int32 Sectors = 18, HemiRings = 6;
 		const float Step = kPi2 / Sectors;
 
-		auto Radial = [&](float ang) -> FVector { return Right*cosf(ang) + Forward*sinf(ang); };
+		auto Radial = [&](float ang) -> FVector { return U*cosf(ang) + V*sinf(ang); };
 
 		// 측면 실린더
 		for (int32 si = 0; si < Sectors; ++si)
@@ -114,7 +114,7 @@ namespace
 			PushTri(Out, t0, b0, b1, c0, c0, c1);
 			PushTri(Out, t0, b1, t1, c0, c1, c1);
 		}
-		// 반구 (Hemi 0 = 위/+Up, Hemi 1 = 아래/-Up)
+		// 반구 (Hemi 0 = +Axis, Hemi 1 = -Axis)
 		for (int32 Hemi = 0; Hemi < 2; ++Hemi)
 		{
 			const FVector O = Hemi ? BotC : TopC;
@@ -123,7 +123,7 @@ namespace
 			{
 				const float phi = (kPi/2.f) * ri / HemiRings; // 0(적도)..pi/2(극)
 				const FVector r = Radial(si*Step);
-				return r*cosf(phi) + Up*(Sign*sinf(phi));
+				return r*cosf(phi) + Axis*(Sign*sinf(phi));
 			};
 			for (int32 ri = 0; ri < HemiRings; ++ri)
 				for (int32 si = 0; si < Sectors; ++si)
@@ -186,18 +186,18 @@ namespace
 		for (int32 e = 0; e < 12; ++e) PushLine(Out, P[E[e][0]], P[E[e][1]], Col);
 	}
 
-	// 캡슐 = 양끝 링 2 + 세로선 4 + 캡 반원 호(반구당 2: Right-Up, Forward-Up 평면)
+	// 캡슐 = 양끝 링 2 + 세로선 4 + 캡 반원 호(반구당 2: U-Axis, V-Axis 평면)
 	void AppendWireCapsule(TArray<FColoredLine>& Out, const FVector& C, const FQuat& Rot,
 	                       float Radius, float HalfH, const FVector4& Col)
 	{
 		constexpr int32 Seg = 24;
-		const FVector Up      = Rot.RotateVector(FVector(0,0,1));
-		const FVector Right   = Rot.RotateVector(FVector(1,0,0));
-		const FVector Forward = Rot.RotateVector(FVector(0,1,0));
-		const FVector TopC = C + Up * HalfH, BotC = C - Up * HalfH;
-		auto Radial = [&](float a) -> FVector { return Right * cosf(a) + Forward * sinf(a); };
+		const FVector Axis = Rot.RotateVector(FVector(1,0,0)); // 긴축 = X (PhysX/AlignXToDir 규약)
+		const FVector U    = Rot.RotateVector(FVector(0,1,0)); // 반경 평면
+		const FVector V    = Rot.RotateVector(FVector(0,0,1)); // 반경 평면
+		const FVector TopC = C + Axis * HalfH, BotC = C - Axis * HalfH;
+		auto Radial = [&](float a) -> FVector { return U * cosf(a) + V * sinf(a); };
 
-		// 1) 양끝 링 (Right-Forward 평면)
+		// 1) 양끝 링 (U-V 평면)
 		FVector PrevT = TopC + Radial(0.0f) * Radius;
 		FVector PrevB = BotC + Radial(0.0f) * Radius;
 		for (int32 i = 1; i <= Seg; ++i)
@@ -209,13 +209,13 @@ namespace
 			PushLine(Out, PrevB, CurB, Col);
 			PrevT = CurT; PrevB = CurB;
 		}
-		// 2) 세로선 4 (±Right, ±Forward)
-		const FVector Dirs[4] = { Right, Right * -1.0f, Forward, Forward * -1.0f };
+		// 2) 세로선 4 (±U, ±V)
+		const FVector Dirs[4] = { U, U * -1.0f, V, V * -1.0f };
 		for (int32 di = 0; di < 4; ++di)
 			PushLine(Out, TopC + Dirs[di] * Radius, BotC + Dirs[di] * Radius, Col);
-		// 3) 캡 반원 호 — 각 끝점에서 (Right-Up), (Forward-Up) 평면의 반원
+		// 3) 캡 반원 호 — 각 끝점에서 (U-Axis), (V-Axis) 평면의 반원
 		const int32 HSeg = Seg / 2;
-		const FVector Planes[2] = { Right, Forward };
+		const FVector Planes[2] = { U, V };
 		for (int32 hemi = 0; hemi < 2; ++hemi)
 		{
 			const FVector O = hemi ? BotC : TopC;
@@ -227,7 +227,7 @@ namespace
 				for (int32 i = 1; i <= HSeg; ++i)
 				{
 					const float a = kPi * i / HSeg;  // 0..pi 반원
-					const FVector Cur = O + (H * cosf(a) + Up * (Sign * sinf(a))) * Radius;
+					const FVector Cur = O + (H * cosf(a) + Axis * (Sign * sinf(a))) * Radius;
 					PushLine(Out, Prev, Cur, Col);
 					Prev = Cur;
 				}

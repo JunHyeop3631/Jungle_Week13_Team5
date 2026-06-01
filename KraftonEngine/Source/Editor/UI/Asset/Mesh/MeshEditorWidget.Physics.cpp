@@ -1835,9 +1835,9 @@ void FMeshEditorWidget::PickPhysicsAtScreen(float LocalX, float LocalY, float Vp
 			const FKCapsuleElem& E = BS->AggregateGeom.CapsuleElems[i];
 			const FVector C  = BP + BQ.RotateVector(E.Center);
 			const FQuat   Q  = BQ * E.Rotation;
-			const FVector Up = Q.RotateVector(FVector(0.f, 0.f, 1.f));
-			const FVector A(C.X - Up.X * E.HalfHeight, C.Y - Up.Y * E.HalfHeight, C.Z - Up.Z * E.HalfHeight);
-			const FVector Bm(C.X + Up.X * E.HalfHeight, C.Y + Up.Y * E.HalfHeight, C.Z + Up.Z * E.HalfHeight);
+			const FVector Axis = Q.RotateVector(FVector(1.f, 0.f, 0.f)); // 긴축 = X (기존 Up=Q*Z)
+			const FVector A(C.X - Axis.X * E.HalfHeight, C.Y - Axis.Y * E.HalfHeight, C.Z - Axis.Z * E.HalfHeight);
+			const FVector Bm(C.X + Axis.X * E.HalfHeight, C.Y + Axis.Y * E.HalfHeight, C.Z + Axis.Z * E.HalfHeight);
 			float T;
 			if (PhRayCapsule(O, D, A, Bm, E.Radius, T) && T < BestT)
 			{ BestT = T; BestBody = b; BestBone = Bi; BestType = EShapeType::Capsule; BestElem = i; }
