@@ -1222,7 +1222,26 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape_AssumesLocked(FBodyInstance* Body
 	Shape->setFlag(PxShapeFlag::eTRIGGER_SHAPE, Desc.bTriggerShape);
 	Shape->setFlag(PxShapeFlag::eSCENE_QUERY_SHAPE, Desc.bSceneQueryShape);
 	Shape->userData = Body->OwnerComponent;
-	ApplyComponentFilterData(Shape, Body->OwnerComponent);
+	if (Desc.bOverrideFilterData)
+	{
+		PxFilterData Filter;
+		Filter.word0 = static_cast<PxU32>(Desc.OverrideObjectType);
+		Filter.word1 = 0;
+		Filter.word2 = 0;
+		Filter.word3 = 0;
+		for (int32 Ch = 0; Ch < static_cast<int32>(ECollisionChannel::ActiveCount); ++Ch)
+		{
+			const ECollisionResponse R = Desc.OverrideResponses.GetResponse(static_cast<ECollisionChannel>(Ch));
+			if (R == ECollisionResponse::Block)   Filter.word1 |= (1u << Ch);
+			else if (R == ECollisionResponse::Overlap) Filter.word2 |= (1u << Ch);
+		}
+		Shape->setSimulationFilterData(Filter);
+		Shape->setQueryFilterData(Filter);
+	}
+	else
+	{
+		ApplyComponentFilterData(Shape, Body->OwnerComponent);
+	}
 
 	FPhysicsShapeHandle Handle{ Shape, AllocateSerial() };
 	Body->ShapeHandles.push_back(Handle);

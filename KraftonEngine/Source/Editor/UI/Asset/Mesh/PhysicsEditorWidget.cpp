@@ -1415,13 +1415,32 @@ void FMeshEditorWidget::StartPhysicsSimulation()
 			FVector(0.f, 0.f, -0.5f), FQuat::Identity, FVector(1.f, 1.f, 1.f));
 
 		FPhysicsShapeDesc FloorShape;
-		FloorShape.ShapeType       = EPhysicsShapeType::Box;
-		FloorShape.HalfExtent      = FVector(10.f, 10.f, 0.5f);
+		FloorShape.ShapeType        = EPhysicsShapeType::Box;
+		FloorShape.HalfExtent       = FVector(10.f, 10.f, 0.5f);
 		FloorShape.bSimulationShape = true;
 		FloorShape.bSceneQueryShape = true;
+		FloorShape.bOverrideFilterData = true;
+		FloorShape.OverrideObjectType  = ECollisionChannel::WorldStatic;
+		// OverrideResponses 기본값이 전 채널 Block이므로 별도 설정 불필요
 		FloorDesc.Shapes.push_back(FloorShape);
 
 		FloorPhysicsBody = Scene->CreateRigidBody(FloorDesc);
+		UE_LOG("[Physics] Floor body creation: %s (ptr=%p)",
+			FloorPhysicsBody ? "SUCCESS" : "FAILED", (void*)FloorPhysicsBody);
+	}
+
+	// 래그돌 바디들의 실제 Z 위치를 로그로 출력 — 바닥 높이 튜닝용
+	{
+		const auto& PhysBodies = MeshComp->GetPhysicsBodies();
+		float MinZ = 1e30f;
+		for (const FBodyInstance* B : PhysBodies)
+		{
+			if (!B) continue;
+			FTransform T;
+			if (Scene->GetBodyTransform(B, T))
+				MinZ = (std::min)(MinZ, T.Location.Z);
+		}
+		UE_LOG("[Physics] Lowest ragdoll body Z = %.3f  (floor top = 0.0)", MinZ);
 	}
 
 	bSimulating = true;

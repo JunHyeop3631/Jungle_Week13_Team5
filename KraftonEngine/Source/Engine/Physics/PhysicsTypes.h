@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Core/Types/CoreTypes.h"
+#include "Core/Types/CollisionTypes.h"
 #include "Math/Transform.h"
 #include "Math/Vector.h"
 
@@ -104,6 +105,12 @@ struct FPhysicsShapeDesc
 	bool bSimulationShape = true;
 	bool bTriggerShape = false;
 	bool bSceneQueryShape = true;
+
+	// 세팅하면 OwnerComponent 대신 아래 값으로 FilterData를 직접 지정한다.
+	// 컴포넌트 없이 생성되는 바디(에디터 바닥 등)에서 명시적으로 사용.
+	bool bOverrideFilterData = false;
+	ECollisionChannel OverrideObjectType = ECollisionChannel::WorldStatic;
+	FCollisionResponseContainer OverrideResponses; // 기본값: 전 채널 Block
 
 	FPhysicalMaterialDesc Material;
 };
