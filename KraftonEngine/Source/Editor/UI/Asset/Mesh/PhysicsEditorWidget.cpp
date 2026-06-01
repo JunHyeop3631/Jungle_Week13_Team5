@@ -717,8 +717,16 @@ void FMeshEditorWidget::RenderConstraintDetails(UPhysicsConstraintSetup* Constra
 
 	if (ImGui::CollapsingHeader("Constraint Frame", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		if (ImGui::DragFloat3("Anchor Pos",      &Constraint->ParentAnchorPos.X, 0.1f))               MarkDirty();
-		if (ImGui::DragFloat4("Anchor Rot XYZW", &Constraint->ParentAnchorRot.X, 0.01f, -1.f, 1.f))  MarkDirty();
+		if (ImGui::DragFloat3("Anchor Pos", &Constraint->ParentAnchorPos.X, 0.1f)) MarkDirty();
+
+		// 쿼터니언 → 오일러(도) 변환 후 표시. 편집 시 다시 쿼터니언으로 변환.
+		const FRotator Euler = Constraint->ParentAnchorRot.ToRotator().GetClamped();
+		float EulerArr[3] = { Euler.Roll, Euler.Pitch, Euler.Yaw };
+		if (ImGui::DragFloat3("Anchor Rot (Roll/Pitch/Yaw)", EulerArr, 1.0f, -180.f, 180.f, "%.1f"))
+		{
+			Constraint->ParentAnchorRot = FQuat::FromRotator(FRotator(EulerArr[1], EulerArr[2], EulerArr[0]));
+			MarkDirty();
+		}
 	}
 
 	if (ImGui::CollapsingHeader("Angular Limits", ImGuiTreeNodeFlags_DefaultOpen))
