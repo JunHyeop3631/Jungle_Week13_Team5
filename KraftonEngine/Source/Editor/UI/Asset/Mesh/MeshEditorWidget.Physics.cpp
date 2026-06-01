@@ -1016,6 +1016,7 @@ void FMeshEditorWidget::RenderPhysicsToolsPanel()
 	if (ImGui::CollapsingHeader("Body Creation", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		ImGui::DragFloat("Min Bone Size", &S.MinBoneSize, 0.5f, 0.f, 1000.f);
+		ImGui::DragFloat("Capsule Radius Ratio", &S.CapsuleRadiusRatio, 0.01f, 0.05f, 0.5f);
 
 		{
 			static const char* PrimItems[] = { "Sphere", "Box", "Capsule" };
@@ -1031,6 +1032,7 @@ void FMeshEditorWidget::RenderPhysicsToolsPanel()
 		}
 
 		ImGui::Checkbox("Orient Along Bone",        &S.bOrientAlongBone);
+		ImGui::Checkbox("Skip Leaf Bones",          &S.bSkipLeafBones);
 		ImGui::Checkbox("Walk Past Small Bones",    &S.bWalkPastSmallBones);
 		ImGui::Checkbox("Create Body For All Bones", &S.bCreateBodyForAllBones);
 		ImGui::Checkbox("Disable Collision By Default", &S.bDisableCollisionByDefault);
@@ -1057,14 +1059,194 @@ void FMeshEditorWidget::RenderPhysicsToolsPanel()
 	}
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 목표4 / 사이클1: 본 크기 필터 + body(셰이프) 자동 생성.
+//   포함: 본 크기 산정(하이브리드: 스키닝 정점 AABB → 폴백 자식거리 median),
+//         크기 필터, Sphere/Box/Capsule 생성, 캡슐 축보정(AlignXToDir).
+//   제외(다음 사이클): 컨스트레인트 자동생성(C4), 인접쌍 충돌 비활성화(C5).
+//   진단/설계: Docs/GOAL4_AUTOGEN_DIAGNOSIS.md (STEP0: vertex-skin 경로 존재 확인됨)
+// ─────────────────────────────────────────────────────────────────────────────
+namespace
+{
+	constexpr float kAutoGenSkinWeightMin = 0.2f;   // 정점→본 "스키닝됨" 가중치 하한
+	constexpr float kAutoGenMinRadius     = 0.01f;  // 최소 반지름(m), 퇴화 방지
+	constexpr float kAutoGenEps           = 1.0e-4f;
+	constexpr float kAutoGenPi            = 3.14159265358979323846f;
+
+	// UnitX → Dir 정렬 쿼터니언. PhysX 캡슐 로컬축 = X (진단문서 2.4).
+	FQuat AutoGen_AlignXToDir(const FVector& Dir)
+	{
+		const FVector X(1.0f, 0.0f, 0.0f);
+		const FVector d = Dir.Normalized();
+		const float   c = X.Dot(d);
+		if (c >  1.0f - kAutoGenEps) return FQuat::Identity;                                       // 동일 방향
+		if (c < -1.0f + kAutoGenEps) return FQuat::FromAxisAngle(FVector(0.0f, 0.0f, 1.0f), kAutoGenPi); // 반대 방향 180°
+		const FVector axis = X.Cross(d).Normalized();
+		const float   cc   = (c < -1.0f) ? -1.0f : ((c > 1.0f) ? 1.0f : c);
+		return FQuat::FromAxisAngle(axis, std::acos(cc));
+	}
+
+	float AutoGen_Clamp(float V, float Lo, float Hi)
+	{
+		return (std::max)(Lo, (std::min)(V, Hi));
+	}
+}
+
 void FMeshEditorWidget::GeneratePhysicsBodies()
 {
-	// TODO(physics): 스켈레톤 전체를 순회하며 PhysicsTabState.BodyCreation 설정에 따라
-	//   - 각 본에 BodySetup + 셰이프(AggregateGeom) 생성
-	//   - bCreateConstraints 시 부모-자식 컨스트레인트 생성
-	//   - bDisableCollisionByDefault 시 인접 바디쌍 충돌 비활성화
-	// 를 수행한다. 현재는 UI hook 만 열어둔 stub 상태.
-	UE_LOG("[Physics] GeneratePhysicsBodies() is not implemented yet (UI stub).");
+	// 자산/본/대상 PhysicsAsset 확보 (진단문서 2.1 경로)
+	USkeletalMeshComponent* Comp = ViewportClient.GetPreviewMeshComponent();
+	const FSkeletalMesh* Asset = (Comp && Comp->GetSkeletalMesh())
+		? Comp->GetSkeletalMesh()->GetSkeletalMeshAsset() : nullptr;
+	UPhysicsAsset* PA = PhysicsTabState.PhysicsAsset;
+	if (!Asset || !PA || Asset->Bones.empty())
+	{
+		UE_LOG("[Physics][AutoGen] aborted: missing skeletal asset / physics asset / bones.");
+		return;
+	}
+
+	const auto& S = PhysicsTabState.BodyCreation;
+	const int32 BoneCount = (int32)Asset->Bones.size();
+
+	// ── 1순위 척도: 본별 스키닝 정점 AABB (단일 패스) ──
+	//   FVertexPNCTBW.BoneIndices[4]/BoneWeights[4] 로 역참조 (STEP0 확인).
+	TArray<FVector> BoneMin;  BoneMin.assign(BoneCount, FVector(0.0f, 0.0f, 0.0f));
+	TArray<FVector> BoneMax;  BoneMax.assign(BoneCount, FVector(0.0f, 0.0f, 0.0f));
+	TArray<bool>    BoneHasV; BoneHasV.assign(BoneCount, false);
+	for (const FVertexPNCTBW& V : Asset->Vertices)
+	{
+		for (int32 k = 0; k < 4; ++k)
+		{
+			if (V.BoneWeights[k] < kAutoGenSkinWeightMin) continue;
+			const int32 bi = V.BoneIndices[k];
+			if (bi < 0 || bi >= BoneCount) continue;
+			if (!BoneHasV[bi]) { BoneMin[bi] = V.Position; BoneMax[bi] = V.Position; BoneHasV[bi] = true; }
+			else
+			{
+				BoneMin[bi].X = (std::min)(BoneMin[bi].X, V.Position.X);
+				BoneMin[bi].Y = (std::min)(BoneMin[bi].Y, V.Position.Y);
+				BoneMin[bi].Z = (std::min)(BoneMin[bi].Z, V.Position.Z);
+				BoneMax[bi].X = (std::max)(BoneMax[bi].X, V.Position.X);
+				BoneMax[bi].Y = (std::max)(BoneMax[bi].Y, V.Position.Y);
+				BoneMax[bi].Z = (std::max)(BoneMax[bi].Z, V.Position.Z);
+			}
+		}
+	}
+
+	auto MaxEdge = [](const FVector& Mn, const FVector& Mx) -> float
+	{
+		const FVector E = Mx - Mn;
+		return (std::max)(E.X, (std::max)(E.Y, E.Z));
+	};
+
+	// 본 크기 = 정점 AABB 최대변; 정점 없으면 자식거리 median 폴백; 둘 다 없으면 0.
+	auto BoneSize = [&](int32 b) -> float
+	{
+		if (BoneHasV[b]) return MaxEdge(BoneMin[b], BoneMax[b]);
+		TArray<float> dist;
+		for (int32 c = b + 1; c < BoneCount; ++c)
+			if (Asset->Bones[c].ParentIndex == b)
+				dist.push_back(Asset->Bones[c].GetReferenceLocalPose().GetLocation().Length());
+		if (dist.empty()) return 0.0f;
+		std::sort(dist.begin(), dist.end());
+		const size_t n = dist.size();
+		return (n % 2) ? dist[n / 2] : 0.5f * (dist[n / 2 - 1] + dist[n / 2]);
+	};
+
+	// ── 본 순회 (parent-first 보장 → 단순 전방 순회, depth 큐 불필요) ──
+	int32 CreatedBodies = 0, SkippedSmall = 0, SkippedLeaf = 0;
+	TArray<float> AllSizes; AllSizes.reserve(BoneCount);
+
+	for (int32 b = 0; b < BoneCount; ++b)
+	{
+		// 최장거리 자식 = 셰이프 길이·방향 기준 (사용자 확정)
+		int32 cStar = -1; float Lmax = 0.0f;
+		for (int32 c = b + 1; c < BoneCount; ++c)
+		{
+			if (Asset->Bones[c].ParentIndex != b) continue;
+			const float dlen = Asset->Bones[c].GetReferenceLocalPose().GetLocation().Length();
+			if (dlen > Lmax) { Lmax = dlen; cStar = c; }
+		}
+		const bool bLeaf = (cStar < 0);
+
+		const float Size = BoneSize(b);
+		AllSizes.push_back(Size);
+
+		// ── 크기 필터 ──
+		bool bConsider;
+		if (S.bCreateBodyForAllBones) bConsider = true;
+		else if (bLeaf)               bConsider = !S.bSkipLeafBones && (Size >= S.MinBoneSize);
+		else                          bConsider = (Size >= S.MinBoneSize);
+
+		if (!bConsider)
+		{
+			if (bLeaf && S.bSkipLeafBones) ++SkippedLeaf; else ++SkippedSmall;
+			continue;
+		}
+
+		// ── 셰이프 생성 (치명 의존성: AggregateGeom 반드시 채움 — 진단 2.1) ──
+		UBodySetup* BS = PA->GetOrCreateBodySetup(Asset->Bones[b].Name);
+
+		if (cStar >= 0 && Lmax > kAutoGenEps)
+		{
+			const float   L = Lmax;
+			const FVector d = Asset->Bones[cStar].GetReferenceLocalPose().GetLocation().Normalized();
+			const FVector Center = d * (L * 0.5f);
+			const FQuat   Rot = S.bOrientAlongBone ? AutoGen_AlignXToDir(d) : FQuat::Identity;
+			const float   Rad = AutoGen_Clamp(L * S.CapsuleRadiusRatio, kAutoGenMinRadius, L * 0.5f);
+
+			switch (S.PrimitiveType)
+			{
+			case FPhysicsEditTabState::EShapeType::Box:
+			{
+				FKBoxElem E; E.Center = Center; E.Rotation = Rot;
+				E.HalfX = L * 0.5f; E.HalfY = Rad; E.HalfZ = Rad;
+				BS->AggregateGeom.BoxElems.push_back(E);
+				break;
+			}
+			case FPhysicsEditTabState::EShapeType::Sphere:
+			{
+				FKSphereElem E; E.Center = Center; E.Radius = Rad;
+				BS->AggregateGeom.SphereElems.push_back(E);
+				break;
+			}
+			case FPhysicsEditTabState::EShapeType::Capsule:
+			default:
+			{
+				// HalfHeight = center→tip. 런타임 변환부가 -Radius 적용 (진단 6.2).
+				FKCapsuleElem E; E.Center = Center; E.Rotation = Rot;
+				E.Radius = AutoGen_Clamp(L * S.CapsuleRadiusRatio, kAutoGenMinRadius, L * 0.5f - kAutoGenEps);
+				E.HalfHeight = L * 0.5f;
+				BS->AggregateGeom.CapsuleElems.push_back(E);
+				break;
+			}
+			}
+		}
+		else
+		{
+			// 자식 없음/퇴화(L≈0) → 정점 AABB 기반 구 폴백 (geom 비우면 Instantiate 가 건너뜀).
+			float r = kAutoGenMinRadius;
+			if (BoneHasV[b]) r = (std::max)(kAutoGenMinRadius, 0.5f * MaxEdge(BoneMin[b], BoneMax[b]));
+			FKSphereElem E; E.Center = FVector(0.0f, 0.0f, 0.0f); E.Radius = r;
+			BS->AggregateGeom.SphereElems.push_back(E);
+		}
+
+		++CreatedBodies;
+	}
+
+	MarkDirty();
+
+	// ── STEP0 측정 출력: 본 크기 분포(m) → MinBoneSize 경험 튜닝 근거 ──
+	std::sort(AllSizes.begin(), AllSizes.end());
+	auto Pct = [&](float p) -> float
+	{
+		if (AllSizes.empty()) return 0.0f;
+		return AllSizes[(size_t)(p * (float)(AllSizes.size() - 1))];
+	};
+	UE_LOG("[Physics][AutoGen] boneSize(m) dist p0=%.3f p25=%.3f p50=%.3f p75=%.3f p100=%.3f (n=%d)",
+		Pct(0.0f), Pct(0.25f), Pct(0.5f), Pct(0.75f), Pct(1.0f), (int)AllSizes.size());
+	UE_LOG("[Physics][AutoGen] MinBoneSize=%.3f primitive=%d -> created=%d skipped_small=%d skipped_leaf=%d",
+		S.MinBoneSize, (int)S.PrimitiveType, CreatedBodies, SkippedSmall, SkippedLeaf);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

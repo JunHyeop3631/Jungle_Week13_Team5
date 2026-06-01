@@ -44,19 +44,25 @@ struct FPhysicsEditTabState
     // 스켈레톤 트리 검색 필터
     char BoneSearchText[128] = {};
 
-    // 바디 자동 생성 툴 설정 (UI 전용)
-    // 실제 생성 로직은 아직 미구현. FMeshEditorWidget::GeneratePhysicsBodies() 에서 연결할 것.
+    // 바디 자동 생성 툴 설정
+    // 바디(셰이프) 생성 = 목표4 사이클1 구현됨(FMeshEditorWidget::GeneratePhysicsBodies).
+    // 컨스트레인트(C4)/인접쌍 충돌 비활성화(C5)는 아직 미구현(다음 사이클).
     struct FBodyCreationSettings
     {
-        float      MinBoneSize            = 20.0f;     // 이 길이보다 작은 본은 건너뜀
+        // 본 "크기"(스키닝 정점 AABB 최대변, 폴백=자식거리 median)가 이 값 미만이면 바디 생략.
+        // 단위 = m. 휴머노이드 사지 본 ~0.2~0.4m / 손가락·발가락 ~0.02~0.05m → 0.2 권고.
+        // (실측: GeneratePhysicsBodies 가 본 크기 분포를 UE_LOG 로 출력 → 그 값으로 튜닝)
+        float      MinBoneSize            = 0.2f;
+        float      CapsuleRadiusRatio     = 0.25f;     // 셰이프 반지름 = 본길이 × 이 비율
         EShapeType PrimitiveType          = EShapeType::Capsule; // 생성할 기본 셰이프
-        bool       bOrientAlongBone       = true;      // 본 축을 따라 셰이프 정렬
-        bool       bWalkPastSmallBones    = true;      // 작은 본은 지나치고 다음 본으로
-        bool       bCreateBodyForAllBones = false;     // 모든 본에 바디 생성
-        bool       bDisableCollisionByDefault = true;  // 생성 시 인접 바디 충돌 비활성화
+        bool       bOrientAlongBone       = true;      // 본 축(최장거리 자식)을 따라 셰이프 정렬
+        bool       bSkipLeafBones         = true;      // 말단(자식 없는) 본은 바디 생략
+        bool       bWalkPastSmallBones    = true;      // (C4 예정) 작은 본은 지나치고 다음 본으로
+        bool       bCreateBodyForAllBones = false;     // 크기 필터 무시하고 모든 본에 바디 생성
+        bool       bDisableCollisionByDefault = true;  // (C5 예정) 생성 시 인접 바디 충돌 비활성화
         int32      LodIndex               = 0;
-        bool       bCreateConstraints     = true;      // 부모-자식 컨스트레인트 자동 생성
-        int32      AngularConstraintMode  = 1;         // 0 Locked, 1 Limited, 2 Free
+        bool       bCreateConstraints     = true;      // (C4 예정) 부모-자식 컨스트레인트 자동 생성
+        int32      AngularConstraintMode  = 1;         // (C4 예정) 0 Locked, 1 Limited, 2 Free
     };
     FBodyCreationSettings BodyCreation;
 
