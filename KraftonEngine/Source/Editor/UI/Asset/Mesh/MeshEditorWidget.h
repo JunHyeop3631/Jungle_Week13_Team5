@@ -57,12 +57,13 @@ struct FPhysicsEditTabState
         EShapeType PrimitiveType          = EShapeType::Capsule; // 생성할 기본 셰이프
         bool       bOrientAlongBone       = true;      // 본 축(최장거리 자식)을 따라 셰이프 정렬
         bool       bSkipLeafBones         = true;      // 말단(자식 없는) 본은 바디 생략
-        bool       bWalkPastSmallBones    = true;      // (C4 예정) 작은 본은 지나치고 다음 본으로
+        bool       bWalkPastSmallBones    = true;      // (미사용; ③ 항상 바디 보유 최근접 조상에 연결)
         bool       bCreateBodyForAllBones = false;     // 크기 필터 무시하고 모든 본에 바디 생성
-        bool       bDisableCollisionByDefault = true;  // (C5 예정) 생성 시 인접 바디 충돌 비활성화
+        bool       bDisableCollisionByDefault = true;  // (C5) 생성된 인접 컨스트레인트 쌍 충돌 비활성화
         int32      LodIndex               = 0;
-        bool       bCreateConstraints     = true;      // (C4 예정) 부모-자식 컨스트레인트 자동 생성
-        int32      AngularConstraintMode  = 1;         // (C4 예정) 0 Locked, 1 Limited, 2 Free
+        bool       bCreateConstraints     = true;      // (C4) 부모-자식 컨스트레인트 자동 생성
+        int32      AngularConstraintMode  = 1;         // (C4) 0 Locked, 1 Limited, 2 Free
+        float      DefaultAngularLimitDeg = 45.0f;     // (C4-④) Limited 시 Twist/Swing 공통 한계각(deg)
     };
     FBodyCreationSettings BodyCreation;
 
