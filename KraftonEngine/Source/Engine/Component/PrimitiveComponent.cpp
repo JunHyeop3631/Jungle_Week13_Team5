@@ -32,6 +32,7 @@ namespace
 
 		return true;
 	}
+
 }
 
 HIDE_FROM_COMPONENT_LIST(UPrimitiveComponent)
