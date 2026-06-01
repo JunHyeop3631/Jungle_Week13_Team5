@@ -376,6 +376,12 @@ void UWorld::Tick(float DeltaTime, ELevelTick TickType)
 
 	TickManager.Tick(this, DeltaTime, TickType);
 
+	if (bHasBegunPlay && ClothScene)
+	{
+		SCOPE_STAT_CAT("ClothScene", "1_WorldTick");
+		ClothScene->SimulateCloth(DeltaTime);
+	}
+
 	// 카메라는 물리/액터 Tick 이후 갱신 — 차량 1인칭처럼 physics body 에 붙은 카메라가
 	// 같은 프레임의 최신 transform 으로 POV cache 를 채운다.
 	TickPlayerCamera();
