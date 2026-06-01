@@ -348,7 +348,8 @@ void FMeshEditorWidget::Tick(float DeltaTime)
 			PhysicsTabState.PhysicsAsset,
 			PhysicsTabState.SelectedBodySetupIndex,
 			(int32)PhysicsTabState.SelectedShapeType,
-			PhysicsTabState.SelectedShapeElemIndex);
+			PhysicsTabState.SelectedShapeElemIndex,
+			PhysicsTabState.bShowBodySolid, PhysicsTabState.bShowBodyWire);
 	}
 	else
 	{

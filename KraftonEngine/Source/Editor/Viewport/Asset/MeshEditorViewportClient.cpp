@@ -18,7 +18,8 @@
 
 #include <imgui.h>
 
-void FMeshEditorViewportClient::UpdatePhysicsShapeDebug(UPhysicsAsset* PhysicsAsset, int32 SelBodyIndex, int32 SelKind, int32 SelElemIndex)
+void FMeshEditorViewportClient::UpdatePhysicsShapeDebug(UPhysicsAsset* PhysicsAsset, int32 SelBodyIndex, int32 SelKind, int32 SelElemIndex,
+	bool bShowSolid, bool bShowWire)
 {
 	if (!PreviewActor) return;
 
@@ -32,6 +33,7 @@ void FMeshEditorViewportClient::UpdatePhysicsShapeDebug(UPhysicsAsset* PhysicsAs
 	PhysicsShapeDebugComponent->SetTargetMeshComponent(PreviewMeshComponent);
 	PhysicsShapeDebugComponent->SetPhysicsAsset(PhysicsAsset);
 	PhysicsShapeDebugComponent->SetSelection(SelBodyIndex, SelKind, SelElemIndex);
+	PhysicsShapeDebugComponent->SetShowFlags(bShowSolid, bShowWire);
 	// 매 프레임 프록시를 재생성해 현재 본 포즈/선택을 반영 (본 디버그의 HighlightBone 과 동일 패턴).
 	PhysicsShapeDebugComponent->MarkRenderStateDirty();
 }

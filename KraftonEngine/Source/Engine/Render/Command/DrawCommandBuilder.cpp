@@ -36,6 +36,7 @@ void FDrawCommandBuilder::Create(ID3D11Device* InDevice, ID3D11DeviceContext* In
 	GridLines.Create(InDevice);
 	DebugBoneLines.Create(InDevice);
 	PhysicsShapeSolid.Create(InDevice);
+	PhysicsShapeWire.Create(InDevice);
 	FontGeometry.Create(InDevice);
 
 	FogCB.Create(InDevice, sizeof(FFogConstants), "FogCB");
@@ -58,6 +59,7 @@ void FDrawCommandBuilder::Release()
 	GridLines.Release();
 	DebugBoneLines.Release();
 	PhysicsShapeSolid.Release();
+	PhysicsShapeWire.Release();
 	FontGeometry.Release();
 
 	for (auto& Pair : PerSceneObjectCBPool)
@@ -104,6 +106,7 @@ void FDrawCommandBuilder::BeginCollect(const FFrameContext& Frame)
 	GridLines.Clear();
 	DebugBoneLines.Clear();
 	PhysicsShapeSolid.Clear();
+	PhysicsShapeWire.Clear();
 	FontGeometry.Clear();
 	FontGeometry.ClearScreen();
 
@@ -355,12 +358,21 @@ void FDrawCommandBuilder::BuildProxyCommands(const FFrameContext& Frame, FScene&
 		{
 			const FPhysicsShapeDebugSceneProxy* ShapeProxy = static_cast<const FPhysicsShapeDebugSceneProxy*>(Proxy);
 			// 반투명 셰이딩 솔리드 → AlphaBlend 삼각형 버퍼 (연속 3개 = 삼각형)
-			const TArray<FColoredVertex>& Solid = ShapeProxy->GetCachedSolid();
-			for (size_t i = 0; i + 2 < Solid.size(); i += 3)
+			if (ShapeProxy->ShouldDrawSolid())
 			{
-				PhysicsShapeSolid.AddTriangle(
-					Solid[i].Pos, Solid[i+1].Pos, Solid[i+2].Pos,
-					Solid[i].Color, Solid[i+1].Color, Solid[i+2].Color);
+				const TArray<FColoredVertex>& Solid = ShapeProxy->GetCachedSolid();
+				for (size_t i = 0; i + 2 < Solid.size(); i += 3)
+				{
+					PhysicsShapeSolid.AddTriangle(
+						Solid[i].Pos, Solid[i+1].Pos, Solid[i+2].Pos,
+						Solid[i].Color, Solid[i+1].Color, Solid[i+2].Color);
+				}
+			}
+			// 와이어프레임 → EditorLines(LINELIST) NoDepth 라인 버퍼
+			if (ShapeProxy->ShouldDrawWire())
+			{
+				for (const FColoredLine& L : ShapeProxy->GetCachedWire())
+					PhysicsShapeWire.AddLine(L.Start, L.End, L.Color);
 			}
 		}
 		else if (Proxy->HasProxyFlag(EPrimitiveProxyFlags::FontBatched))
@@ -754,6 +766,7 @@ void FDrawCommandBuilder::BuildEditorLineCommands(EViewMode ViewMode)
 	BoneLinesRS.DepthStencil = EDepthStencilState::NoDepth;
 
 	EmitLineCommand(DebugBoneLines, EditorShader, BoneLinesRS);
+	EmitLineCommand(PhysicsShapeWire, EditorShader, BoneLinesRS);   // 피직스 바디 와이어 (LINELIST + NoDepth, 항상 위)
 
 	// 피직스 셰이프 반투명 솔리드(언리얼 PhAT 스타일) → AlphaBlend 패스를 NoDepth 로 덮어써
 	// 메시에 가려지지 않고 항상 보이게 한다. (TRIANGLELIST, 머티리얼 없이 Editor 정점색 셰이더

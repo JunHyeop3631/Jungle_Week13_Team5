@@ -67,6 +67,10 @@ struct FPhysicsEditTabState
     };
     FBodyCreationSettings BodyCreation;
 
+    // 바디 디버그 표시 토글 (솔리드/와이어 독립)
+    bool bShowBodySolid = true;
+    bool bShowBodyWire  = true;
+
     // 패널 너비
     float BoneTreeWidth = 220.f;
     float DetailsWidth  = 300.f;

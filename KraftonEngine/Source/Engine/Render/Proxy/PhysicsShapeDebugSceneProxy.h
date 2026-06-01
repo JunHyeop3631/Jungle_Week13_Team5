@@ -12,6 +12,14 @@ struct FColoredVertex
 	FVector4 Color;	// 알파 포함 (반투명)
 };
 
+// 와이어프레임 라인 세그먼트 (셰이프별 단일 색, 셰이딩 없음). 2점 = 라인 1개.
+struct FColoredLine
+{
+	FVector  Start;
+	FVector  End;
+	FVector4 Color;
+};
+
 // ============================================================
 // FPhysicsShapeDebugSceneProxy — 피직스 콜리전 셰이프 반투명 솔리드 프록시
 //
@@ -28,9 +36,15 @@ public:
 	void UpdateTransform() override;
 
 	const TArray<FColoredVertex>& GetCachedSolid() const { return CachedSolid; }
+	const TArray<FColoredLine>&   GetCachedWire()  const { return CachedWire; }
+	bool ShouldDrawSolid() const { return bShowSolid; }
+	bool ShouldDrawWire()  const { return bShowWire; }
 
 private:
 	void RebuildGeometry();
 
 	TArray<FColoredVertex> CachedSolid;	// 반투명 셰이딩 솔리드 (AlphaBlend, NoDepth)
+	TArray<FColoredLine>   CachedWire;	// 와이어프레임 (EditorLines LINELIST, NoDepth)
+	bool bShowSolid = true;
+	bool bShowWire  = true;
 };

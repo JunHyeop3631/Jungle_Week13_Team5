@@ -42,6 +42,11 @@ public:
 		SelElemIndex = ElemIndex;
 	}
 
+	// 디버그 표시 토글 (솔리드/와이어 독립). 프록시가 RebuildGeometry 에서 읽어 캐싱.
+	bool GetShowSolid() const { return bShowSolid; }
+	bool GetShowWire()  const { return bShowWire; }
+	void SetShowFlags(bool bInSolid, bool bInWire) { bShowSolid = bInSolid; bShowWire = bInWire; }
+
 private:
 	USkeletalMeshComponent* TargetMeshComponent = nullptr;
 	UPhysicsAsset* PhysicsAsset = nullptr;
@@ -49,4 +54,7 @@ private:
 	int32 SelBodyIndex = -1;
 	int32 SelKind = 0;
 	int32 SelElemIndex = -1;
+
+	bool bShowSolid = true;
+	bool bShowWire  = true;
 };
