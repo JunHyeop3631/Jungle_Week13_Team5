@@ -242,6 +242,15 @@ bool UWorld::PhysicsSphereSweepShapeComponents(const FVector& Start, const FVect
 	return false;
 }
 
+int32 UWorld::PhysicsOverlapSphere(const FVector& Center, float Radius, uint32 ObjectTypeMask,
+	TArray<FOverlapResult>& OutOverlaps, const AActor* IgnoreActor) const
+{
+	if (PhysicsScene)
+		return PhysicsScene->OverlapSphere(Center, Radius, ObjectTypeMask, OutOverlaps, IgnoreActor);
+	OutOverlaps.clear();
+	return 0;
+}
+
 
 void UWorld::InsertActorToOctree(AActor* Actor)
 {

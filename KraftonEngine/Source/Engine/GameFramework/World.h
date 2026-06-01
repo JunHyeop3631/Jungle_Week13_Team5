@@ -159,6 +159,11 @@ public:
 		ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic,
 		const AActor* IgnoreActor = nullptr) const;
 
+	// PhysX overlap convenience — sphere 영역과 겹치는 컴포넌트들을 수집. delegates to IPhysicsScene::OverlapSphere.
+	int32 PhysicsOverlapSphere(const FVector& Center, float Radius, uint32 ObjectTypeMask,
+		TArray<FOverlapResult>& OutOverlaps,
+		const AActor* IgnoreActor = nullptr) const;
+
 	// --- Game flow ---
 	// BeginPlay 이전에 호출. WorldType이 Editor면 무시된다.
 	void SetGameModeClass(UClass* InClass) { GameModeClass = InClass; }

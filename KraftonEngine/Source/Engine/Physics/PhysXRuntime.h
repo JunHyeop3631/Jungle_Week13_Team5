@@ -70,6 +70,9 @@ public:
 		ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic,
 		const AActor* IgnoreActor = nullptr) const override;
 
+	int32 OverlapSphere(const FVector& Center, float Radius, uint32 ObjectTypeMask,
+		TArray<FOverlapResult>& OutOverlaps, const AActor* IgnoreActor = nullptr) const override;
+
 	bool GetBodyTransform(const FBodyInstance* Body, FTransform& OutTransform) const override;
 	void SetBodyTransform(FBodyInstance* Body, const FTransform& Transform, bool bTeleport = true) override;
 	void SetKinematicTarget(FBodyInstance* Body, const FTransform& Transform) override;

@@ -107,6 +107,5 @@ public:
 
 private:
 	TMap<USkeletalMeshComponent*, TSet<AActor*>> HitActorsByMesh;
-	TMap<USkeletalMeshComponent*, TSet<AActor*>> MissLoggedActorsByMesh;
 	TSet<USkeletalMeshComponent*> NoTargetLoggedMeshes;
 };
