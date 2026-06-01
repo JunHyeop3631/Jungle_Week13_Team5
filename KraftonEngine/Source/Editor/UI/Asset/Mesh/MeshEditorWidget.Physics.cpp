@@ -1053,6 +1053,12 @@ void FMeshEditorWidget::RenderPhysicsToolsPanel()
 {
 	auto& S = PhysicsTabState.BodyCreation;
 
+	if (ImGui::CollapsingHeader("Display", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		ImGui::Checkbox("Show Body Solid",     &PhysicsTabState.bShowBodySolid);
+		ImGui::Checkbox("Show Body Wireframe", &PhysicsTabState.bShowBodyWire);
+	}
+
 	if (ImGui::CollapsingHeader("Body Creation", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		ImGui::DragFloat("Min Bone Size", &S.MinBoneSize, 0.5f, 0.f, 1000.f);
