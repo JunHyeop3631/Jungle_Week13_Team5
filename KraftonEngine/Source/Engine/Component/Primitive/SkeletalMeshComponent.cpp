@@ -1077,11 +1077,11 @@ namespace
 	void DbgWireCapsule(FScene& Scene, const FVector& C, const FQuat& Rot, float Radius, float HalfH, const FColor& Col)
 	{
 		constexpr int32 Seg = 16;
-		const FVector Up      = Rot.RotateVector(FVector(0,0,1));
-		const FVector Right   = Rot.RotateVector(FVector(1,0,0));
-		const FVector Forward = Rot.RotateVector(FVector(0,1,0));
-		const FVector TopC = C + Up * HalfH, BotC = C - Up * HalfH;
-		auto Radial = [&](float a) -> FVector { return Right * cosf(a) + Forward * sinf(a); };
+		const FVector Axis = Rot.RotateVector(FVector(1,0,0)); // 긴축 = X (PhysX/AlignXToDir 규약)
+		const FVector U    = Rot.RotateVector(FVector(0,1,0)); // 반경 평면
+		const FVector V    = Rot.RotateVector(FVector(0,0,1)); // 반경 평면
+		const FVector TopC = C + Axis * HalfH, BotC = C - Axis * HalfH;
+		auto Radial = [&](float a) -> FVector { return U * cosf(a) + V * sinf(a); };
 
 		FVector PrevT = TopC + Radial(0.0f) * Radius;
 		FVector PrevB = BotC + Radial(0.0f) * Radius;
@@ -1094,11 +1094,11 @@ namespace
 			Scene.AddDebugLine(PrevB, CurB, Col);
 			PrevT = CurT; PrevB = CurB;
 		}
-		const FVector Dirs[4] = { Right, Right * -1.0f, Forward, Forward * -1.0f };
+		const FVector Dirs[4] = { U, U * -1.0f, V, V * -1.0f };
 		for (int32 di = 0; di < 4; ++di)
 			Scene.AddDebugLine(TopC + Dirs[di] * Radius, BotC + Dirs[di] * Radius, Col);
 		const int32 HSeg = Seg / 2;
-		const FVector Planes[2] = { Right, Forward };
+		const FVector Planes[2] = { U, V };
 		for (int32 hemi = 0; hemi < 2; ++hemi)
 		{
 			const FVector O = hemi ? BotC : TopC;
@@ -1110,7 +1110,7 @@ namespace
 				for (int32 i = 1; i <= HSeg; ++i)
 				{
 					const float a = kDbgPi * i / HSeg;
-					const FVector Cur = O + (H * cosf(a) + Up * (Sign * sinf(a))) * Radius;
+					const FVector Cur = O + (H * cosf(a) + Axis * (Sign * sinf(a))) * Radius;
 					Scene.AddDebugLine(Prev, Cur, Col);
 					Prev = Cur;
 				}
