@@ -713,7 +713,7 @@
     <ClCompile Include="Source\Editor\UI\Asset\Mesh\MeshEditorWidget.cpp">
       <Filter>Source\Editor\UI\Asset\Mesh</Filter>
     </ClCompile>
-    <ClCompile Include="Source\Editor\UI\Asset\Mesh\MeshEditorWidget.Physics.cpp">
+    <ClCompile Include="Source\Editor\UI\Asset\Mesh\PhysicsEditorWidget.cpp">
       <Filter>Source\Editor\UI\Asset\Mesh</Filter>
     </ClCompile>
     <ClCompile Include="Source\Editor\UI\Asset\Mesh\StaticMeshEditorWidget.cpp">

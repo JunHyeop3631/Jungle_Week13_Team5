@@ -17,6 +17,7 @@ class UAnimMontage;
 class UAnimSingleNodeInstance;
 class UBodySetup;
 class UPhysicsConstraintSetup;
+struct FBodyInstance;
 
 enum class EMeshEditorTab : uint8 { Skeleton, Mesh, Animation, Physics };
 
@@ -225,4 +226,5 @@ private:
 	bool                         bSimulating = false;
 	bool                         bSimPaused  = false;
 	float                        SimSpeed    = 1.0f;
+	FBodyInstance*               FloorPhysicsBody = nullptr;
 };

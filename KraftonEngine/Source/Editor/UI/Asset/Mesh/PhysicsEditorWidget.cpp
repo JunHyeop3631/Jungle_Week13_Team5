@@ -1413,6 +1413,27 @@ void FMeshEditorWidget::StartPhysicsSimulation()
 		return;
 	}
 
+	// 바닥에 해당하는 정적(Static) 물리 바디를 씬에 직접 추가한다.
+	// FloorActor 는 시각적으로만 존재하며 씬에 충돌체가 없으므로, 시뮬 시작 시 여기서 생성한다.
+	// 바닥 상단이 Z=0에 오도록 중심을 Z=-0.5, 반-두께 0.5로 설정한다.
+	{
+		FPhysicsBodyDesc FloorDesc;
+		FloorDesc.BodyName  = "PhysicsEditorFloor";
+		FloorDesc.BodyType  = EPhysicsBodyType::Static;
+		FloorDesc.bUseGravity = false;
+		FloorDesc.WorldTransform = FTransform(
+			FVector(0.f, 0.f, -0.5f), FQuat::Identity, FVector(1.f, 1.f, 1.f));
+
+		FPhysicsShapeDesc FloorShape;
+		FloorShape.ShapeType       = EPhysicsShapeType::Box;
+		FloorShape.HalfExtent      = FVector(10.f, 10.f, 0.5f);
+		FloorShape.bSimulationShape = true;
+		FloorShape.bSceneQueryShape = true;
+		FloorDesc.Shapes.push_back(FloorShape);
+
+		FloorPhysicsBody = Scene->CreateRigidBody(FloorDesc);
+	}
+
 	bSimulating = true;
 	bSimPaused  = false;
 	UE_LOG("[Physics] Simulation started. BodyCount=%d, ConstraintCount=%d",
@@ -1430,6 +1451,14 @@ void FMeshEditorWidget::StopPhysicsSimulation()
 	bSimulating = false;
 	bSimPaused  = false;
 
+	if (FloorPhysicsBody)
+	{
+		UWorld* PreviewWorld = ViewportClient.GetPreviewWorld();
+		if (IPhysicsScene* FloorScene = PreviewWorld ? PreviewWorld->GetPhysicsScene() : nullptr)
+			FloorScene->DestroyRigidBody(FloorPhysicsBody);
+		FloorPhysicsBody = nullptr;
+	}
+
 	USkeletalMeshComponent* MeshComp = ViewportClient.GetPreviewMeshComponent();
 	if (MeshComp)
 	{
@@ -1443,6 +1472,18 @@ void FMeshEditorWidget::StopPhysicsSimulation()
 			// 다시 false 로 되돌리는 공개 API 가 없다(진단 결과 — 신규 setter 신설은 이번 사이클 범위 밖).
 			// 결과적으로 같은 컴포넌트로 다시 Start 를 누르면 ApplyPhysicsToBones 경로에 머무른다.
 			UE_LOG("[Physics] StopPhysicsSimulation: USkeletalMeshComponent has no public API to clear bSimulatingPhysics; component remains in ragdoll mode until destruction.");
+		}
+
+		// 시뮬 전 상태(바인드 포즈)로 복원한다.
+		USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(EditedObject);
+		const FSkeletalMesh* Asset = SkeletalMesh ? SkeletalMesh->GetSkeletalMeshAsset() : nullptr;
+		if (Asset && !Asset->Bones.empty())
+		{
+			TArray<FTransform> BindPose;
+			BindPose.reserve(Asset->Bones.size());
+			for (const FBone& Bone : Asset->Bones)
+				BindPose.push_back(FTransform(Bone.GetReferenceLocalPose()));
+			MeshComp->SetBoneLocalTransforms(BindPose);
 		}
 	}
 
