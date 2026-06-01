@@ -22,6 +22,7 @@
 #include "Physics/Asset/PhysicsConstraintSetup.h"
 #include "Physics/IPhysicsScene.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
+#include "Render/Scene/FScene.h"
 #include "Serialization/Archive.h"
 
 #include <algorithm>
@@ -694,6 +695,122 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
 
     // CPU skinning / bounds dirty 는 SetBoneLocalTransforms 안의 RefreshSkinningAfterPoseChanged 에서 처리된다.
     SetBoneLocalTransforms(LocalPose);
+}
+
+// 디버그: 선택 시 PhysicsAsset 바디 셰이프를 와이어로 표시 (레벨 뷰포트).
+//   레벨에선 런타임 Bodies 가 비어 있으므로 PhysicsAsset 셰이프를 현재 본 월드 포즈로 그린다.
+//   FScene::AddDebugLine 채널(선택 액터에 매 프레임 호출되는 ContributeSelectedVisuals)을 사용.
+namespace
+{
+	constexpr float kDbgPi  = 3.14159265f;
+	constexpr float kDbgPi2 = kDbgPi * 2.0f;
+
+	void DbgWireSphere(FScene& Scene, const FVector& C, float R, const FColor& Col)
+	{
+		constexpr int32 Seg = 16;
+		const FVector Ax[3] = { FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) };
+		for (int32 p = 0; p < 3; ++p)
+		{
+			const FVector U = Ax[p], V = Ax[(p + 1) % 3];
+			FVector Prev = C + U * R;
+			for (int32 i = 1; i <= Seg; ++i)
+			{
+				const float a = kDbgPi2 * i / Seg;
+				const FVector Cur = C + (U * cosf(a) + V * sinf(a)) * R;
+				Scene.AddDebugLine(Prev, Cur, Col);
+				Prev = Cur;
+			}
+		}
+	}
+
+	void DbgWireBox(FScene& Scene, const FVector& C, const FQuat& Rot, float HX, float HY, float HZ, const FColor& Col)
+	{
+		const FVector L[8] = {
+			{-HX,-HY,-HZ},{HX,-HY,-HZ},{HX,HY,-HZ},{-HX,HY,-HZ},
+			{-HX,-HY, HZ},{HX,-HY, HZ},{HX,HY, HZ},{-HX,HY, HZ},
+		};
+		FVector P[8];
+		for (int32 k = 0; k < 8; ++k) P[k] = C + Rot.RotateVector(L[k]);
+		static const int32 E[12][2] = {
+			{0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7}
+		};
+		for (int32 e = 0; e < 12; ++e) Scene.AddDebugLine(P[E[e][0]], P[E[e][1]], Col);
+	}
+
+	void DbgWireCapsule(FScene& Scene, const FVector& C, const FQuat& Rot, float Radius, float HalfH, const FColor& Col)
+	{
+		constexpr int32 Seg = 16;
+		const FVector Up      = Rot.RotateVector(FVector(0,0,1));
+		const FVector Right   = Rot.RotateVector(FVector(1,0,0));
+		const FVector Forward = Rot.RotateVector(FVector(0,1,0));
+		const FVector TopC = C + Up * HalfH, BotC = C - Up * HalfH;
+		auto Radial = [&](float a) -> FVector { return Right * cosf(a) + Forward * sinf(a); };
+
+		FVector PrevT = TopC + Radial(0.0f) * Radius;
+		FVector PrevB = BotC + Radial(0.0f) * Radius;
+		for (int32 i = 1; i <= Seg; ++i)
+		{
+			const float a = kDbgPi2 * i / Seg;
+			const FVector d = Radial(a);
+			const FVector CurT = TopC + d * Radius, CurB = BotC + d * Radius;
+			Scene.AddDebugLine(PrevT, CurT, Col);
+			Scene.AddDebugLine(PrevB, CurB, Col);
+			PrevT = CurT; PrevB = CurB;
+		}
+		const FVector Dirs[4] = { Right, Right * -1.0f, Forward, Forward * -1.0f };
+		for (int32 di = 0; di < 4; ++di)
+			Scene.AddDebugLine(TopC + Dirs[di] * Radius, BotC + Dirs[di] * Radius, Col);
+		const int32 HSeg = Seg / 2;
+		const FVector Planes[2] = { Right, Forward };
+		for (int32 hemi = 0; hemi < 2; ++hemi)
+		{
+			const FVector O = hemi ? BotC : TopC;
+			const float Sign = hemi ? -1.0f : 1.0f;
+			for (int32 pl = 0; pl < 2; ++pl)
+			{
+				const FVector H = Planes[pl];
+				FVector Prev = O + H * Radius;
+				for (int32 i = 1; i <= HSeg; ++i)
+				{
+					const float a = kDbgPi * i / HSeg;
+					const FVector Cur = O + (H * cosf(a) + Up * (Sign * sinf(a))) * Radius;
+					Scene.AddDebugLine(Prev, Cur, Col);
+					Prev = Cur;
+				}
+			}
+		}
+	}
+}
+
+void USkeletalMeshComponent::ContributeSelectedVisuals(FScene& Scene) const
+{
+	if (!bShowPhysicsBodies) return;
+
+	USkeletalMesh* Mesh = GetSkeletalMesh();
+	UPhysicsAsset* PA = Mesh ? Mesh->PhysicsAsset : nullptr;
+	if (!PA) return;
+
+	const FColor Col = FColor::Green();
+	for (UBodySetup* BS : PA->GetBodySetups())
+	{
+		if (!BS) continue;
+		const int32 BoneIndex = FindBoneIndex(BS->BoneName);
+		if (BoneIndex < 0) continue;
+
+		FTransform BoneWorld;
+		if (!GetBoneWorldTransformByIndex(BoneIndex, BoneWorld)) continue;
+		const FVector BonePos = BoneWorld.Location;
+		const FQuat   BoneRot = BoneWorld.Rotation;
+
+		for (const FKSphereElem& E : BS->AggregateGeom.SphereElems)
+			DbgWireSphere(Scene, BonePos + BoneRot.RotateVector(E.Center), E.Radius, Col);
+		for (const FKBoxElem& E : BS->AggregateGeom.BoxElems)
+			DbgWireBox(Scene, BonePos + BoneRot.RotateVector(E.Center), BoneRot * E.Rotation,
+				E.HalfX, E.HalfY, E.HalfZ, Col);
+		for (const FKCapsuleElem& E : BS->AggregateGeom.CapsuleElems)
+			DbgWireCapsule(Scene, BonePos + BoneRot.RotateVector(E.Center), BoneRot * E.Rotation,
+				E.Radius, E.HalfHeight, Col);
+	}
 }
 
 // ──────────────────────────────────────────────

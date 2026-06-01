@@ -13,6 +13,7 @@ class UAnimSequenceBase;
 class UClass;
 class IPhysicsScene;
 class UPhysicsAsset;
+class FScene;
 
 // SkeletalMesh 전용 render proxy만 제공하는 얇은 wrapper.
 // Skinning/bone/material/bounds 상태는 모두 USkinnedMeshComponent가 소유한다.
@@ -93,6 +94,9 @@ public:
 	// PhysX body 트랜스폼을 본 local pose 로 변환해 메시에 푸시한다.
 	bool IsSimulatingPhysics() const { return bSimulatingPhysics; }
 
+	// 선택 시 PhysicsAsset 바디 셰이프를 와이어로 디버그 표시 (레벨 뷰포트, "Show Physics Bodies" 토글).
+	void ContributeSelectedVisuals(FScene& Scene) const override;
+
 protected:
     // 매 프레임 AnimInstance 평가 → 결과 포즈를 SetBoneLocalTransforms 로 푸시.
     // 이 경로가 CPU skinning 과 bounds dirty 를 한 번에 처리한다.
@@ -113,6 +117,10 @@ protected:
     TSubclassOf<UAnimInstance> AnimInstanceClass;
     UPROPERTY(Save, Instanced, Category="Animation", DisplayName="Anim Instance", Type=ObjectRef, AllowedClass=UAnimInstance)
     UAnimInstance*             AnimInstance  = nullptr;
+
+    // 디버그: 선택 시 PhysicsAsset 바디 셰이프를 와이어로 표시 (레벨 뷰포트). 디테일 패널 Physics 항목.
+    UPROPERTY(Edit, Category="Physics", DisplayName="Show Physics Bodies")
+    bool bShowPhysicsBodies = false;
 
 	TArray<FBodyInstance*> Bodies;
 	TArray<FConstraintInstance*> Constraints;
