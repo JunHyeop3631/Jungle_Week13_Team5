@@ -24,8 +24,6 @@ public:
 
 	UPROPERTY(Edit, Save, Category="Particle|Collision", DisplayName="Enabled")
 	bool bEnabled = true;
-	UPROPERTY(Edit, Save, Category="Particle|Collision", DisplayName="Ignore Owner")
-	bool bIgnoreOwner = false;
 	UPROPERTY(Edit, Save, Category="Particle|Collision", DisplayName="Trace Channel", Enum=ECollisionChannel)
 	ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic;
 	UPROPERTY(Edit, Save, Category="Particle|Collision", DisplayName="Response", Enum=EParticleCollisionResponse)
