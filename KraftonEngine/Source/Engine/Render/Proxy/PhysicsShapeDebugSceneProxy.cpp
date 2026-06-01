@@ -137,6 +137,103 @@ namespace
 				}
 		}
 	}
+
+	// ── 와이어프레임(라인) ────────────────────────────────────────────
+	FVector4 PickWireColor(bool bSel, bool bBodySel)
+	{
+		if (bSel)     return FVector4(1.0f, 0.85f, 0.10f, 1.0f);
+		if (bBodySel) return FVector4(0.20f, 1.00f, 0.55f, 1.0f);
+		return                FVector4(0.15f, 0.80f, 0.42f, 1.0f);
+	}
+
+	void PushLine(TArray<FColoredLine>& Out, const FVector& A, const FVector& B, const FVector4& Col)
+	{
+		Out.push_back({ A, B, Col });
+	}
+
+	// 구 = 3 직교 대원(XY, YZ, ZX)
+	void AppendWireSphere(TArray<FColoredLine>& Out, const FVector& C, float R, const FVector4& Col)
+	{
+		constexpr int32 Seg = 24;
+		const FVector Ax[3] = { FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) };
+		for (int32 p = 0; p < 3; ++p)
+		{
+			const FVector U = Ax[p], V = Ax[(p + 1) % 3];
+			FVector Prev = C + U * R;
+			for (int32 i = 1; i <= Seg; ++i)
+			{
+				const float a = kPi2 * i / Seg;
+				const FVector Cur = C + (U * cosf(a) + V * sinf(a)) * R;
+				PushLine(Out, Prev, Cur, Col);
+				Prev = Cur;
+			}
+		}
+	}
+
+	// 박스 = 8 꼭짓점(회전) → 12 엣지
+	void AppendWireBox(TArray<FColoredLine>& Out, const FVector& C, const FQuat& Rot,
+	                   float HX, float HY, float HZ, const FVector4& Col)
+	{
+		const FVector L[8] = {
+			{-HX,-HY,-HZ},{HX,-HY,-HZ},{HX,HY,-HZ},{-HX,HY,-HZ},
+			{-HX,-HY, HZ},{HX,-HY, HZ},{HX,HY, HZ},{-HX,HY, HZ},
+		};
+		FVector P[8];
+		for (int32 k = 0; k < 8; ++k) P[k] = C + Rot.RotateVector(L[k]);
+		static const int32 E[12][2] = {
+			{0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7}
+		};
+		for (int32 e = 0; e < 12; ++e) PushLine(Out, P[E[e][0]], P[E[e][1]], Col);
+	}
+
+	// 캡슐 = 양끝 링 2 + 세로선 4 + 캡 반원 호(반구당 2: Right-Up, Forward-Up 평면)
+	void AppendWireCapsule(TArray<FColoredLine>& Out, const FVector& C, const FQuat& Rot,
+	                       float Radius, float HalfH, const FVector4& Col)
+	{
+		constexpr int32 Seg = 24;
+		const FVector Up      = Rot.RotateVector(FVector(0,0,1));
+		const FVector Right   = Rot.RotateVector(FVector(1,0,0));
+		const FVector Forward = Rot.RotateVector(FVector(0,1,0));
+		const FVector TopC = C + Up * HalfH, BotC = C - Up * HalfH;
+		auto Radial = [&](float a) -> FVector { return Right * cosf(a) + Forward * sinf(a); };
+
+		// 1) 양끝 링 (Right-Forward 평면)
+		FVector PrevT = TopC + Radial(0.0f) * Radius;
+		FVector PrevB = BotC + Radial(0.0f) * Radius;
+		for (int32 i = 1; i <= Seg; ++i)
+		{
+			const float a = kPi2 * i / Seg;
+			const FVector d = Radial(a);
+			const FVector CurT = TopC + d * Radius, CurB = BotC + d * Radius;
+			PushLine(Out, PrevT, CurT, Col);
+			PushLine(Out, PrevB, CurB, Col);
+			PrevT = CurT; PrevB = CurB;
+		}
+		// 2) 세로선 4 (±Right, ±Forward)
+		const FVector Dirs[4] = { Right, Right * -1.0f, Forward, Forward * -1.0f };
+		for (int32 di = 0; di < 4; ++di)
+			PushLine(Out, TopC + Dirs[di] * Radius, BotC + Dirs[di] * Radius, Col);
+		// 3) 캡 반원 호 — 각 끝점에서 (Right-Up), (Forward-Up) 평면의 반원
+		const int32 HSeg = Seg / 2;
+		const FVector Planes[2] = { Right, Forward };
+		for (int32 hemi = 0; hemi < 2; ++hemi)
+		{
+			const FVector O = hemi ? BotC : TopC;
+			const float Sign = hemi ? -1.0f : 1.0f;
+			for (int32 pl = 0; pl < 2; ++pl)
+			{
+				const FVector H = Planes[pl];
+				FVector Prev = O + H * Radius;
+				for (int32 i = 1; i <= HSeg; ++i)
+				{
+					const float a = kPi * i / HSeg;  // 0..pi 반원
+					const FVector Cur = O + (H * cosf(a) + Up * (Sign * sinf(a))) * Radius;
+					PushLine(Out, Prev, Cur, Col);
+					Prev = Cur;
+				}
+			}
+		}
+	}
 }
 
 #pragma endregion
@@ -164,9 +261,13 @@ void FPhysicsShapeDebugSceneProxy::UpdateTransform()
 void FPhysicsShapeDebugSceneProxy::RebuildGeometry()
 {
 	CachedSolid.clear();
+	CachedWire.clear();
 
 	UPhysicsShapeDebugComponent* Comp = static_cast<UPhysicsShapeDebugComponent*>(GetOwner());
 	if (!Comp) return;
+
+	bShowSolid = Comp->GetShowSolid();   // 토글 복사 → DrawCommandBuilder 가 emit 결정
+	bShowWire  = Comp->GetShowWire();
 
 	UPhysicsAsset* PA = Comp->GetPhysicsAsset();
 	USkeletalMeshComponent* MeshComp = Comp->GetTargetMeshComponent();
@@ -208,6 +309,7 @@ void FPhysicsShapeDebugSceneProxy::RebuildGeometry()
 			const bool bSel = bBodySel && SelKind == 1 && SelElem == Si;
 			const FVector WorldCenter = BoneWorldPos + BoneWorldQuat.RotateVector(E.Center);
 			AppendSolidSphere(CachedSolid, WorldCenter, E.Radius, PickSolidColor(bSel, bBodySel));
+			AppendWireSphere (CachedWire,  WorldCenter, E.Radius, PickWireColor(bSel, bBodySel));
 		}
 		for (int32 Bi = 0; Bi < (int32)BS->AggregateGeom.BoxElems.size(); ++Bi)
 		{
@@ -216,6 +318,7 @@ void FPhysicsShapeDebugSceneProxy::RebuildGeometry()
 			const FVector WorldCenter = BoneWorldPos + BoneWorldQuat.RotateVector(E.Center);
 			const FQuat   WorldRot    = BoneWorldQuat * E.Rotation;
 			AppendSolidBox(CachedSolid, WorldCenter, WorldRot, E.HalfX, E.HalfY, E.HalfZ, PickSolidColor(bSel, bBodySel));
+			AppendWireBox (CachedWire,  WorldCenter, WorldRot, E.HalfX, E.HalfY, E.HalfZ, PickWireColor(bSel, bBodySel));
 		}
 		for (int32 Ci = 0; Ci < (int32)BS->AggregateGeom.CapsuleElems.size(); ++Ci)
 		{
@@ -224,6 +327,7 @@ void FPhysicsShapeDebugSceneProxy::RebuildGeometry()
 			const FVector WorldCenter = BoneWorldPos + BoneWorldQuat.RotateVector(E.Center);
 			const FQuat   WorldRot    = BoneWorldQuat * E.Rotation;
 			AppendSolidCapsule(CachedSolid, WorldCenter, WorldRot, E.Radius, E.HalfHeight, PickSolidColor(bSel, bBodySel));
+			AppendWireCapsule (CachedWire,  WorldCenter, WorldRot, E.Radius, E.HalfHeight, PickWireColor(bSel, bBodySel));
 		}
 	}
 }

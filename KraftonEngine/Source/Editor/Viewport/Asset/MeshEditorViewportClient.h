@@ -54,7 +54,8 @@ public:
 
 	// Physics 탭: 콜리전 셰이프 와이어 컴포넌트 갱신 (매 프레임 호출 → 본 포즈/선택 반영).
 	//   SelKind: 0 None, 1 Sphere, 2 Box, 3 Capsule
-	void UpdatePhysicsShapeDebug(UPhysicsAsset* PhysicsAsset, int32 SelBodyIndex, int32 SelKind, int32 SelElemIndex);
+	void UpdatePhysicsShapeDebug(UPhysicsAsset* PhysicsAsset, int32 SelBodyIndex, int32 SelKind, int32 SelElemIndex,
+		bool bShowSolid, bool bShowWire);
 	void SetPhysicsShapeDebugVisible(bool bVisible);
 
 	void Tick(float DeltaTime);
