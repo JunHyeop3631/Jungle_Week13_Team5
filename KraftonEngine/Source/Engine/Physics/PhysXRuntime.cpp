@@ -239,6 +239,21 @@ namespace
 		return Id != 0 ? Id : 1u;
 	}
 
+	PxFilterData BuildVehicleChassisFilterData(PxU32 VehicleSelfId)
+	{
+		PxFilterData Filter;
+		Filter.word0 = static_cast<PxU32>(ECollisionChannel::WorldDynamic);
+		Filter.word1 = 0;
+		Filter.word2 = 0;
+		Filter.word3 = VehicleSelfId;
+
+		for (PxU32 Channel = 0; Channel < static_cast<PxU32>(ECollisionChannel::ActiveCount); ++Channel)
+		{
+			Filter.word1 |= (1u << Channel);
+		}
+		return Filter;
+	}
+
 	PxVec3 ComputeBoxInertiaTensor(const FVector& HalfExtents, float Mass)
 	{
 		const float SizeX = HalfExtents.X * 2.0f;
@@ -262,6 +277,15 @@ namespace
 		if (FilterData0.word3 != 0 && FilterData0.word3 == FilterData1.word3)
 		{
 			return PxQueryHitType::eNONE;
+		}
+
+		if (FilterData0.word1 != 0)
+		{
+			const PxU32 ObjectBit = 1u << FilterData1.word0;
+			if ((FilterData0.word1 & ObjectBit) == 0)
+			{
+				return PxQueryHitType::eNONE;
+			}
 		}
 
 		return PxQueryHitType::eBLOCK;
@@ -1349,6 +1373,7 @@ FVehicle4WInstance* FPhysXRuntime::CreateVehicle4W(const FVehicle4WDesc& Desc)
 	const PxU32 VehicleSelfId = MakeVehicleQuerySelfId(Instance->VehicleHandle.Serial);
 	PxFilterData VehicleQueryFilter;
 	VehicleQueryFilter.word3 = VehicleSelfId;
+	const PxFilterData VehicleChassisFilter = BuildVehicleChassisFilterData(VehicleSelfId);
 
 	PxRigidDynamic* Actor = Physics->createRigidDynamic(ToPxTransform(Desc.WorldTransform));
 	if (!Actor)
@@ -1407,6 +1432,7 @@ FVehicle4WInstance* FPhysXRuntime::CreateVehicle4W(const FVehicle4WDesc& Desc)
 		}
 		else
 		{
+			ChassisShape->setSimulationFilterData(VehicleChassisFilter);
 			ChassisShape->setQueryFilterData(VehicleQueryFilter);
 			ChassisShape->userData = Body;
 			Body->ShapeHandles.push_back({ ChassisShape, AllocateSerial() });
@@ -1487,6 +1513,7 @@ FVehicle4WInstance* FPhysXRuntime::CreateVehicle4W(const FVehicle4WDesc& Desc)
 		SuspensionData.mSprungMass = SprungMasses[WheelIndex];
 
 		PxFilterData WheelRaycastFilter;
+		WheelRaycastFilter.word1 = ObjectTypeBit(ECollisionChannel::WorldStatic);
 		WheelRaycastFilter.word3 = VehicleSelfId;
 
 		WheelsSimData->setWheelData(WheelIndex, WheelData);
