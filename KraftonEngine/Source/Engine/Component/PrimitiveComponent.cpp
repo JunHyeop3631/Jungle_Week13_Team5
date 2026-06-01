@@ -32,6 +32,23 @@ namespace
 
 		return true;
 	}
+
+	bool IsCollisionResponseProperty(const char* PropertyName)
+	{
+		if (!PropertyName)
+		{
+			return false;
+		}
+
+		return strcmp(PropertyName, "ResponseContainer") == 0
+			|| strcmp(PropertyName, "Collision Responses") == 0
+			|| strncmp(PropertyName, "Responses", 9) == 0
+			|| strcmp(PropertyName, "WorldStatic") == 0
+			|| strcmp(PropertyName, "WorldDynamic") == 0
+			|| strcmp(PropertyName, "Pawn") == 0
+			|| strcmp(PropertyName, "Projectile") == 0
+			|| strcmp(PropertyName, "Trigger") == 0;
+	}
 }
 
 HIDE_FROM_COMPONENT_LIST(UPrimitiveComponent)
@@ -240,6 +257,18 @@ void UPrimitiveComponent::PostEditProperty(const char* PropertyName)
 				}
 			}
 		}
+	}
+	else if (strcmp(PropertyName, "ObjectType") == 0 || strcmp(PropertyName, "Object Type") == 0)
+	{
+		NotifyPhysicsBodyDirty();
+	}
+	else if (IsCollisionResponseProperty(PropertyName))
+	{
+		NotifyPhysicsBodyDirty();
+	}
+	else if (strcmp(PropertyName, "bGenerateOverlapEvents") == 0 || strcmp(PropertyName, "Generate Overlap Events") == 0)
+	{
+		NotifyPhysicsBodyDirty();
 	}
 	else if (strcmp(PropertyName, "Mass") == 0 || strcmp(PropertyName, "Mass (kg)") == 0)
 	{
@@ -584,7 +613,13 @@ float UPrimitiveComponent::GetMass() const
 
 void UPrimitiveComponent::SetGenerateOverlapEvents(bool bInGenerateOverlapEvents)
 {
+	if (bGenerateOverlapEvents == bInGenerateOverlapEvents)
+	{
+		return;
+	}
+
 	bGenerateOverlapEvents = bInGenerateOverlapEvents;
+	NotifyPhysicsBodyDirty();
 }
 
 void UPrimitiveComponent::NotifyComponentBeginOverlap(

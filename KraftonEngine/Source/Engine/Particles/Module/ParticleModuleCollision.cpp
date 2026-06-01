@@ -20,7 +20,7 @@ void UParticleModuleCollision::Update(FParticleEmitterInstance* Owner, int32 Off
 		return;
 	}
 
-	AActor* IgnoreActor = Component ? Component->GetOwner() : nullptr;
+	const AActor* IgnoreActor = (bIgnoreOwner && Component) ? Component->GetOwner() : nullptr;
 
 	struct
 	{
