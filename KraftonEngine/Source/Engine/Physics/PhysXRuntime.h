@@ -72,6 +72,7 @@ public:
 	void SetBodyTransform(FBodyInstance* Body, const FTransform& Transform, bool bTeleport = true) override;
 	void SetKinematicTarget(FBodyInstance* Body, const FTransform& Transform) override;
 	void SetBodyType(FBodyInstance* Body, EPhysicsBodyType NewType) override;
+	void SetRagdollBodyFilter(FBodyInstance* Body, uint32 GroupId, uint32 BodyIndex, uint32 IgnoreMask) override;
 
 	void GetPhysicsStats(FPhysicsStats& OutStats) const override;
 	void ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines) const override;
