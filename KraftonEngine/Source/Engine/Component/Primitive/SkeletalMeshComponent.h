@@ -193,8 +193,10 @@ protected:
     UPROPERTY(Save, Instanced, Category="Animation", DisplayName="Anim Instance", Type=ObjectRef, AllowedClass=UAnimInstance)
     UAnimInstance*             AnimInstance  = nullptr;
 
-    // 디버그: 선택 시 PhysicsAsset 바디 셰이프를 와이어로 표시 (레벨 뷰포트). 디테일 패널 Physics 항목.
-    UPROPERTY(Edit, Category="Physics", DisplayName="Show Physics Bodies")
+    // 디버그: PhysicsAsset 바디 셰이프 와이어 표시. 에디터=선택 시(레벨 뷰포트), 런타임=DebugDrawQueue.
+    //   Save 필요 — PIE 월드는 Serialize(PF_Save) 로 복제되므로, Save 가 없으면 PIE 진입 시
+    //   복제본에서 false 로 리셋되어 런타임 디버그 라인이 보이지 않는다.
+    UPROPERTY(Edit, Save, Category="Physics", DisplayName="Show Physics Bodies")
     bool bShowPhysicsBodies = false;
 
     // per-instance PhysicsAsset 경로(scene 영속). 비우면 <Mesh>_Physics.uasset 규약으로 자동 시도.

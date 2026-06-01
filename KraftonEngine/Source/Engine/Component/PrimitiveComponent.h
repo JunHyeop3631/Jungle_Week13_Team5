@@ -66,6 +66,7 @@ public:
 	void BeginPlay() override;
 	void EndPlay() override;
 
+	void PostEditChangeProperty(const FPropertyChangedEvent& Event) override;
 	void PostEditProperty(const char* PropertyName) override;
 	void SetRelativeScale(const FVector& NewScale) override;
 
@@ -135,6 +136,7 @@ public:
 	ECollisionEnabled GetCollisionEnabled() const { return CollisionEnabled; }
 	bool IsCollisionEnabled() const { return CollisionEnabled != ECollisionEnabled::NoCollision; }
 	bool IsQueryCollisionEnabled() const;
+	bool IsPhysicsCollisionEnabled() const;
 
 	void SetCollisionObjectType(ECollisionChannel InChannel);
 	ECollisionChannel GetCollisionObjectType() const { return ObjectType; }
