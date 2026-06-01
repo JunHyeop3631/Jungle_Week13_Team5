@@ -1060,11 +1060,12 @@ void FMeshEditorWidget::RenderPhysicsToolsPanel()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 목표4 / 사이클1: 본 크기 필터 + body(셰이프) 자동 생성.
-//   포함: 본 크기 산정(하이브리드: 스키닝 정점 AABB → 폴백 자식거리 median),
-//         크기 필터, Sphere/Box/Capsule 생성, 캡슐 축보정(AlignXToDir).
-//   제외(다음 사이클): 컨스트레인트 자동생성(C4), 인접쌍 충돌 비활성화(C5).
-//   진단/설계: Docs/GOAL4_AUTOGEN_DIAGNOSIS.md (STEP0: vertex-skin 경로 존재 확인됨)
+// 목표4 자동 생성 (PhAT "바디 생성" 패널 대응).
+//   C1~C3: 본 크기 필터 + Sphere/Box/Capsule 생성(캡슐 축보정 AlignXToDir).
+//   C4(②③): 진입 전체 clear → 부모-자식 컨스트레인트 자동 생성(바디 보유 최근접 조상,
+//            앵커=자식 본 원점 + 본방향 X정렬, AngularConstraintMode 3축 적용).
+//   제외(다음/별건): 인접쌍 충돌 비활성화(C5), 한계각 UI(④), 수동경로 앵커 보정(⑤).
+//   진단: Docs/GOAL4_AUTOGEN_DIAGNOSIS.md, Docs/diagnose_auto_constraint.md
 // ─────────────────────────────────────────────────────────────────────────────
 namespace
 {
@@ -1103,6 +1104,26 @@ void FMeshEditorWidget::GeneratePhysicsBodies()
 	{
 		UE_LOG("[Physics][AutoGen] aborted: missing skeletal asset / physics asset / bones.");
 		return;
+	}
+
+	// ── (C4-②) 진입 시 전체 clear: 매 호출 동일 결과 보장 + stale 원천 차단 ──
+	//   UBodySetup/UPhysicsConstraintSetup 은 UPhysicsAsset 소유 raw new (GC 없음 —
+	//   ~UPhysicsAsset / RemoveBodySetup 이 delete; STEP0 확인) → delete 후 컨테이너 clear.
+	//   DisabledCollisionPairs 는 공개 clear API 부재(파일수정 금지 범위) + C4 미생성 → 미클리어(C5 관리).
+	{
+		// 삭제될 데이터를 가리키는 에디터 선택/기즈모를 먼저 무효화 (stale 참조 차단)
+		PhysicsTabState.SelectedBodySetupIndex  = -1;
+		PhysicsTabState.SelectedConstraintIndex = -1;
+		PhysicsTabState.SelectedShapeType       = FPhysicsEditTabState::EShapeType::None;
+		PhysicsTabState.SelectedShapeElemIndex  = -1;
+		PhysicsTabState.ShapeGizmoTarget.Unbind();
+		PhysicsTabState.ConstraintGizmoTarget.Unbind();
+		if (UGizmoComponent* Gizmo = ViewportClient.GetGizmo()) Gizmo->Deactivate();
+
+		for (UBodySetup* BS : PA->GetBodySetupsMutable()) delete BS;
+		PA->GetBodySetupsMutable().clear();
+		for (UPhysicsConstraintSetup* CS : PA->GetConstraintsMutable()) delete CS;
+		PA->GetConstraintsMutable().clear();
 	}
 
 	const auto& S = PhysicsTabState.BodyCreation;
@@ -1154,8 +1175,9 @@ void FMeshEditorWidget::GeneratePhysicsBodies()
 	};
 
 	// ── 본 순회 (parent-first 보장 → 단순 전방 순회, depth 큐 불필요) ──
-	int32 CreatedBodies = 0, SkippedSmall = 0, SkippedLeaf = 0;
+	int32 CreatedBodies = 0, SkippedSmall = 0, SkippedLeaf = 0, CreatedConstraints = 0;
 	TArray<float> AllSizes; AllSizes.reserve(BoneCount);
+	TArray<bool>  BoneHasBody; BoneHasBody.assign(BoneCount, false);   // (C4) 컨스트레인트용 바디 보유 추적
 
 	for (int32 b = 0; b < BoneCount; ++b)
 	{
@@ -1232,6 +1254,33 @@ void FMeshEditorWidget::GeneratePhysicsBodies()
 		}
 
 		++CreatedBodies;
+		BoneHasBody[b] = true;
+
+		// ── (C4) 부모-자식 컨스트레인트: 바디 생성 직후. parent-first 보장으로 조상 바디는 이미 존재 ──
+		if (S.bCreateConstraints)
+		{
+			int32 anc = -1;
+			for (int32 p = Asset->Bones[b].ParentIndex; p >= 0; p = Asset->Bones[p].ParentIndex)
+				if (BoneHasBody[p]) { anc = p; break; }            // ③ 항상 "바디 보유 최근접 조상" (중간 작은 본 건너뜀)
+			if (anc >= 0)
+			{
+				UPhysicsConstraintSetup* CS =
+					PA->GetOrCreateConstraintSetup(Asset->Bones[anc].Name, Asset->Bones[b].Name); // (anc,b) 일관 순서
+				const EConstraintMotion M = (EConstraintMotion)S.AngularConstraintMode;            // enum 값 일치(STEP0)
+				CS->TwistMotion = M; CS->Swing1Motion = M; CS->Swing2Motion = M;
+
+				// 앵커(①): 위치 = 자식 본 원점(조상 본 로컬), 회전 = 조상→자식 본방향에 트위스트축(X) 정렬.
+				//   Rel.GetLocation() 을 위치·방향 모두에 사용 → 동일 기준계(조상 로컬) 보장(좌표계 일관성).
+				const FMatrix Rel = Asset->Bones[b].GetReferenceGlobalPose()
+					* Asset->Bones[anc].GetReferenceGlobalPose().GetInverse();
+				const FVector AnchorLocal = Rel.GetLocation();
+				CS->ParentAnchorPos = AnchorLocal;
+				CS->ParentAnchorRot = (AnchorLocal.Length() > kAutoGenEps)
+					? AutoGen_AlignXToDir(AnchorLocal) : FQuat::Identity;   // degenerate(영벡터) → identity
+				// bLockLinearMotion / 한계각(45°) = UPhysicsConstraintSetup 기본값 유지 (④)
+				++CreatedConstraints;
+			}
+		}
 	}
 
 	MarkDirty();
@@ -1245,8 +1294,8 @@ void FMeshEditorWidget::GeneratePhysicsBodies()
 	};
 	UE_LOG("[Physics][AutoGen] boneSize(m) dist p0=%.3f p25=%.3f p50=%.3f p75=%.3f p100=%.3f (n=%d)",
 		Pct(0.0f), Pct(0.25f), Pct(0.5f), Pct(0.75f), Pct(1.0f), (int)AllSizes.size());
-	UE_LOG("[Physics][AutoGen] MinBoneSize=%.3f primitive=%d -> created=%d skipped_small=%d skipped_leaf=%d",
-		S.MinBoneSize, (int)S.PrimitiveType, CreatedBodies, SkippedSmall, SkippedLeaf);
+	UE_LOG("[Physics][AutoGen] MinBoneSize=%.3f primitive=%d -> created=%d skipped_small=%d skipped_leaf=%d constraints=%d",
+		S.MinBoneSize, (int)S.PrimitiveType, CreatedBodies, SkippedSmall, SkippedLeaf, CreatedConstraints);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
