@@ -98,6 +98,54 @@ namespace
 		Shape->setQueryFilterData(Filter);
 	}
 
+	// 래그돌 자기충돌 per-pair 비활성용 시뮬레이션 필터 데이터 태그.
+	// object-type enum 은 bit31 을 절대 쓰지 않으므로 센티넬로 사용한다.
+	constexpr PxU32 RAGDOLL_FILTER_TAG = 0x80000000u;
+
+	// 커스텀 시뮬레이션 필터 셰이더.
+	//   - 같은 래그돌 그룹(word0 하위비트 일치)인 두 바디가 서로의 ignore-mask 에 들어 있으면 eKILL.
+	//   - 그 외 모든 쌍은 PxDefaultSimulationFilterShader 에 그대로 위임 → 비-래그돌 동작 무변경.
+	// 시뮬 필터 데이터만 사용하므로 query(레이캐스트/스윕) 채널 로직에는 영향이 없다.
+	PxFilterFlags KraftonRagdollFilterShader(
+		PxFilterObjectAttributes Attributes0, PxFilterData FilterData0,
+		PxFilterObjectAttributes Attributes1, PxFilterData FilterData1,
+		PxPairFlags& PairFlags, const void* ConstantBlock, PxU32 ConstantBlockSize)
+	{
+		const bool bRagdoll0 = (FilterData0.word0 & RAGDOLL_FILTER_TAG) != 0;
+		const bool bRagdoll1 = (FilterData1.word0 & RAGDOLL_FILTER_TAG) != 0;
+
+		// 래그돌 바디가 하나라도 끼는 쌍은 여기서 직접 판정한다.
+		// 래그돌 shape 의 "시뮬" 필터 데이터는 (태그|그룹 / 인덱스 / 마스크)로 재해석되므로,
+		// 그룹 시스템 기반 기본 셰이더에 그대로 넘기면 오해석된다 → 비-래그돌 쌍만 위임한다.
+		if (bRagdoll0 || bRagdoll1)
+		{
+			// 트리거는 기본 셰이더와 동일하게 트리거 이벤트로 처리(접촉 생성 금지).
+			if (PxFilterObjectIsTrigger(Attributes0) || PxFilterObjectIsTrigger(Attributes1))
+			{
+				PairFlags = PxPairFlag::eTRIGGER_DEFAULT;
+				return PxFilterFlags();
+			}
+
+			// 같은 래그돌 그룹의 두 바디가 서로의 ignore-mask 에 들어 있으면 충돌 제거(eKILL).
+			//   word1 = 자기 인덱스 비트, word2 = 충돌 비활성 대상 마스크. 양방향 검사.
+			if (bRagdoll0 && bRagdoll1 &&
+				((FilterData0.word0 & ~RAGDOLL_FILTER_TAG) == (FilterData1.word0 & ~RAGDOLL_FILTER_TAG)) &&
+				((FilterData0.word2 & FilterData1.word1) != 0 || (FilterData1.word2 & FilterData0.word1) != 0))
+			{
+				return PxFilterFlag::eKILL;
+			}
+
+			// 그 외(래그돌-월드, 래그돌-래그돌 비-ignore)는 기본 접촉.
+			PairFlags = PxPairFlag::eCONTACT_DEFAULT;
+			return PxFilterFlags();
+		}
+
+		// 비-래그돌 쌍: 원래 컴포넌트 필터 데이터 그대로 기본 셰이더에 위임 → 기존 동작 무변경.
+		return PxDefaultSimulationFilterShader(
+			Attributes0, FilterData0, Attributes1, FilterData1,
+			PairFlags, ConstantBlock, ConstantBlockSize);
+	}
+
 	FBodyInstance* GetBodyFromActor(const PxRigidActor* Actor)
 	{
 		return Actor ? static_cast<FBodyInstance*>(Actor->userData) : nullptr;
@@ -360,7 +408,7 @@ bool FPhysXRuntime::Initialize()
 	PxSceneDesc SceneDesc(Physics->getTolerancesScale());
 	SceneDesc.gravity = PxVec3(0.0f, 0.0f, -9.81f);
 	SceneDesc.cpuDispatcher = Dispatcher;
-	SceneDesc.filterShader = PxDefaultSimulationFilterShader;
+	SceneDesc.filterShader = KraftonRagdollFilterShader;
 	ConfigurePhysXSceneDesc(SceneDesc);
 
 	Scene = Physics->createScene(SceneDesc);
@@ -1692,6 +1740,30 @@ void FPhysXRuntime::SetBodyType(FBodyInstance* Body, EPhysicsBodyType NewType)
 	{
 		// kinematic → dynamic 전환은 즉시 wake — 잠든 상태로 두면 중력/조인트가 적용되지 않는다.
 		Dynamic->wakeUp();
+	}
+}
+
+void FPhysXRuntime::SetRagdollBodyFilter(FBodyInstance* Body, uint32 GroupId, uint32 BodyIndex, uint32 IgnoreMask)
+{
+	if (!Scene || !Body || GroupId == 0 || BodyIndex > 31)
+	{
+		return;
+	}
+
+	PxFilterData Sim;
+	Sim.word0 = RAGDOLL_FILTER_TAG | (static_cast<PxU32>(GroupId) & ~RAGDOLL_FILTER_TAG);
+	Sim.word1 = (1u << BodyIndex);
+	Sim.word2 = static_cast<PxU32>(IgnoreMask);
+	Sim.word3 = 0;
+
+	PHYSX_SCENE_WRITE_LOCK(Scene);
+	for (const FPhysicsShapeHandle& Handle : Body->ShapeHandles)
+	{
+		// 시뮬 필터 데이터만 갱신 — query 필터(채널/레이캐스트)는 그대로 둔다.
+		if (PxShape* Shape = static_cast<PxShape*>(Handle.NativePtr))
+		{
+			Shape->setSimulationFilterData(Sim);
+		}
 	}
 }
 

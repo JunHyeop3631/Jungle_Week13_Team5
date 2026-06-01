@@ -10,6 +10,7 @@
 #include "Asset/AssetRegistry.h"
 #include "Core/Logging/Log.h"
 #include "GameFramework/AActor.h"
+#include "GameFramework/World.h"
 #include "Math/Quat.h"
 #include "Math/Vector.h"
 #include "Mesh/Skeletal/SkeletalMesh.h"
@@ -121,7 +122,8 @@ namespace
 USkeletalMeshComponent::~USkeletalMeshComponent()
 {
     ClearSkeletalClothBinding();
-    DestroyPhysicsAssetBodies();
+    DestroyPhysicsAssetBodies();                       // PhysX 바디 먼저 파기(자산 포인터 미보존 → 순서 안전)
+    if (PhysicsAssetOverride) { delete PhysicsAssetOverride; PhysicsAssetOverride = nullptr; }
     ClearAnimInstance();
 }
 
@@ -717,8 +719,7 @@ bool USkeletalMeshComponent::ExtractSkeletalClothDebugLines(
 
 bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene)
 {
-    USkeletalMesh* Mesh = GetSkeletalMesh();
-    return Mesh ? InstantiatePhysicsAssetBodies(Scene, Mesh->PhysicsAsset) : false;
+    return InstantiatePhysicsAssetBodies(Scene, GetPhysicsAsset());
 }
 
 bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene, UPhysicsAsset* PhysicsAsset)
@@ -737,6 +738,13 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
     Constraints.clear();
 
     bool bCreatedAnyBody = false;
+
+    // per-pair 자기충돌(DisabledCollisionPairs) 필터용. 생성 순서대로 0..31 인덱스를 부여한다
+    // (본 인덱스는 32 를 넘길 수 있어 그대로 못 씀). 32 초과분은 필터 제외 + 1회 경고.
+    TArray<int32> BodyFilterIndex;
+    BodyFilterIndex.assign(Asset->Bones.size(), -1);
+    int32 NextFilterIndex = 0;
+    bool bRagdollFilterOverflow = false;
 
     // ── 자기충돌 제어: 같은 메시의 모든 바디를 하나의 PxAggregate 로 묶는다 ──
     //   enableSelfCollision = PhysicsAsset->bEnableSelfCollision.
@@ -806,6 +814,20 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
 
         Bodies[BoneIndex] = Body;
         bCreatedAnyBody = true;
+
+        // per-pair 필터 인덱스 부여 (bEnableSelfCollision 일 때만 의미 있음).
+        if (PhysicsAsset->bEnableSelfCollision)
+        {
+            if (NextFilterIndex <= 31)
+            {
+                BodyFilterIndex[BoneIndex] = NextFilterIndex++;
+            }
+            else if (!bRagdollFilterOverflow)
+            {
+                bRagdollFilterOverflow = true;
+                UE_LOG("PhysicsAsset per-pair self-collision filter: ragdoll body count exceeds 32; extra bodies keep colliding.");
+            }
+        }
     }
 
     if (!bCreatedAnyBody)
@@ -888,6 +910,31 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
         Constraints.push_back(Constraint);
     }
 
+    // ── DisabledCollisionPairs → PhysX 시뮬 필터 반영 ─────────────────
+    // bEnableSelfCollision=true 일 때만 의미. false 면 aggregate 가 이미 전 쌍을 끄므로 불필요.
+    if (PhysicsAsset->bEnableSelfCollision)
+    {
+        static uint32 GNextRagdollFilterGroupId = 1;
+        RagdollFilterGroupId = GNextRagdollFilterGroupId++;
+        if (GNextRagdollFilterGroupId == 0) GNextRagdollFilterGroupId = 1;   // 0(=비-래그돌) 회피
+
+        for (int32 i = 0; i < static_cast<int32>(Bodies.size()); ++i)
+        {
+            if (!Bodies[i] || BodyFilterIndex[i] < 0) continue;
+
+            uint32 IgnoreMask = 0;
+            for (int32 j = 0; j < static_cast<int32>(Bodies.size()); ++j)
+            {
+                if (i == j || !Bodies[j] || BodyFilterIndex[j] < 0) continue;
+                if (PhysicsAsset->IsCollisionDisabled(Bodies[i]->BoneName, Bodies[j]->BoneName))
+                {
+                    IgnoreMask |= (1u << BodyFilterIndex[j]);
+                }
+            }
+            Scene.SetRagdollBodyFilter(Bodies[i], RagdollFilterGroupId, static_cast<uint32>(BodyFilterIndex[i]), IgnoreMask);
+        }
+    }
+
     return true;
 }
 
@@ -919,6 +966,7 @@ void USkeletalMeshComponent::DestroyPhysicsAssetBodies()
     }
 
     PhysicsAggregate = {};
+    RagdollFilterGroupId = 0;
     Constraints.clear();
     Bodies.clear();
     PhysicsSceneOwner = nullptr;
@@ -939,20 +987,20 @@ FBodyInstance* USkeletalMeshComponent::GetBodyInstanceByBoneName(const FString& 
     return GetBodyInstanceByBoneIndex(FindBoneIndex(BoneName));
 }
 
-void USkeletalMeshComponent::CreateRagdoll()
+bool USkeletalMeshComponent::EnterRagdollState()
 {
-    // 패시브 ragdoll 진입: PhysicsAsset 이 이미 인스턴스화돼 있어야 한다 (Bodies / PhysicsSceneOwner).
+    // 사전조건: 이미 인스턴스화돼 있어야 한다 (Bodies / PhysicsSceneOwner).
     if (!PhysicsSceneOwner || Bodies.empty())
     {
-        UE_LOG("CreateRagdoll skipped: physics asset bodies are not instantiated.");
-        return;
+        UE_LOG("EnterRagdollState skipped: physics asset bodies are not instantiated.");
+        return false;
     }
 
     USkeletalMesh* Mesh = GetSkeletalMesh();
     FSkeletalMesh* Asset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
     if (!Asset || Asset->Bones.empty())
     {
-        return;
+        return false;
     }
 
     // 1) 현재 본 월드 트랜스폼을 body 에 강제로 동기화한다 — kinematic 동안 누적된 anim pose 와
@@ -976,12 +1024,125 @@ void USkeletalMeshComponent::CreateRagdoll()
         PhysicsSceneOwner->SetBodyType(Body, EPhysicsBodyType::Dynamic);
     }
 
-    // 3) 애니메이션 평가 차단 — 다음 TickComponent 부터 ApplyPhysicsToBones 경로로 분기된다.
-    bSimulatingPhysics = true;
+    return true;
+}
+
+void USkeletalMeshComponent::CreateRagdoll()
+{
+    // 애니메이션 평가 차단 — 진입 성공 시 다음 TickComponent 부터 ApplyPhysicsToBones 경로로 분기된다.
+    if (EnterRagdollState())
+    {
+        bSimulatingPhysics = true;
+    }
+}
+
+void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
+{
+    if (bSimulate == bSimulatingPhysics)
+    {
+        return;
+    }
+
+    if (bSimulate)
+    {
+        // 진입 시점에 바디가 없으면 소유 월드의 물리 씬에서 즉석 인스턴스화한다.
+        // InstantiatePhysicsAssetBodies 가 현재 애님 본 월드 포즈를 읽으므로 진입 순간 포즈가 그대로 포착된다.
+        if (!PhysicsSceneOwner || Bodies.empty())
+        {
+            UWorld* World = GetWorld();
+            IPhysicsScene* Scene = World ? World->GetPhysicsScene() : nullptr;
+            UPhysicsAsset* PhysicsAsset = GetPhysicsAsset();
+            if (!Scene || !PhysicsAsset)
+            {
+                UE_LOG("SetSimulatingPhysics(true) skipped: no physics scene or physics asset.");
+                return;
+            }
+            if (!InstantiatePhysicsAssetBodies(*Scene, PhysicsAsset))
+            {
+                UE_LOG("SetSimulatingPhysics(true) skipped: physics asset instantiation failed.");
+                return;
+            }
+        }
+
+        if (EnterRagdollState())
+        {
+            bSimulatingPhysics = true;
+        }
+    }
+    else
+    {
+        // 시뮬 종료: 바디를 kinematic 으로 되돌리고 플래그 해제 → 다음 TickComponent 가 애님 경로로 복귀.
+        // 바디는 파기하지 않으므로 이후 재진입은 EnterRagdollState 한 번이면 된다.
+        if (PhysicsSceneOwner)
+        {
+            for (FBodyInstance* Body : Bodies)
+            {
+                if (Body && Body->bValid)
+                {
+                    PhysicsSceneOwner->SetBodyType(Body, EPhysicsBodyType::Kinematic);
+                }
+            }
+        }
+        bSimulatingPhysics = false;
+    }
+}
+
+bool USkeletalMeshComponent::HasPhysicsAsset() const
+{
+    return GetPhysicsAsset() != nullptr;
+}
+
+UPhysicsAsset* USkeletalMeshComponent::GetPhysicsAsset() const
+{
+    // per-instance override 우선, 없으면 메시(에디터 세션이 꽂은 것)로 폴백.
+    if (PhysicsAssetOverride)
+    {
+        return PhysicsAssetOverride;
+    }
+    USkeletalMesh* Mesh = GetSkeletalMesh();
+    return Mesh ? Mesh->PhysicsAsset : nullptr;
+}
+
+void USkeletalMeshComponent::LoadPhysicsAssetFromPath()
+{
+    if (PhysicsAssetOverride)
+    {
+        delete PhysicsAssetOverride;
+        PhysicsAssetOverride = nullptr;
+    }
+
+    FString Path;
+    if (!PhysicsAssetPath.empty() && PhysicsAssetPath != "None")
+    {
+        Path = PhysicsAssetPath.ToString();
+    }
+    else if (USkeletalMesh* Mesh = GetSkeletalMesh())
+    {
+        // 규약 자동 기본값: <Mesh>_Physics.uasset (에디터 SavePhysicsAsset 저장 위치와 동일 규약).
+        const FString MeshPath = Mesh->GetAssetPathFileName();
+        if (!MeshPath.empty() && MeshPath != "None")
+        {
+            Path = UPhysicsAsset::MakeSiblingPath(MeshPath);
+        }
+    }
+
+    if (!Path.empty() && Path != "None")
+    {
+        PhysicsAssetOverride = UPhysicsAsset::LoadFromFile(Path);
+    }
+}
+
+void USkeletalMeshComponent::PostDuplicate()
+{
+    Super::PostDuplicate();        // USkinnedMeshComponent: SkeletalMeshPath → SetSkeletalMesh
+    LoadPhysicsAssetFromPath();    // 이어서 PhysicsAssetPath(또는 규약 기본값) 해석
 }
 
 void USkeletalMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction& ThisTickFunction)
 {
+    // 런타임 디버그 표시(컴포넌트 단위 bShowPhysicsBodies). 분기와 무관하게 매 틱 1회 큐에 push.
+    DrawRuntimePhysicsBodies();
+
     if (bSimulatingPhysics)
     {
         // Passive ragdoll: AnimInstance 평가 skip, PhysX body → 본 local pose write-back.
@@ -1073,7 +1234,10 @@ namespace
 	constexpr float kDbgPi  = 3.14159265f;
 	constexpr float kDbgPi2 = kDbgPi * 2.0f;
 
-	void DbgWireSphere(FScene& Scene, const FVector& C, float R, const FColor& Col)
+	// 와이어 라인 sink. 색/제출처(FScene vs DebugDrawQueue)는 호출측 lambda 가 결정한다.
+	using FDbgLineSink = std::function<void(const FVector&, const FVector&)>;
+
+	void DbgWireSphere(const FDbgLineSink& Emit, const FVector& C, float R)
 	{
 		constexpr int32 Seg = 16;
 		const FVector Ax[3] = { FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) };
@@ -1085,13 +1249,13 @@ namespace
 			{
 				const float a = kDbgPi2 * i / Seg;
 				const FVector Cur = C + (U * cosf(a) + V * sinf(a)) * R;
-				Scene.AddDebugLine(Prev, Cur, Col);
+				Emit(Prev, Cur);
 				Prev = Cur;
 			}
 		}
 	}
 
-	void DbgWireBox(FScene& Scene, const FVector& C, const FQuat& Rot, float HX, float HY, float HZ, const FColor& Col)
+	void DbgWireBox(const FDbgLineSink& Emit, const FVector& C, const FQuat& Rot, float HX, float HY, float HZ)
 	{
 		const FVector L[8] = {
 			{-HX,-HY,-HZ},{HX,-HY,-HZ},{HX,HY,-HZ},{-HX,HY,-HZ},
@@ -1102,10 +1266,10 @@ namespace
 		static const int32 E[12][2] = {
 			{0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7}
 		};
-		for (int32 e = 0; e < 12; ++e) Scene.AddDebugLine(P[E[e][0]], P[E[e][1]], Col);
+		for (int32 e = 0; e < 12; ++e) Emit(P[E[e][0]], P[E[e][1]]);
 	}
 
-	void DbgWireCapsule(FScene& Scene, const FVector& C, const FQuat& Rot, float Radius, float HalfH, const FColor& Col)
+	void DbgWireCapsule(const FDbgLineSink& Emit, const FVector& C, const FQuat& Rot, float Radius, float HalfH)
 	{
 		constexpr int32 Seg = 16;
 		const FVector Axis = Rot.RotateVector(FVector(1,0,0)); // 긴축 = X (PhysX/AlignXToDir 규약)
@@ -1121,13 +1285,13 @@ namespace
 			const float a = kDbgPi2 * i / Seg;
 			const FVector d = Radial(a);
 			const FVector CurT = TopC + d * Radius, CurB = BotC + d * Radius;
-			Scene.AddDebugLine(PrevT, CurT, Col);
-			Scene.AddDebugLine(PrevB, CurB, Col);
+			Emit(PrevT, CurT);
+			Emit(PrevB, CurB);
 			PrevT = CurT; PrevB = CurB;
 		}
 		const FVector Dirs[4] = { U, U * -1.0f, V, V * -1.0f };
 		for (int32 di = 0; di < 4; ++di)
-			Scene.AddDebugLine(TopC + Dirs[di] * Radius, BotC + Dirs[di] * Radius, Col);
+			Emit(TopC + Dirs[di] * Radius, BotC + Dirs[di] * Radius);
 		const int32 HSeg = Seg / 2;
 		const FVector Planes[2] = { U, V };
 		for (int32 hemi = 0; hemi < 2; ++hemi)
@@ -1142,7 +1306,7 @@ namespace
 				{
 					const float a = kDbgPi * i / HSeg;
 					const FVector Cur = O + (H * cosf(a) + Axis * (Sign * sinf(a))) * Radius;
-					Scene.AddDebugLine(Prev, Cur, Col);
+					Emit(Prev, Cur);
 					Prev = Cur;
 				}
 			}
@@ -1150,15 +1314,15 @@ namespace
 	}
 }
 
-void USkeletalMeshComponent::ContributeSelectedVisuals(FScene& Scene) const
+void USkeletalMeshComponent::BuildPhysicsBodyWireframe(const std::function<void(const FVector&, const FVector&)>& EmitLine) const
 {
-	if (!bShowPhysicsBodies) return;
+	if (!EmitLine) return;
 
 	USkeletalMesh* Mesh = GetSkeletalMesh();
 	UPhysicsAsset* PA = Mesh ? Mesh->PhysicsAsset : nullptr;
 	if (!PA) return;
 
-	const FColor Col = FColor::Green();
+	// 레벨/런타임에선 런타임 Bodies 가 비어 있을 수 있으므로 PhysicsAsset 셰이프를 현재 본 월드 포즈로 그린다.
 	for (UBodySetup* BS : PA->GetBodySetups())
 	{
 		if (!BS) continue;
@@ -1171,14 +1335,40 @@ void USkeletalMeshComponent::ContributeSelectedVisuals(FScene& Scene) const
 		const FQuat   BoneRot = BoneWorld.Rotation;
 
 		for (const FKSphereElem& E : BS->AggregateGeom.SphereElems)
-			DbgWireSphere(Scene, BonePos + BoneRot.RotateVector(E.Center), E.Radius, Col);
+			DbgWireSphere(EmitLine, BonePos + BoneRot.RotateVector(E.Center), E.Radius);
 		for (const FKBoxElem& E : BS->AggregateGeom.BoxElems)
-			DbgWireBox(Scene, BonePos + BoneRot.RotateVector(E.Center), BoneRot * E.Rotation,
-				E.HalfX, E.HalfY, E.HalfZ, Col);
+			DbgWireBox(EmitLine, BonePos + BoneRot.RotateVector(E.Center), BoneRot * E.Rotation,
+				E.HalfX, E.HalfY, E.HalfZ);
 		for (const FKCapsuleElem& E : BS->AggregateGeom.CapsuleElems)
-			DbgWireCapsule(Scene, BonePos + BoneRot.RotateVector(E.Center), BoneRot * E.Rotation,
-				E.Radius, E.HalfHeight, Col);
+			DbgWireCapsule(EmitLine, BonePos + BoneRot.RotateVector(E.Center), BoneRot * E.Rotation,
+				E.Radius, E.HalfHeight);
 	}
+}
+
+void USkeletalMeshComponent::ContributeSelectedVisuals(FScene& Scene) const
+{
+	if (!bShowPhysicsBodies) return;
+
+	// 에디터 선택 경로: FScene::AddDebugLine 채널로 즉시 제출(초록).
+	BuildPhysicsBodyWireframe([&Scene](const FVector& A, const FVector& B)
+	{
+		Scene.AddDebugLine(A, B, FColor::Green());
+	});
+}
+
+void USkeletalMeshComponent::DrawRuntimePhysicsBodies()
+{
+	if (!bShowPhysicsBodies) return;
+
+	// 런타임(play) 경로: 선택과 무관하게 디버그 드로우 큐로 제출. ShowFlags.bDebugDraw 가 켜져 있어야 보인다.
+	UWorld* World = GetWorld();
+	if (!World || !World->HasBegunPlay()) return;
+
+	FDebugDrawQueue& Queue = World->GetScene().GetDebugDrawQueue();
+	BuildPhysicsBodyWireframe([&Queue](const FVector& A, const FVector& B)
+	{
+		Queue.AddLine(A, B, FColor::Green(), 0.0f);   // Duration 0 = 1프레임(매 틱 재푸시)
+	});
 }
 
 // ──────────────────────────────────────────────
@@ -1265,6 +1455,14 @@ void USkeletalMeshComponent::PostEditProperty(const char* PropertyName)
     else if (std::strcmp(PropertyName, "bPlaying") == 0)
     {
         SetPlaying(AnimationData.bPlaying);
+    }
+    else if (std::strcmp(PropertyName, "PhysicsAssetPath") == 0 ||
+             std::strcmp(PropertyName, "Physics Asset") == 0)
+    {
+        // 시뮬 중 자산 교체 → 안전 정리 후 재로드(같은 클래스라 직접 호출, 가상 훅 불필요).
+        if (bSimulatingPhysics) SetSimulatingPhysics(false);
+        DestroyPhysicsAssetBodies();
+        LoadPhysicsAssetFromPath();
     }
 
     // AnimInstance 자체 properties 는 자식이 자체 PostEdit 처리. 컴포넌트는 dispatch 만.

@@ -63,33 +63,15 @@
 
 namespace
 {
-	// MyCar.uasset  →  MyCar_Physics.uasset (같은 디렉토리)
+	// 경로 규약/로드는 UPhysicsAsset 정적 헬퍼로 일원화(런타임·에디터 공용). 호출부 호환용 얇은 래퍼.
 	FString MakePhysicsAssetPath(const FString& MeshPath)
 	{
-		const size_t DotPos = MeshPath.find_last_of('.');
-		if (DotPos != FString::npos)
-			return MeshPath.substr(0, DotPos) + "_Physics" + MeshPath.substr(DotPos);
-		return MeshPath + "_Physics.uasset";
+		return UPhysicsAsset::MakeSiblingPath(MeshPath);
 	}
 
-	// 파일에서 PhysicsAsset 로드. 실패 시 nullptr 반환.
 	UPhysicsAsset* LoadPhysicsAssetFromFile(const FString& Path)
 	{
-		const FString NormalizedPath = FPaths::MakeProjectRelative(Path);
-
-		FWindowsBinReader Reader(NormalizedPath);
-		if (!Reader.IsValid()) return nullptr;
-
-		FAssetPackageHeader Header;
-		Reader << Header;
-		if (!Header.IsValid(EAssetPackageType::PhysicsAsset)) return nullptr;
-
-		FAssetImportMetadata Metadata;
-		Reader << Metadata;
-
-		UPhysicsAsset* Asset = new UPhysicsAsset();
-		Asset->Serialize(Reader);
-		return Asset;
+		return UPhysicsAsset::LoadFromFile(Path);
 	}
 }
 
@@ -1462,10 +1444,13 @@ void FMeshEditorWidget::StopPhysicsSimulation()
 	USkeletalMeshComponent* MeshComp = ViewportClient.GetPreviewMeshComponent();
 	if (MeshComp)
 	{
+		// 먼저 시뮬 플래그를 해제(신규 공개 API)한 뒤 바디를 파기한다.
+		MeshComp->SetSimulatingPhysics(false);
 		if (!MeshComp->GetPhysicsBodies().empty())
 		{
 			MeshComp->DestroyPhysicsAssetBodies();
 		}
+
 		if (MeshComp->IsSimulatingPhysics())
 		{
 			// USkeletalMeshComponent::bSimulatingPhysics 는 CreateRagdoll 에서만 true 로 토글되고

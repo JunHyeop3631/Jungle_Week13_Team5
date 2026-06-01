@@ -1,5 +1,8 @@
 #include "Physics/Asset/PhysicsAsset.h"
 #include "Serialization/Archive.h"
+#include "Serialization/WindowsArchive.h"   // FWindowsBinReader
+#include "Asset/AssetPackage.h"             // FAssetPackageHeader, EAssetPackageType, FAssetImportMetadata
+#include "Platform/Paths.h"                 // FPaths::MakeProjectRelative
 
 UPhysicsAsset::~UPhysicsAsset()
 {
@@ -137,4 +140,31 @@ void UPhysicsAsset::Serialize(FArchive& Ar)
     // 구버전 에셋엔 이 바이트가 없음 → 로드 시 ifstream.read 가 EOF 에서 버퍼를 건드리지 않아
     // 멤버 기본값(false)이 유지된다. 재저장하면 이후 정상 기록/로드.
     Ar << bEnableSelfCollision;
+}
+
+FString UPhysicsAsset::MakeSiblingPath(const FString& MeshPath)
+{
+    const size_t DotPos = MeshPath.find_last_of('.');
+    if (DotPos != FString::npos)
+        return MeshPath.substr(0, DotPos) + "_Physics" + MeshPath.substr(DotPos);
+    return MeshPath + "_Physics.uasset";
+}
+
+UPhysicsAsset* UPhysicsAsset::LoadFromFile(const FString& Path)
+{
+    const FString Normalized = FPaths::MakeProjectRelative(Path);
+
+    FWindowsBinReader Reader(Normalized);
+    if (!Reader.IsValid()) return nullptr;
+
+    FAssetPackageHeader Header;
+    Reader << Header;
+    if (!Header.IsValid(EAssetPackageType::PhysicsAsset)) return nullptr;
+
+    FAssetImportMetadata Metadata;   // PhysicsAsset 은 별도 소스 없음 — 읽고 버림
+    Reader << Metadata;
+
+    UPhysicsAsset* Asset = new UPhysicsAsset();
+    Asset->Serialize(Reader);
+    return Asset;
 }

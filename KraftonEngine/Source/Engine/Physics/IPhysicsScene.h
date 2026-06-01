@@ -70,6 +70,10 @@ public:
 	// Static conversion would require actor recreation, so runtime implementations may ignore it.
 	virtual void SetBodyType(FBodyInstance* Body, EPhysicsBodyType NewType) = 0;
 
+	// 래그돌 자기충돌 per-pair 비활성. GroupId 는 래그돌마다 nonzero/유일, BodyIndex 는 [0,31],
+	// IgnoreMask 는 충돌을 끌 peer 인덱스 비트들의 OR. 시뮬 필터 데이터만 갱신(query 무손상). 최대 32바디.
+	virtual void SetRagdollBodyFilter(FBodyInstance* Body, uint32 GroupId, uint32 BodyIndex, uint32 IgnoreMask) = 0;
+
 	virtual void GetPhysicsStats(FPhysicsStats& OutStats) const = 0;
 	virtual void ExtractPhysicsDebugLines(TArray<FPhysicsDebugLine>& OutLines) const = 0;
 	virtual void ExtractVehicleDebugLines(TArray<FPhysicsDebugLine>& OutLines) const = 0;

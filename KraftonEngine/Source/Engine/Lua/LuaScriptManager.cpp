@@ -1304,10 +1304,17 @@ void FLuaScriptManager::RegisterActorBindings(sol::state& Lua)
 		}
 
 		return FVector::ZeroVector;
-	}
+	},
+
+		"SetSimulatingPhysics", &USkeletalMeshComponent::SetSimulatingPhysics,
+		"IsSimulatingPhysics", &USkeletalMeshComponent::IsSimulatingPhysics,
+		"HasPhysicsAsset", &USkeletalMeshComponent::HasPhysicsAsset
 	);
 
 	FLuaDocRegistry::Get().Type("SkeletalMeshComponent", "PrimitiveComponent")
+		.Method("---@param enabled boolean\n---@return nil\nfunction SkeletalMeshComponent:SetSimulatingPhysics(enabled) end")
+		.Method("---@return boolean\nfunction SkeletalMeshComponent:IsSimulatingPhysics() end")
+		.Method("---@return boolean\nfunction SkeletalMeshComponent:HasPhysicsAsset() end")
 		.Method("---@param boneName string\n---@param localOffset Vector\n---@return Vector\nfunction SkeletalMeshComponent:GetBoneSocketLocation(boneName, localOffset) end")
 		.Method("---@param boneName string\n---@param localOffset Vector\n---@return Vector\nfunction SkeletalMeshComponent:GetBoneSocketRotation(boneName, localOffset) end");
 

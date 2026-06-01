@@ -8,7 +8,10 @@
 #include "Animation/Skeleton/SkeletonManager.h"
 #include "Platform/Paths.h"
 #include "Particles/ParticleSystemManager.h"
+#include "Asset/AssetPackage.h"
+#include "Mesh/MeshBinary.h"
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 
@@ -71,6 +74,43 @@ namespace FAssetRegistry
 					Item.FullPath    = FPaths::ToUtf8(
 						(fs::path(L"Anim") / Entry.path().filename()).generic_wstring());
 					Cache.push_back(Item);
+				}
+			}
+			return Cache;
+		}
+
+		if (std::strcmp(AssetTypeName, "UPhysicsAsset") == 0 ||
+			std::strcmp(AssetTypeName, "PhysicsAsset") == 0)
+		{
+			// Content 하위 .uasset 중 패키지 헤더 타입이 PhysicsAsset 인 것만 수집.
+			// 콤보 열 때마다 재스캔(LuaAnimScript 와 동일 정책 — 호출 빈도 낮음).
+			static TArray<FAssetListItem> Cache;
+			Cache.clear();
+
+			namespace fs = std::filesystem;
+			const fs::path ContentRoot = fs::path(FPaths::RootDir()) / L"Content";
+			const fs::path ProjectRoot(FPaths::RootDir());
+			if (fs::exists(ContentRoot) && fs::is_directory(ContentRoot))
+			{
+				for (const auto& Entry : fs::recursive_directory_iterator(ContentRoot))
+				{
+					if (!Entry.is_regular_file()) continue;
+
+					std::wstring Ext = Entry.path().extension().wstring();
+					std::transform(Ext.begin(), Ext.end(), Ext.begin(), ::towlower);
+					if (Ext != MeshBinary::AssetPackageExtension) continue;   // .uasset 만
+
+					const FString RelPath = FPaths::ToUtf8(
+						Entry.path().lexically_relative(ProjectRoot).generic_wstring());
+
+					FAssetImportMetadata Metadata;
+					if (!FAssetPackage::ReadMetadata(RelPath, EAssetPackageType::PhysicsAsset, Metadata))
+						continue;
+
+					FAssetListItem Item;
+					Item.DisplayName = FPaths::ToUtf8(Entry.path().stem().wstring());
+					Item.FullPath    = RelPath;
+					Cache.push_back(std::move(Item));
 				}
 			}
 			return Cache;

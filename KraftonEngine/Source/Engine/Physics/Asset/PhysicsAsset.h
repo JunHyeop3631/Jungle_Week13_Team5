@@ -45,6 +45,12 @@ public:
     int32 GetNumDisabledCollisionPairs() const { return (int32)DisabledCollisionPairs.size(); }
     void  ClearDisabledCollisionPairs() { DisabledCollisionPairs.clear(); }   // 전체 재생성(②) 시 일괄 비움
 
+    // ── 파일 경로 규약 / 로드 (런타임·에디터 공용) ───────────────────
+    // <Mesh>.uasset → <Mesh>_Physics.uasset (같은 디렉토리) 규약 경로.
+    static FString MakeSiblingPath(const FString& MeshPath);
+    // PhysicsAsset 패키지 파일 로드. 실패 시 nullptr. 호출측이 소유/해제한다.
+    static UPhysicsAsset* LoadFromFile(const FString& Path);
+
     void Serialize(FArchive& Ar);
 
 private:
