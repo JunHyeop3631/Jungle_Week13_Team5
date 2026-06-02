@@ -47,7 +47,7 @@ namespace
 
 	void AppendSolidSphere(TArray<FColoredVertex>& Out, const FVector& C, float R, const FVector4& Base)
 	{
-		constexpr int32 Rings = 12, Sectors = 18;
+		constexpr int32 Rings = 8, Sectors = 12;
 		auto N = [&](int32 ri, int32 si) -> FVector
 		{
 			const float v = kPi * ri / Rings;       // 0..pi (위→아래)
@@ -99,7 +99,7 @@ namespace
 		const FVector U    = Rot.RotateVector(FVector(0,1,0)); // 반경 평면
 		const FVector V    = Rot.RotateVector(FVector(0,0,1)); // 반경 평면
 		const FVector TopC = C + Axis * HalfH, BotC = C - Axis * HalfH;
-		constexpr int32 Sectors = 18, HemiRings = 6;
+		constexpr int32 Sectors = 12, HemiRings = 4;
 		const float Step = kPi2 / Sectors;
 
 		auto Radial = [&](float ang) -> FVector { return U*cosf(ang) + V*sinf(ang); };
@@ -154,7 +154,7 @@ namespace
 	// 구 = 3 직교 대원(XY, YZ, ZX)
 	void AppendWireSphere(TArray<FColoredLine>& Out, const FVector& C, float R, const FVector4& Col)
 	{
-		constexpr int32 Seg = 24;
+		constexpr int32 Seg = 16;
 		const FVector Ax[3] = { FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) };
 		for (int32 p = 0; p < 3; ++p)
 		{
@@ -190,7 +190,7 @@ namespace
 	void AppendWireCapsule(TArray<FColoredLine>& Out, const FVector& C, const FQuat& Rot,
 	                       float Radius, float HalfH, const FVector4& Col)
 	{
-		constexpr int32 Seg = 24;
+		constexpr int32 Seg = 16;
 		const FVector Axis = Rot.RotateVector(FVector(1,0,0)); // 긴축 = X (PhysX/AlignXToDir 규약)
 		const FVector U    = Rot.RotateVector(FVector(0,1,0)); // 반경 평면
 		const FVector V    = Rot.RotateVector(FVector(0,0,1)); // 반경 평면
@@ -258,16 +258,9 @@ void FPhysicsShapeDebugSceneProxy::UpdateTransform()
 	RebuildGeometry();
 }
 
-void FPhysicsShapeDebugSceneProxy::RebuildGeometry()
+void FPhysicsShapeDebugSceneProxy::RebuildBoneCache(UPhysicsShapeDebugComponent* Comp)
 {
-	CachedSolid.clear();
-	CachedWire.clear();
-
-	UPhysicsShapeDebugComponent* Comp = static_cast<UPhysicsShapeDebugComponent*>(GetOwner());
-	if (!Comp) return;
-
-	bShowSolid = Comp->GetShowSolid();   // 토글 복사 → DrawCommandBuilder 가 emit 결정
-	bShowWire  = Comp->GetShowWire();
+	CachedBoneIndices.clear();
 
 	UPhysicsAsset* PA = Comp->GetPhysicsAsset();
 	USkeletalMeshComponent* MeshComp = Comp->GetTargetMeshComponent();
@@ -276,9 +269,49 @@ void FPhysicsShapeDebugSceneProxy::RebuildGeometry()
 	USkeletalMesh* Mesh = MeshComp->GetSkeletalMesh();
 	const FSkeletalMesh* MeshAsset = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
 
+	const auto& Setups = PA->GetBodySetups();
+	CachedBoneIndices.resize(Setups.size(), -1);
+
+	if (!MeshAsset) return;
+
+	for (int32 Idx = 0; Idx < (int32)Setups.size(); ++Idx)
+	{
+		UBodySetup* BS = Setups[Idx];
+		if (!BS) continue;
+		for (int32 i = 0; i < (int32)MeshAsset->Bones.size(); ++i)
+		{
+			if (MeshAsset->Bones[i].Name == BS->BoneName)
+			{
+				CachedBoneIndices[Idx] = i;
+				break;
+			}
+		}
+	}
+
+	bBoneCacheDirty = false;
+}
+
+void FPhysicsShapeDebugSceneProxy::RebuildGeometry()
+{
+	UPhysicsShapeDebugComponent* Comp = static_cast<UPhysicsShapeDebugComponent*>(GetOwner());
+	if (!Comp) return;
+
+	CachedSolid.clear();
+	CachedWire.clear();
+
+	bShowSolid = Comp->GetShowSolid();
+	bShowWire  = Comp->GetShowWire();
+
 	const int32 SelBody = Comp->GetSelBodyIndex();
-	const int32 SelKind = Comp->GetSelKind(); // 1 Sphere, 2 Box, 3 Capsule
+	const int32 SelKind = Comp->GetSelKind();
 	const int32 SelElem = Comp->GetSelElemIndex();
+
+	UPhysicsAsset* PA = Comp->GetPhysicsAsset();
+	USkeletalMeshComponent* MeshComp = Comp->GetTargetMeshComponent();
+	if (!PA || !MeshComp) return;
+
+	if (bBoneCacheDirty)
+		RebuildBoneCache(Comp);
 
 	const auto& Setups = PA->GetBodySetups();
 	for (int32 Idx = 0; Idx < (int32)Setups.size(); ++Idx)
@@ -287,20 +320,13 @@ void FPhysicsShapeDebugSceneProxy::RebuildGeometry()
 		if (!BS) continue;
 		const bool bBodySel = (Idx == SelBody);
 
-		// 본 월드 트랜스폼 조회
 		FVector BoneWorldPos  = FVector(0,0,0);
 		FQuat   BoneWorldQuat = FQuat::Identity;
-		if (MeshAsset)
+		const int32 BoneIdx = (Idx < (int32)CachedBoneIndices.size()) ? CachedBoneIndices[Idx] : -1;
+		if (BoneIdx >= 0)
 		{
-			for (int32 i = 0; i < (int32)MeshAsset->Bones.size(); ++i)
-			{
-				if (MeshAsset->Bones[i].Name == BS->BoneName)
-				{
-					BoneWorldPos  = MeshComp->GetBoneLocationByIndex(i);
-					BoneWorldQuat = MeshComp->GetBoneQuatByIndex(i);
-					break;
-				}
-			}
+			BoneWorldPos  = MeshComp->GetBoneLocationByIndex(BoneIdx);
+			BoneWorldQuat = MeshComp->GetBoneQuatByIndex(BoneIdx);
 		}
 
 		for (int32 Si = 0; Si < (int32)BS->AggregateGeom.SphereElems.size(); ++Si)

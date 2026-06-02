@@ -329,7 +329,8 @@ void FMeshEditorWidget::Tick(float DeltaTime)
 		// (전체 골격은 셰이프 편집에 방해되므로 SelectedOnly 모드의 선택 본 한 개만 표시)
 		// 본에 기즈모를 붙이지 않도록 SetSelectedBone 대신 HighlightBone 을 쓴다.
 		ViewportClient.HighlightBone(Cast<USkeletalMesh>(EditedObject), SelectedBoneIndex);
-		ViewportClient.SetBoneDebugVisible(SelectedBoneIndex >= 0);
+		const bool bAllBones = ViewportClient.GetBoneDebugDrawMode() == EBoneDebugDrawMode::AllBones;
+		ViewportClient.SetBoneDebugVisible(bAllBones || SelectedBoneIndex >= 0);
 
 		if (ViewportClient.IsGizmoHolding())
 		{

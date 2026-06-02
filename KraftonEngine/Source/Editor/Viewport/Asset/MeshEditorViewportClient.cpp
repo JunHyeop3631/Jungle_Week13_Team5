@@ -34,8 +34,28 @@ void FMeshEditorViewportClient::UpdatePhysicsShapeDebug(UPhysicsAsset* PhysicsAs
 	PhysicsShapeDebugComponent->SetPhysicsAsset(PhysicsAsset);
 	PhysicsShapeDebugComponent->SetSelection(SelBodyIndex, SelKind, SelElemIndex);
 	PhysicsShapeDebugComponent->SetShowFlags(bShowSolid, bShowWire);
-	// 매 프레임 프록시를 재생성해 현재 본 포즈/선택을 반영 (본 디버그의 HighlightBone 과 동일 패턴).
-	PhysicsShapeDebugComponent->MarkRenderStateDirty();
+
+	// 실제로 변경된 경우에만 프록시 재생성 (매 프레임 재생성 방지)
+	const bool bChanged = PhysicsAsset  != PrevPhysicsAsset
+	                   || SelBodyIndex  != PrevSelBodyIndex
+	                   || SelKind       != PrevSelKind
+	                   || SelElemIndex  != PrevSelElemIndex
+	                   || bShowSolid    != PrevShowSolid
+	                   || bShowWire     != PrevShowWire;
+	if (bChanged)
+	{
+		PrevPhysicsAsset  = PhysicsAsset;
+		PrevSelBodyIndex  = SelBodyIndex;
+		PrevSelKind       = SelKind;
+		PrevSelElemIndex  = SelElemIndex;
+		PrevShowSolid     = bShowSolid;
+		PrevShowWire      = bShowWire;
+		PhysicsShapeDebugComponent->MarkRenderStateDirty();
+	}
+	else
+	{
+		PhysicsShapeDebugComponent->MarkRenderTransformDirty();
+	}
 }
 
 void FMeshEditorViewportClient::SetPhysicsShapeDebugVisible(bool bVisible)

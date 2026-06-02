@@ -40,11 +40,20 @@ public:
 	bool ShouldDrawSolid() const { return bShowSolid; }
 	bool ShouldDrawWire()  const { return bShowWire; }
 
+	// asset/mesh 변경 시 본 인덱스 캐시 무효화
+	void InvalidateBoneCache() { bBoneCacheDirty = true; }
+
 private:
 	void RebuildGeometry();
+	void RebuildBoneCache(class UPhysicsShapeDebugComponent* Comp);
 
 	TArray<FColoredVertex> CachedSolid;	// 반투명 셰이딩 솔리드 (AlphaBlend, NoDepth)
 	TArray<FColoredLine>   CachedWire;	// 와이어프레임 (EditorLines LINELIST, NoDepth)
 	bool bShowSolid = true;
 	bool bShowWire  = true;
+
+	// 본 이름 → 인덱스 캐시 (asset/mesh 변경 시에만 재빌드)
+	TArray<int32> CachedBoneIndices;	// BodySetups 와 1:1 대응
+	bool bBoneCacheDirty = true;
+
 };

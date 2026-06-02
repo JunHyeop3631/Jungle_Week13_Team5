@@ -104,6 +104,14 @@ private:
 	// Physics 탭 콜리전 셰이프 와이어 컴포넌트 (지연 생성). 본 디버그와 동일 패턴.
 	UPhysicsShapeDebugComponent* PhysicsShapeDebugComponent = nullptr;
 
+	// 이전 프레임 상태 — 변경 없으면 MarkRenderStateDirty 생략
+	UPhysicsAsset* PrevPhysicsAsset = nullptr;
+	int32 PrevSelBodyIndex = -2;
+	int32 PrevSelKind      = -2;
+	int32 PrevSelElemIndex = -2;
+	bool  PrevShowSolid    = true;
+	bool  PrevShowWire     = true;
+
 	bool bIsRenderable = false;
 
 	FViewportCameraTransform ViewTransform;
