@@ -12,7 +12,28 @@
 void USpringArmComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	DesiredLocalRotation = GetRelativeQuat().GetNormalized();
 	bHasPreviousState = false;
+}
+
+void USpringArmComponent::SetRelativeRotation(const FRotator& NewRotation)
+{
+	Super::SetRelativeRotation(NewRotation);
+	if (!bApplyingComputedTransform)
+	{
+		DesiredLocalRotation = NewRotation.ToQuaternion().GetNormalized();
+		bHasPreviousState = false;
+	}
+}
+
+void USpringArmComponent::SetRelativeRotation(const FQuat& NewRotation)
+{
+	Super::SetRelativeRotation(NewRotation);
+	if (!bApplyingComputedTransform)
+	{
+		DesiredLocalRotation = NewRotation.GetNormalized();
+		bHasPreviousState = false;
+	}
 }
 
 void USpringArmComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction& ThisTickFunction)
@@ -50,8 +71,9 @@ void USpringArmComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	}
 
 	// (2) Desired attach point — 부모 위치 + desired 회전 기준 TargetOffset 적용.
-	const FVector DesiredAttachLoc = ParentWorldLoc + DesiredParentRot.RotateVector(TargetOffset);
-	const FQuat DesiredAttachRot = DesiredParentRot;
+	const FQuat DesiredArmRot = (DesiredParentRot * DesiredLocalRotation).GetNormalized();
+	const FVector DesiredAttachLoc = ParentWorldLoc + DesiredArmRot.RotateVector(TargetOffset);
+	const FQuat DesiredAttachRot = DesiredArmRot;
 
 	// (3) Lag 적용 — 첫 Tick 은 desired 로 초기화 (아직 비교할 prev 없음).
 	if (!bHasPreviousState)
@@ -136,6 +158,8 @@ void USpringArmComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const FVector RelLoc = ParentInvRot.RotateVector(ArmEndWorld - ParentWorldLoc);
 	const FQuat RelRot = (ParentInvRot * LaggedAttachRot).GetNormalized();
 
+	bApplyingComputedTransform = true;
 	SetRelativeLocation(RelLoc);
 	SetRelativeRotation(RelRot);
+	bApplyingComputedTransform = false;
 }
