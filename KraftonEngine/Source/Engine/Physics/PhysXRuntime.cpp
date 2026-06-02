@@ -8,6 +8,7 @@
 #include "Component/Shape/SphereComponent.h"
 #include "GameFramework/AActor.h"
 #include "Object/Object.h"
+#include "Core/Logging/Log.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1983,6 +1984,78 @@ bool FPhysXRuntime::SphereSweepShapeComponents(const FVector& Start, const FVect
 		FillHitResult(Hit.block, OutHit);
 	}
 	return OutHit.bHit;
+}
+
+int32 FPhysXRuntime::OverlapSphere(const FVector& Center, float Radius, uint32 ObjectTypeMask,
+	TArray<FOverlapResult>& OutOverlaps, const AActor* IgnoreActor) const
+{
+	OutOverlaps.clear();
+	if (!Scene || Radius <= 0.0f || ObjectTypeMask == 0)
+	{
+		return 0;
+	}
+
+	struct FObjectTypeOverlapFilter : PxQueryFilterCallback
+	{
+		const AActor* IgnoreActor = nullptr;
+		PxU32 ObjectTypeMask = 0;
+
+		PxQueryHitType::Enum preFilter(const PxFilterData&, const PxShape* Shape, const PxRigidActor* Actor, PxHitFlags&) override
+		{
+			if (IsTriggerShape(Shape))
+			{
+				return PxQueryHitType::eNONE;
+			}
+
+			UPrimitiveComponent* Comp = GetComponentFromActor(Actor);
+			if (!Comp || (IgnoreActor && Comp->GetOwner() == IgnoreActor))
+			{
+				return PxQueryHitType::eNONE;
+			}
+
+			const PxFilterData Filter = Shape ? Shape->getQueryFilterData() : PxFilterData();
+			const PxU32 ObjectBit = 1u << Filter.word0;
+			return (ObjectTypeMask & ObjectBit) ? PxQueryHitType::eTOUCH : PxQueryHitType::eNONE;
+		}
+
+		PxQueryHitType::Enum postFilter(const PxFilterData&, const PxQueryHit&) override
+		{
+			return PxQueryHitType::eTOUCH;
+		}
+	} FilterCallback;
+
+	FilterCallback.IgnoreActor = IgnoreActor;
+	FilterCallback.ObjectTypeMask = ObjectTypeMask;
+
+	// 다중 touch 수집 — eTOUCH 필터 + 고정 버퍼. (블로킹 쿼리 아님)
+	constexpr PxU32 kMaxTouch = 64;
+	PxOverlapHit TouchBuffer[kMaxTouch];
+	PxOverlapBuffer Hit(TouchBuffer, kMaxTouch);
+	{
+		PHYSX_SCENE_READ_LOCK(Scene);
+		Scene->overlap(PxSphereGeometry(Radius), PxTransform(ToPxVec3(Center)), Hit,
+			PxQueryFilterData(PxQueryFlag::eDYNAMIC | PxQueryFlag::eSTATIC | PxQueryFlag::ePREFILTER),
+			&FilterCallback);
+
+		const PxU32 NumTouches = Hit.getNbTouches();
+		for (PxU32 i = 0; i < NumTouches; ++i)
+		{
+			if (UPrimitiveComponent* Comp = GetComponentFromActor(Hit.getTouch(i).actor))
+			{
+				FOverlapResult Result;
+				Result.OverlapComponent = Comp;
+				Result.OverlapActor = Comp->GetOwner();
+				OutOverlaps.push_back(Result);
+			}
+		}
+
+		// silent cap 금지 — 버퍼 포화 시 잘림 가능성을 노출.
+		if (NumTouches >= kMaxTouch)
+		{
+			UE_LOG("[OverlapSphere] touch buffer saturated (%u) — results may be truncated", kMaxTouch);
+		}
+	}
+	return static_cast<int32>(OutOverlaps.size());
 }
 
 bool FPhysXRuntime::GetBodyTransform(const FBodyInstance* Body, FTransform& OutTransform) const

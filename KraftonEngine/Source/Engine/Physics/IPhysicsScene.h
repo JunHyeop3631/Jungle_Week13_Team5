@@ -63,6 +63,12 @@ public:
 		ECollisionChannel TraceChannel = ECollisionChannel::WorldStatic,
 		const AActor* IgnoreActor = nullptr) const = 0;
 
+	// 구(sphere) 영역과 겹치는 모든 query shape 의 소유 컴포넌트를 수집(다중, 블로킹 없음).
+	// ObjectTypeMask: (1u<<ECollisionChannel) 비트 OR. IgnoreActor 소유 컴포넌트는 제외.
+	// 반환: 수집된 overlap 개수.
+	virtual int32 OverlapSphere(const FVector& Center, float Radius, uint32 ObjectTypeMask,
+		TArray<FOverlapResult>& OutOverlaps, const AActor* IgnoreActor = nullptr) const = 0;
+
 	virtual bool GetBodyTransform(const FBodyInstance* Body, FTransform& OutTransform) const = 0;
 	virtual void SetBodyTransform(FBodyInstance* Body, const FTransform& Transform, bool bTeleport = true) = 0;
 	virtual void SetKinematicTarget(FBodyInstance* Body, const FTransform& Transform) = 0;

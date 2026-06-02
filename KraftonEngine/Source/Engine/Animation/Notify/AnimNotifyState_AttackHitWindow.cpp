@@ -14,8 +14,6 @@
 #include "Mesh/Skeletal/SkeletalMesh.h"
 #include "Mesh/Skeletal/SkeletalMeshAsset.h"
 
-#include <cfloat>
-
 namespace
 {
 	int32 FindBoneIndex(USkeletalMeshComponent* MeshComp, const FString& BoneName)
@@ -56,24 +54,6 @@ namespace
 		}
 
 		return Owner ? Owner->GetActorLocation() + WorldOffset : WorldOffset;
-	}
-
-	float DistanceSquaredPointAABB(const FVector& Point, const FBoundingBox& Box)
-	{
-		const float X = Point.X < Box.Min.X ? Box.Min.X - Point.X : (Point.X > Box.Max.X ? Point.X - Box.Max.X : 0.0f);
-		const float Y = Point.Y < Box.Min.Y ? Box.Min.Y - Point.Y : (Point.Y > Box.Max.Y ? Point.Y - Box.Max.Y : 0.0f);
-		const float Z = Point.Z < Box.Min.Z ? Box.Min.Z - Point.Z : (Point.Z > Box.Max.Z ? Point.Z - Box.Max.Z : 0.0f);
-		return X * X + Y * Y + Z * Z;
-	}
-
-	void DrawDebugBounds(UWorld* World, const FBoundingBox& Bounds, const FColor& Color, float Duration)
-	{
-		if (!World || !Bounds.IsValid())
-		{
-			return;
-		}
-
-		DrawDebugBox(World, Bounds.GetCenter(), Bounds.GetExtent(), Color, Duration);
 	}
 
 	UActionComponent* GetOrCreateActionComponent(AActor* Actor, bool bAutoAdd)
@@ -192,7 +172,6 @@ void UAnimNotifyState_AttackHitWindow::NotifyBegin(USkeletalMeshComponent* MeshC
 	}
 
 	HitActorsByMesh[MeshComp].clear();
-	MissLoggedActorsByMesh[MeshComp].clear();
 	NoTargetLoggedMeshes.erase(MeshComp);
 }
 
@@ -211,7 +190,6 @@ void UAnimNotifyState_AttackHitWindow::NotifyTick(USkeletalMeshComponent* MeshCo
 	}
 
 	TSet<AActor*>& HitActors = HitActorsByMesh[MeshComp];
-	TSet<AActor*>& MissLoggedActors = MissLoggedActorsByMesh[MeshComp];
 	const FVector Center = GetHitCenter(MeshComp, Owner, BoneName, LocalOffset);
 	if (bDrawDebugHitWindow)
 	{
@@ -219,12 +197,33 @@ void UAnimNotifyState_AttackHitWindow::NotifyTick(USkeletalMeshComponent* MeshCo
 	}
 
 	bool bSawTargetCandidate = false;
-	for (AActor* Candidate : World->GetActors())
+
+	// PhysX overlap 으로 후보 수집 — query shape 를 가진 컴포넌트만 잡힌다(루즈 AABB 경로 제거).
+	// ObjectType: Pawn/WorldDynamic 기본, bHitWorldStatic 이면 WorldStatic 추가.
+	uint32 ObjectTypeMask = ObjectTypeBit(ECollisionChannel::Pawn) | ObjectTypeBit(ECollisionChannel::WorldDynamic);
+	if (bHitWorldStatic)
 	{
-		if (!Candidate || Candidate == Owner)
+		ObjectTypeMask |= ObjectTypeBit(ECollisionChannel::WorldStatic);
+	}
+
+	TArray<FOverlapResult> Overlaps;
+	World->PhysicsOverlapSphere(Center, Radius, ObjectTypeMask, Overlaps, Owner);
+
+	// 같은 액터가 여러 컴포넌트로 중복 반환될 수 있어 이번 tick 한정 dedup.
+	TSet<AActor*> ProcessedActors;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Candidate = Overlap.OverlapActor;
+		UPrimitiveComponent* HitComponent = Overlap.OverlapComponent;
+		if (!Candidate || Candidate == Owner || !HitComponent)
 		{
 			continue;
 		}
+		if (ProcessedActors.find(Candidate) != ProcessedActors.end())
+		{
+			continue;
+		}
+		ProcessedActors.insert(Candidate);
 
 		const bool bMatchesTargetActorTag = !TargetActorTag.empty() && Candidate->HasTag(FName(TargetActorTag));
 		if (bRequireTargetActorTag)
@@ -242,84 +241,6 @@ void UAnimNotifyState_AttackHitWindow::NotifyTick(USkeletalMeshComponent* MeshCo
 		bSawTargetCandidate = true;
 		if (HitActors.find(Candidate) != HitActors.end())
 		{
-			continue;
-		}
-
-		UPrimitiveComponent* HitComponent = nullptr;
-		UPrimitiveComponent* ClosestComponent = nullptr;
-		const char* MissReason = "no primitive components";
-		float ClosestDistanceSquared = FLT_MAX;
-		for (UPrimitiveComponent* Primitive : Candidate->GetPrimitiveComponents())
-		{
-			if (!Primitive)
-			{
-				continue;
-			}
-
-			const FBoundingBox Bounds = Primitive->GetWorldBoundingBox();
-			if (bRequireQueryCollision && !Primitive->IsQueryCollisionEnabled())
-			{
-				if (bDrawDebugTargetBounds)
-				{
-					DrawDebugBounds(World, Bounds, FColor(90, 90, 90), DebugDrawDuration);
-				}
-				MissReason = "query collision disabled";
-				continue;
-			}
-
-			if (!bHitWorldStatic && !bMatchesTargetActorTag && Primitive->GetCollisionObjectType() == ECollisionChannel::WorldStatic)
-			{
-				if (bDrawDebugTargetBounds)
-				{
-					DrawDebugBounds(World, Bounds, FColor(80, 80, 160), DebugDrawDuration);
-				}
-				MissReason = "world static filtered";
-				continue;
-			}
-
-			if (!Bounds.IsValid())
-			{
-				MissReason = "invalid bounds";
-				continue;
-			}
-
-			const float DistanceSquared = DistanceSquaredPointAABB(Center, Bounds);
-			const bool bIntersects = DistanceSquared <= Radius * Radius;
-			if (bDrawDebugTargetBounds)
-			{
-				DrawDebugBounds(World, Bounds, bIntersects ? FColor(255, 40, 40) : FColor(0, 180, 255), DebugDrawDuration);
-			}
-
-			if (DistanceSquared < ClosestDistanceSquared)
-			{
-				ClosestDistanceSquared = DistanceSquared;
-				ClosestComponent = Primitive;
-				MissReason = "outside radius";
-			}
-
-			if (bIntersects)
-			{
-				HitComponent = Primitive;
-				break;
-			}
-		}
-
-		if (!HitComponent)
-		{
-			if (bLogMisses && MissLoggedActors.find(Candidate) == MissLoggedActors.end())
-			{
-				MissLoggedActors.insert(Candidate);
-				UE_LOG("[AttackHitWindow] miss %s -> %s (%s%s%s center=%.1f, %.1f, %.1f radius=%.1f)",
-					Owner->GetName().c_str(),
-					Candidate->GetName().c_str(),
-					MissReason,
-					ClosestComponent ? " closest=" : "",
-					ClosestComponent ? ClosestComponent->GetName().c_str() : "",
-					Center.X,
-					Center.Y,
-					Center.Z,
-					Radius);
-			}
 			continue;
 		}
 
@@ -374,6 +295,5 @@ void UAnimNotifyState_AttackHitWindow::NotifyEnd(USkeletalMeshComponent* MeshCom
 	}
 
 	HitActorsByMesh.erase(MeshComp);
-	MissLoggedActorsByMesh.erase(MeshComp);
 	NoTargetLoggedMeshes.erase(MeshComp);
 }
