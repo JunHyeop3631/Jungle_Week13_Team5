@@ -33,10 +33,7 @@ void UStaticMesh::Serialize(FArchive& Ar)
 	// 2. 머티리얼 데이터 직렬화 (필수!)
 	Ar << StaticMaterials;
 
-	// 3. StaticMesh Viewer에서 구운 simple/convex collision data
-	Ar << CollisionShapes;
-
-	// 4. 로딩 시 Section → MaterialIndex 매핑 캐싱 (매 프레임 문자열 비교 방지)
+	// 3. 로딩 시 Section → MaterialIndex 매핑 캐싱 (매 프레임 문자열 비교 방지)
 	if (Ar.IsLoading())
 	{
 		for (FStaticMeshSection& Section : StaticMeshAsset->Sections)
@@ -153,108 +150,6 @@ void UStaticMesh::SetStaticMaterials(TArray<FStaticMaterial>&& InMaterials)
 const TArray<FStaticMaterial>& UStaticMesh::GetStaticMaterials() const
 {
 	return StaticMaterials;
-}
-
-bool UStaticMesh::GetCachedLocalBounds(FVector& OutCenter, FVector& OutExtent)
-{
-	if (!StaticMeshAsset)
-	{
-		return false;
-	}
-
-	if (!StaticMeshAsset->bBoundsValid)
-	{
-		StaticMeshAsset->CacheBounds();
-	}
-
-	if (!StaticMeshAsset->bBoundsValid)
-	{
-		return false;
-	}
-
-	OutCenter = StaticMeshAsset->BoundsCenter;
-	OutExtent = StaticMeshAsset->BoundsExtent;
-	return true;
-}
-
-void UStaticMesh::AddCollisionShape(const FStaticMeshCollisionShape& Shape)
-{
-	CollisionShapes.push_back(Shape);
-}
-
-void UStaticMesh::ClearCollisionShapes()
-{
-	CollisionShapes.clear();
-}
-
-bool UStaticMesh::AddDefaultBoxCollisionFromBounds()
-{
-	FVector Center;
-	FVector Extent;
-	if (!GetCachedLocalBounds(Center, Extent))
-	{
-		return false;
-	}
-
-	FStaticMeshCollisionShape Shape;
-	Shape.ShapeType = EStaticMeshCollisionShapeType::Box;
-	Shape.Center = Center;
-	Shape.HalfExtent = Extent;
-	AddCollisionShape(Shape);
-	return true;
-}
-
-bool UStaticMesh::AddDefaultSphereCollisionFromBounds()
-{
-	FVector Center;
-	FVector Extent;
-	if (!GetCachedLocalBounds(Center, Extent))
-	{
-		return false;
-	}
-
-	FStaticMeshCollisionShape Shape;
-	Shape.ShapeType = EStaticMeshCollisionShapeType::Sphere;
-	Shape.Center = Center;
-	Shape.Radius = (std::max)(Extent.X, (std::max)(Extent.Y, Extent.Z));
-	AddCollisionShape(Shape);
-	return true;
-}
-
-bool UStaticMesh::AddDefaultCapsuleCollisionFromBounds()
-{
-	FVector Center;
-	FVector Extent;
-	if (!GetCachedLocalBounds(Center, Extent))
-	{
-		return false;
-	}
-
-	FStaticMeshCollisionShape Shape;
-	Shape.ShapeType = EStaticMeshCollisionShapeType::Capsule;
-	Shape.Center = Center;
-	Shape.Radius = (std::max)(Extent.X, Extent.Y);
-	Shape.HalfHeight = Extent.Z;
-	AddCollisionShape(Shape);
-	return true;
-}
-
-bool UStaticMesh::AddDefaultConvexCollisionFromMesh()
-{
-	if (!StaticMeshAsset || StaticMeshAsset->Vertices.size() < 4)
-	{
-		return false;
-	}
-
-	FStaticMeshCollisionShape Shape;
-	Shape.ShapeType = EStaticMeshCollisionShapeType::Convex;
-	Shape.ConvexVertices.reserve(StaticMeshAsset->Vertices.size());
-	for (const FNormalVertex& Vertex : StaticMeshAsset->Vertices)
-	{
-		Shape.ConvexVertices.push_back(Vertex.pos);
-	}
-	AddCollisionShape(Shape);
-	return true;
 }
 
 void UStaticMesh::EnsureMeshTrianglePickingBVHBuilt() const

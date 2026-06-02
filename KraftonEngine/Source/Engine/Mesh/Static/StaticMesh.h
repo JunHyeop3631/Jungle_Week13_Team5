@@ -38,12 +38,6 @@ public:
 	FStaticMesh* GetStaticMeshAsset() const;
 	void SetStaticMaterials(TArray<FStaticMaterial>&& InMaterials);
 	const TArray<FStaticMaterial>& GetStaticMaterials() const;
-	const TArray<FStaticMeshCollisionShape>& GetCollisionShapes() const { return CollisionShapes; }
-	void ClearCollisionShapes();
-	bool AddDefaultBoxCollisionFromBounds();
-	bool AddDefaultSphereCollisionFromBounds();
-	bool AddDefaultCapsuleCollisionFromBounds();
-	bool AddDefaultConvexCollisionFromMesh();
 
 	void InitResources(ID3D11Device* InDevice);
 
@@ -57,17 +51,15 @@ public:
 	const TArray<FStaticMeshSection>& GetLODSections(uint32 LODLevel) const;
 
 private:
-	bool GetCachedLocalBounds(FVector& OutCenter, FVector& OutExtent);
-	void AddCollisionShape(const FStaticMeshCollisionShape& Shape);
-
 	FString AssetPathFileName = "None";
 
 	FStaticMesh* StaticMeshAsset = nullptr;
 	TArray<FStaticMaterial> StaticMaterials; // 슬롯 이름과 머티리얼 인터페이스를 묶어서 저장하는 배열
-	TArray<FStaticMeshCollisionShape> CollisionShapes;
 	mutable FMeshTriangleBVH MeshTrianglePickingBVH; // 빠른 picking을 위해 메시 내부에 트리 형태로 만들어지는 자료구조
 
 	// LOD1 (70%), LOD2 (50%), LOD3 (25%) — LOD0 is the original StaticMeshAsset
 	FLODMeshData AdditionalLODs[3];
 	bool bHasLOD = false;
+
+	UBodySetup* BodyInstance;
 };

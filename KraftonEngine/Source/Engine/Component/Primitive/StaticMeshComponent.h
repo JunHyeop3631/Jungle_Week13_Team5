@@ -16,13 +16,6 @@ namespace json { class JSON; }
 
 #include "Source/Engine/Component/Primitive/StaticMeshComponent.generated.h"
 
-enum class EStaticMeshPhysicsCollisionSource : uint8
-{
-	None,
-	BoundsBox,
-	AssetCollision,
-};
-
 UCLASS()
 class UStaticMeshComponent : public UMeshComponent
 {
@@ -42,9 +35,6 @@ public:
 
 	void SetStaticMesh(UStaticMesh* InMesh);
 	UStaticMesh* GetStaticMesh() const;
-	bool GetLocalBounds(FVector& OutCenter, FVector& OutExtent) const;
-	void SetPhysicsCollisionSource(EStaticMeshPhysicsCollisionSource InSource);
-	EStaticMeshPhysicsCollisionSource GetPhysicsCollisionSource() const { return PhysicsCollisionSource; }
 
 	void SetMaterial(int32 ElementIndex, UMaterialInterface* InMaterial);
 	UMaterialInterface* GetMaterial(int32 ElementIndex) const;
@@ -68,8 +58,6 @@ private:
 	TArray<UMaterialInterface*> OverrideMaterials;
 	UPROPERTY(Edit, Save, EditFixedSize, Category="Materials", DisplayName="Materials", AssetType="Material")
 	TArray<FSoftObjectPtr> MaterialSlots;
-	UPROPERTY(Edit, Save, Category="Collision", DisplayName="Physics Collision Source", Enum=EStaticMeshPhysicsCollisionSource)
-	EStaticMeshPhysicsCollisionSource PhysicsCollisionSource = EStaticMeshPhysicsCollisionSource::AssetCollision;
 
 	FVector CachedLocalCenter = { 0, 0, 0 };
 	FVector CachedLocalExtent = { 0.5f, 0.5f, 0.5f };

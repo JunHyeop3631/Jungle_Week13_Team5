@@ -6,7 +6,6 @@
 #include "Component/Shape/BoxComponent.h"
 #include "Component/Shape/CapsuleComponent.h"
 #include "Component/Shape/SphereComponent.h"
-#include "Component/Primitive/StaticMeshComponent.h"
 #include "GameFramework/AActor.h"
 #include "Object/Object.h"
 #include "Core/Logging/Log.h"
@@ -266,133 +265,6 @@ namespace
 			Scale * (SizeY * SizeY + SizeZ * SizeZ),
 			Scale * (SizeX * SizeX + SizeZ * SizeZ),
 			Scale * (SizeX * SizeX + SizeY * SizeY));
-	}
-
-	FVector ScaleVectorByAbs(const FVector& Value, const FVector& AbsScale)
-	{
-		return FVector(Value.X * AbsScale.X, Value.Y * AbsScale.Y, Value.Z * AbsScale.Z);
-	}
-
-	void ApplyComponentShapeFlags(const UPrimitiveComponent* Comp, FPhysicsShapeDesc& ShapeDesc)
-	{
-		const bool bHasBlockResponse = HasAnyBlockResponse(Comp);
-		const bool bTrigger = Comp->GetGenerateOverlapEvents()
-			&& (!Comp->IsPhysicsCollisionEnabled() || !bHasBlockResponse);
-		ShapeDesc.bTriggerShape = bTrigger;
-		ShapeDesc.bSimulationShape = !bTrigger && Comp->IsPhysicsCollisionEnabled();
-		ShapeDesc.bSceneQueryShape = Comp->IsQueryCollisionEnabled();
-	}
-
-	bool AppendStaticMeshAssetCollisionShapes(const UStaticMeshComponent* StaticMesh, TArray<FPhysicsShapeDesc>& OutShapes)
-	{
-		if (!StaticMesh || !StaticMesh->GetStaticMesh())
-		{
-			return false;
-		}
-
-		const TArray<FStaticMeshCollisionShape>& CollisionShapes = StaticMesh->GetStaticMesh()->GetCollisionShapes();
-		if (CollisionShapes.empty())
-		{
-			return false;
-		}
-
-		const FVector WorldScale = StaticMesh->GetWorldScale();
-		const FVector AbsScale(std::fabs(WorldScale.X), std::fabs(WorldScale.Y), std::fabs(WorldScale.Z));
-		const float MaxScale = (std::max)(AbsScale.X, (std::max)(AbsScale.Y, AbsScale.Z));
-		const float CapsuleAxisScale = AbsScale.Z;
-		const float CapsuleRadiusScale = (std::max)(AbsScale.X, AbsScale.Y);
-		const FQuat CapsuleAxisCorrection = FQuat::FromAxisAngle(FVector(0.0f, 1.0f, 0.0f), -PhysicsPi * 0.5f);
-
-		for (const FStaticMeshCollisionShape& SourceShape : CollisionShapes)
-		{
-			FPhysicsShapeDesc ShapeDesc;
-			ShapeDesc.LocalTransform.Location = ScaleVectorByAbs(SourceShape.Center, AbsScale);
-			ShapeDesc.LocalTransform.Rotation = SourceShape.Rotation;
-
-			switch (SourceShape.ShapeType)
-			{
-			case EStaticMeshCollisionShapeType::Box:
-				ShapeDesc.ShapeType = EPhysicsShapeType::Box;
-				ShapeDesc.HalfExtent = ScaleVectorByAbs(SourceShape.HalfExtent, AbsScale);
-				break;
-			case EStaticMeshCollisionShapeType::Sphere:
-				ShapeDesc.ShapeType = EPhysicsShapeType::Sphere;
-				ShapeDesc.Radius = (std::max)(0.001f, SourceShape.Radius * MaxScale);
-				break;
-			case EStaticMeshCollisionShapeType::Capsule:
-				ShapeDesc.ShapeType = EPhysicsShapeType::Capsule;
-				ShapeDesc.Radius = (std::max)(0.001f, SourceShape.Radius * CapsuleRadiusScale);
-				ShapeDesc.HalfHeight = (std::max)(0.0f, SourceShape.HalfHeight * CapsuleAxisScale - ShapeDesc.Radius);
-				ShapeDesc.LocalTransform.Rotation = SourceShape.Rotation * CapsuleAxisCorrection;
-				break;
-			case EStaticMeshCollisionShapeType::Convex:
-				if (SourceShape.ConvexVertices.size() < 4)
-				{
-					continue;
-				}
-
-				ShapeDesc.ShapeType = EPhysicsShapeType::Convex;
-				ShapeDesc.ConvexVertices.reserve(SourceShape.ConvexVertices.size());
-				for (const FVector& Vertex : SourceShape.ConvexVertices)
-				{
-					ShapeDesc.ConvexVertices.push_back(ScaleVectorByAbs(Vertex, AbsScale));
-				}
-				break;
-			default:
-				continue;
-			}
-
-			OutShapes.push_back(ShapeDesc);
-		}
-
-		return !OutShapes.empty();
-	}
-
-	PxConvexMesh* CreateConvexMeshFromVertices(PxFoundation* Foundation, PxPhysics* Physics, const TArray<FVector>& Vertices)
-	{
-		if (!Foundation || !Physics || Vertices.size() < 4)
-		{
-			return nullptr;
-		}
-
-		TArray<PxVec3> PxVertices;
-		PxVertices.reserve(Vertices.size());
-		for (const FVector& Vertex : Vertices)
-		{
-			PxVertices.push_back(ToPxVec3(Vertex));
-		}
-
-		PxConvexMeshDesc ConvexDesc;
-		ConvexDesc.points.count = static_cast<PxU32>(PxVertices.size());
-		ConvexDesc.points.stride = sizeof(PxVec3);
-		ConvexDesc.points.data = PxVertices.data();
-		ConvexDesc.flags = PxConvexFlag::eCOMPUTE_CONVEX;
-
-		PxTolerancesScale Scale;
-		PxCookingParams CookingParams(Scale);
-		PxCooking* Cooking = PxCreateCooking(PX_PHYSICS_VERSION, *Foundation, CookingParams);
-		if (!Cooking)
-		{
-			UE_LOG("[PhysX] Failed to create cooking interface for StaticMesh convex");
-			return nullptr;
-		}
-
-		PxConvexMeshCookingResult::Enum CookingResult = PxConvexMeshCookingResult::eFAILURE;
-		PxConvexMesh* ConvexMesh = Cooking->createConvexMesh(
-			ConvexDesc,
-			Physics->getPhysicsInsertionCallback(),
-			&CookingResult);
-		Cooking->release();
-
-		if (!ConvexMesh)
-		{
-			UE_LOG("[PhysX] StaticMesh convex cooking failed. Vertices=%u Result=%d",
-				static_cast<uint32>(Vertices.size()),
-				static_cast<int32>(CookingResult));
-			return nullptr;
-		}
-
-		return ConvexMesh;
 	}
 
 	PxQueryHitType::Enum VehicleSuspensionRaycastPreFilter(
@@ -1004,24 +876,19 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 		return false;
 	}
 
-	TArray<FPhysicsShapeDesc> ShapeDescs;
+	FPhysicsShapeDesc ShapeDesc;
 	if (UBoxComponent* Box = Cast<UBoxComponent>(Comp))
 	{
-		FPhysicsShapeDesc ShapeDesc;
 		ShapeDesc.ShapeType = EPhysicsShapeType::Box;
 		ShapeDesc.HalfExtent = Box->GetScaledBoxExtent();
-		ShapeDescs.push_back(ShapeDesc);
 	}
 	else if (USphereComponent* Sphere = Cast<USphereComponent>(Comp))
 	{
-		FPhysicsShapeDesc ShapeDesc;
 		ShapeDesc.ShapeType = EPhysicsShapeType::Sphere;
 		ShapeDesc.Radius = Sphere->GetScaledSphereRadius();
-		ShapeDescs.push_back(ShapeDesc);
 	}
 	else if (UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Comp))
 	{
-		FPhysicsShapeDesc ShapeDesc;
 		const float Radius = Capsule->GetScaledCapsuleRadius();
 		const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
 		ShapeDesc.ShapeType = EPhysicsShapeType::Capsule;
@@ -1029,60 +896,18 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 		ShapeDesc.HalfHeight = (std::max)(0.0f, HalfHeight - Radius);
 		// PhysX capsules are X-axis aligned; engine capsules use local Z as their long axis.
 		ShapeDesc.LocalTransform.Rotation = FQuat::FromAxisAngle(FVector(0.0f, 1.0f, 0.0f), -PhysicsPi * 0.5f);
-		ShapeDescs.push_back(ShapeDesc);
-	}
-	else if (UStaticMeshComponent* StaticMesh = Cast<UStaticMeshComponent>(Comp))
-	{
-		if (StaticMesh->GetPhysicsCollisionSource() == EStaticMeshPhysicsCollisionSource::None)
-		{
-			return false;
-		}
-
-		if (StaticMesh->GetPhysicsCollisionSource() == EStaticMeshPhysicsCollisionSource::AssetCollision)
-		{
-			if (!AppendStaticMeshAssetCollisionShapes(StaticMesh, ShapeDescs))
-			{
-				return false;
-			}
-		}
-		else if (StaticMesh->GetPhysicsCollisionSource() == EStaticMeshPhysicsCollisionSource::BoundsBox)
-		{
-			FVector LocalCenter;
-			FVector LocalExtent;
-			if (!StaticMesh->GetLocalBounds(LocalCenter, LocalExtent))
-			{
-				return false;
-			}
-
-			const FVector WorldScale = StaticMesh->GetWorldScale();
-			const FVector AbsScale(std::fabs(WorldScale.X), std::fabs(WorldScale.Y), std::fabs(WorldScale.Z));
-			FPhysicsShapeDesc ShapeDesc;
-			ShapeDesc.ShapeType = EPhysicsShapeType::Box;
-			ShapeDesc.LocalTransform.Location = FVector(
-				LocalCenter.X * AbsScale.X,
-				LocalCenter.Y * AbsScale.Y,
-				LocalCenter.Z * AbsScale.Z);
-			ShapeDesc.HalfExtent = FVector(
-				std::max(0.001f, LocalExtent.X * AbsScale.X),
-				std::max(0.001f, LocalExtent.Y * AbsScale.Y),
-				std::max(0.001f, LocalExtent.Z * AbsScale.Z));
-			ShapeDescs.push_back(ShapeDesc);
-		}
 	}
 	else
 	{
 		return false;
 	}
 
-	if (ShapeDescs.empty())
-	{
-		return false;
-	}
-
-	for (FPhysicsShapeDesc& ShapeDesc : ShapeDescs)
-	{
-		ApplyComponentShapeFlags(Comp, ShapeDesc);
-	}
+	const bool bHasBlockResponse = HasAnyBlockResponse(Comp);
+	const bool bTrigger = Comp->GetGenerateOverlapEvents()
+		&& (!Comp->IsPhysicsCollisionEnabled() || !bHasBlockResponse);
+	ShapeDesc.bTriggerShape = bTrigger;
+	ShapeDesc.bSimulationShape = !bTrigger && Comp->IsPhysicsCollisionEnabled();
+	ShapeDesc.bSceneQueryShape = Comp->IsQueryCollisionEnabled();
 
 	OutDesc = FPhysicsBodyDesc();
 	OutDesc.OwnerComponent = Comp;
@@ -1092,7 +917,7 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 	OutDesc.Mass = Comp->GetMass();
 	OutDesc.bUseGravity = true;
 	OutDesc.bEnableCCD = Comp->GetSimulatePhysics();
-	OutDesc.Shapes = ShapeDescs;
+	OutDesc.Shapes.push_back(ShapeDesc);
 	return true;
 }
 
@@ -1477,29 +1302,13 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape_AssumesLocked(FBodyInstance* Body
 		return {};
 	}
 
-	PxShape* Shape = nullptr;
-	if (Desc.ShapeType == EPhysicsShapeType::Convex)
+	PxGeometryHolder Geometry;
+	if (!PhysXHelpers::BuildGeometry(Desc, Geometry))
 	{
-		PxConvexMesh* ConvexMesh = CreateConvexMeshFromVertices(Foundation, Physics, Desc.ConvexVertices);
-		if (!ConvexMesh)
-		{
-			return {};
-		}
-
-		const PxConvexMeshGeometry Geometry(ConvexMesh);
-		Shape = PxRigidActorExt::createExclusiveShape(*Actor, Geometry, *DefaultMaterial);
-		ConvexMesh->release();
+		return {};
 	}
-	else
-	{
-		PxGeometryHolder Geometry;
-		if (!PhysXHelpers::BuildGeometry(Desc, Geometry))
-		{
-			return {};
-		}
 
-		Shape = PxRigidActorExt::createExclusiveShape(*Actor, Geometry.any(), *DefaultMaterial);
-	}
+	PxShape* Shape = PxRigidActorExt::createExclusiveShape(*Actor, Geometry.any(), *DefaultMaterial);
 	if (!Shape)
 	{
 		return {};

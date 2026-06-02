@@ -60,7 +60,6 @@ void UStaticMeshComponent::SetStaticMesh(UStaticMesh* InMesh)
 		MaterialSlots.clear();
 	}
 	CacheLocalBounds();
-	NotifyPhysicsBodyDirty();
 
 	if (IsMeshClothEnabled() && bComponentHasBegunPlay)
 	{
@@ -92,29 +91,6 @@ void UStaticMeshComponent::CacheLocalBounds()
 UStaticMesh* UStaticMeshComponent::GetStaticMesh() const
 {
 	return StaticMesh;
-}
-
-bool UStaticMeshComponent::GetLocalBounds(FVector& OutCenter, FVector& OutExtent) const
-{
-	if (!bHasValidBounds)
-	{
-		return false;
-	}
-
-	OutCenter = CachedLocalCenter;
-	OutExtent = CachedLocalExtent;
-	return true;
-}
-
-void UStaticMeshComponent::SetPhysicsCollisionSource(EStaticMeshPhysicsCollisionSource InSource)
-{
-	if (PhysicsCollisionSource == InSource)
-	{
-		return;
-	}
-
-	PhysicsCollisionSource = InSource;
-	NotifyPhysicsBodyDirty();
 }
 
 void UStaticMeshComponent::SetMaterial(int32 ElementIndex, UMaterialInterface* InMaterial)
@@ -328,11 +304,6 @@ void UStaticMeshComponent::PostEditChangeProperty(const FPropertyChangedEvent& E
 void UStaticMeshComponent::PostEditProperty(const char* PropertyName)
 {
 	UMeshComponent::PostEditProperty(PropertyName);
-
-	if (strcmp(PropertyName, "PhysicsCollisionSource") == 0 || strcmp(PropertyName, "Physics Collision Source") == 0)
-	{
-		NotifyPhysicsBodyDirty();
-	}
 
 	if (strcmp(PropertyName, "StaticMeshPath") == 0 || strcmp(PropertyName, "Static Mesh") == 0)
 	{
