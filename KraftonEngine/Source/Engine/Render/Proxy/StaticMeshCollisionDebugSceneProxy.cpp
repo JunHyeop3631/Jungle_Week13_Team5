@@ -9,6 +9,33 @@ namespace
 {
 	FVector4 SolidColor() { return FVector4(0.10f, 0.55f, 1.00f, 0.22f); }
 	FVector4 WireColor()  { return FVector4(0.20f, 0.65f, 1.00f, 1.00f); }
+
+	void AppendTriangleMeshWire(TArray<FColoredLine>& Out, const FStaticMesh& Mesh, const FVector4& Color)
+	{
+		if (Mesh.Vertices.empty() || Mesh.Indices.size() < 3 || Mesh.Indices.size() % 3 != 0)
+		{
+			return;
+		}
+
+		Out.reserve(Out.size() + Mesh.Indices.size());
+		for (size_t Index = 0; Index + 2 < Mesh.Indices.size(); Index += 3)
+		{
+			const uint32 I0 = Mesh.Indices[Index];
+			const uint32 I1 = Mesh.Indices[Index + 1];
+			const uint32 I2 = Mesh.Indices[Index + 2];
+			if (I0 >= Mesh.Vertices.size() || I1 >= Mesh.Vertices.size() || I2 >= Mesh.Vertices.size())
+			{
+				continue;
+			}
+
+			const FVector& V0 = Mesh.Vertices[I0].pos;
+			const FVector& V1 = Mesh.Vertices[I1].pos;
+			const FVector& V2 = Mesh.Vertices[I2].pos;
+			ShapeDebugUtils::PushLine(Out, V0, V1, Color);
+			ShapeDebugUtils::PushLine(Out, V1, V2, Color);
+			ShapeDebugUtils::PushLine(Out, V2, V0, Color);
+		}
+	}
 }
 
 FStaticMeshCollisionDebugSceneProxy::FStaticMeshCollisionDebugSceneProxy(
@@ -33,6 +60,14 @@ void FStaticMeshCollisionDebugSceneProxy::RebuildGeometry()
 
 	UStaticMesh* Mesh = Comp->GetStaticMesh();
 	if (!Mesh) return;
+
+	if (Mesh->HasTriangleMeshCollision())
+	{
+		if (const FStaticMesh* MeshAsset = Mesh->GetStaticMeshAsset())
+		{
+			AppendTriangleMeshWire(CachedWire, *MeshAsset, WireColor());
+		}
+	}
 
 	UBodySetup* Body = Mesh->GetBodySetup();
 	if (!Body) return;
