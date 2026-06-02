@@ -342,7 +342,7 @@
               "CameraState.OrthoWidth" : 10.000000,
               "CameraState.bIsOrthogonal" : false,
               "DepthOfField" : {
-                "Aperture" : 31.250000,
+                "FStop" : 1.600000,
                 "FocalLength" : 50.000000,
                 "FocusDistance" : 10.000000,
                 "MaxBlurSize" : 6.000000,

@@ -9,7 +9,7 @@ cbuffer DofCB : register(b2)
 {
     float FocusDistance;
     float FocalLength;
-    float Aperture;
+    float FStop;
     float MaxBlurSize;
 
     float NearZ;
@@ -52,7 +52,7 @@ float ComputeSignedCoC(float Depth, float ScreenWidth)
     const float z = max(Depth * 1000.0f, 0.001f);
     const float zf = max(FocusDistance * 1000.0f, 0.001f);
     const float f = FocalLength;
-    const float ApertureDiameter = max(Aperture, 0.001f);
+    const float ApertureDiameter = f / max(FStop, 0.001f);
 
     const float CoCMm = (ApertureDiameter * f * (z - zf)) / max(z * (zf - f), 0.001f);
     const float CoCPixels = CoCMm / SENSOR_WIDTH_MM * ScreenWidth;
