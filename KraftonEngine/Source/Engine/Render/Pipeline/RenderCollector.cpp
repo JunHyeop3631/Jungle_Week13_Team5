@@ -1,6 +1,7 @@
 ﻿#include "RenderCollector.h"
 
 #include "Component/ActorComponent.h"
+#include "Component/MeshComponent.h"
 #include "Component/Primitive/ClothComponent.h"
 #include "Component/Primitive/SkeletalMeshComponent.h"
 #include "GameFramework/AActor.h"
@@ -251,7 +252,7 @@ void FRenderCollector::FilterVisibleProxies(const FFrameContext& Frame, FScene& 
 		if (Proxy->HasProxyFlag(EPrimitiveProxyFlags::Cloth))
 		{
 			const FClothSceneProxy* ClothProxy = static_cast<const FClothSceneProxy*>(Proxy);
-			UClothComponent* ClothComponent = ClothProxy ? ClothProxy->GetClothComponent() : nullptr;
+			UMeshComponent* ClothComponent = ClothProxy ? ClothProxy->GetMeshComponent() : nullptr;
 			if (ClothComponent)
 			{
 				FClothStats ClothStats;

@@ -30,13 +30,15 @@ public:
 	bool RecreateCloth();
 	void DestroyCloth();
 
-	bool GetClothRenderData(FClothRenderData& OutRenderData) const;
-	bool GetClothStats(FClothStats& OutStats) const;
-	bool ExtractClothDebugLines(TArray<FPhysicsDebugLine>& OutLines, const FClothDebugDrawOptions& Options) const;
+	bool GetClothRenderData(FClothRenderData& OutRenderData) const override;
+	bool GetClothStats(FClothStats& OutStats) const override;
+	bool ExtractClothDebugLines(TArray<FPhysicsDebugLine>& OutLines, const FClothDebugDrawOptions& Options) const override;
 
 	const TMeshData<FVertex>& GetCachedMeshData() const;
 	const FVector4& GetRenderColor() const { return RenderColor; }
 	bool ShouldRenderTwoSided() const { return bRenderTwoSided; }
+	const FVector4& GetClothRenderColor() const override { return RenderColor; }
+	bool ShouldRenderClothTwoSided() const override { return bRenderTwoSided; }
 
 private:
 	FClothGridDesc BuildGridDesc() const;

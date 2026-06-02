@@ -8,6 +8,8 @@
 #include "Render/Types/ViewTypes.h"
 #include "Engine/Profiling/Stats/Stats.h"
 
+#include <cstddef>
+
 HIDE_FROM_COMPONENT_LIST(USkinnedMeshComponent)
 
 namespace
@@ -174,6 +176,11 @@ USkeletalMesh* USkinnedMeshComponent::GetSkeletalMesh() const
 // Bounds 섹션: SkeletalMesh culling은 asset local bounds가 아니라 실제 CPU-skinned vertices를 기준으로 한다.
 void USkinnedMeshComponent::UpdateWorldAABB() const
 {
+	if (IsMeshClothEnabled() && UpdateMeshClothWorldAABB())
+	{
+		return;
+	}
+
 	// 아직 skinning 결과가 없으면 primitive 기본 bounds로 fallback해 빈 mesh/로드 실패 경로를 안전하게 둔다.
 	if (SkinnedVertices.empty())
 	{
@@ -928,9 +935,28 @@ FMeshDataView USkinnedMeshComponent::GetMeshDataView() const
 	if (!Asset || Asset->Vertices.empty()) return {};
 
 	FMeshDataView View;
-	View.VertexData = Asset->Vertices.data();
-	View.VertexCount = (uint32)Asset->Vertices.size();
-	View.Stride = sizeof(FVertexPNCTBW);
+	if (!SkinnedVertices.empty() && SkinnedVertices.size() == Asset->Vertices.size())
+	{
+		View.VertexData = SkinnedVertices.data();
+		View.VertexCount = (uint32)SkinnedVertices.size();
+		View.Stride = sizeof(FVertexPNCTT);
+		View.PositionOffset = offsetof(FVertexPNCTT, Position);
+		View.NormalOffset = offsetof(FVertexPNCTT, Normal);
+		View.ColorOffset = offsetof(FVertexPNCTT, Color);
+		View.UVOffset = offsetof(FVertexPNCTT, UV);
+		View.TangentOffset = offsetof(FVertexPNCTT, Tangent);
+	}
+	else
+	{
+		View.VertexData = Asset->Vertices.data();
+		View.VertexCount = (uint32)Asset->Vertices.size();
+		View.Stride = sizeof(FVertexPNCTBW);
+		View.PositionOffset = offsetof(FVertexPNCTBW, Position);
+		View.NormalOffset = offsetof(FVertexPNCTBW, Normal);
+		View.ColorOffset = offsetof(FVertexPNCTBW, Color);
+		View.UVOffset = offsetof(FVertexPNCTBW, UV);
+		View.TangentOffset = offsetof(FVertexPNCTBW, Tangent);
+	}
 	View.IndexData = Asset->Indices.data();
 	View.IndexCount = (uint32)Asset->Indices.size();
 	return View;
