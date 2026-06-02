@@ -18,6 +18,13 @@ enum class EStaticMeshSimpleCollisionShape : uint8
 	Capsule,
 };
 
+enum class EStaticMeshCollisionMode : uint8
+{
+	None,
+	Simple,
+	TriangleMesh,
+};
+
 // LOD 단계별 GPU 리소스
 struct FLODMeshData
 {
@@ -51,7 +58,11 @@ public:
 	UBodySetup* GetBodySetup() const { return BodyInstance; }
 	UBodySetup* GetOrCreateBodySetup();
 	void ClearBodySetup();
+	EStaticMeshCollisionMode GetCollisionMode() const { return CollisionMode; }
+	void SetCollisionMode(EStaticMeshCollisionMode InMode);
 	bool GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeType);
+	bool GenerateTriangleMeshCollision();
+	bool HasTriangleMeshCollision() const;
 
 	//스태틱 메시 picking / Mesh Decal 최적화를 위한 BVH 트리 빌드 및 판정 호출 함수
 	void EnsureMeshTrianglePickingBVHBuilt() const;
@@ -74,4 +85,5 @@ private:
 	bool bHasLOD = false;
 
 	UBodySetup* BodyInstance = nullptr;
+	EStaticMeshCollisionMode CollisionMode = EStaticMeshCollisionMode::None;
 };

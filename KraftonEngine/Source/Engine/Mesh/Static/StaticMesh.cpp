@@ -16,7 +16,7 @@ namespace
 	constexpr float StaticMeshCollisionPi = 3.14159265358979323846f;
 	constexpr const char* StaticMeshBodyName = "StaticMesh";
 	constexpr uint32 StaticMeshCollisionMagic = 0x434D534B; // KSMC
-	constexpr uint32 StaticMeshCollisionVersion = 1;
+	constexpr uint32 StaticMeshCollisionVersion = 2;
 
 	FVector GetAxisVector(int32 Axis)
 	{
@@ -59,15 +59,17 @@ namespace
 		Body->CollisionEnabled = EBodyCollisionEnabled::QueryAndPhysics;
 	}
 
-	void SerializeStaticMeshCollision(FArchive& Ar, UBodySetup*& BodyInstance)
+	void SerializeStaticMeshCollision(FArchive& Ar, UBodySetup*& BodyInstance, EStaticMeshCollisionMode& CollisionMode)
 	{
 		if (Ar.IsSaving())
 		{
 			uint32 Magic = StaticMeshCollisionMagic;
 			uint32 Version = StaticMeshCollisionVersion;
+			uint8 Mode = static_cast<uint8>(CollisionMode);
 			bool bHasBodySetup = BodyInstance != nullptr && !BodyInstance->AggregateGeom.IsEmpty();
 			Ar << Magic;
 			Ar << Version;
+			Ar << Mode;
 			Ar << bHasBodySetup;
 			if (bHasBodySetup)
 			{
@@ -83,18 +85,34 @@ namespace
 
 		uint32 Magic = 0;
 		uint32 Version = 0;
-		bool bHasBodySetup = false;
 		Ar << Magic;
 		Ar << Version;
-		Ar << bHasBodySetup;
 
 		if (Magic != StaticMeshCollisionMagic || Version > StaticMeshCollisionVersion)
 		{
 			return;
 		}
 
+		uint8 Mode = static_cast<uint8>(EStaticMeshCollisionMode::None);
+		bool bHasBodySetup = false;
+		if (Version >= 2)
+		{
+			Ar << Mode;
+			Ar << bHasBodySetup;
+		}
+		else
+		{
+			Ar << bHasBodySetup;
+			Mode = bHasBodySetup ? static_cast<uint8>(EStaticMeshCollisionMode::Simple) : static_cast<uint8>(EStaticMeshCollisionMode::None);
+		}
+
 		delete BodyInstance;
 		BodyInstance = nullptr;
+		if (Mode > static_cast<uint8>(EStaticMeshCollisionMode::TriangleMesh))
+		{
+			Mode = static_cast<uint8>(EStaticMeshCollisionMode::None);
+		}
+		CollisionMode = static_cast<EStaticMeshCollisionMode>(Mode);
 
 		if (bHasBodySetup)
 		{
@@ -104,6 +122,11 @@ namespace
 			{
 				BodyInstance->BoneName = StaticMeshBodyName;
 			}
+		}
+
+		if (CollisionMode == EStaticMeshCollisionMode::Simple && (!BodyInstance || BodyInstance->AggregateGeom.IsEmpty()))
+		{
+			CollisionMode = EStaticMeshCollisionMode::None;
 		}
 	}
 }
@@ -139,7 +162,7 @@ void UStaticMesh::Serialize(FArchive& Ar)
 
 	// 2.5. 스태틱 메시 단순 콜리전 데이터.
 	// 구버전 asset에는 이 블록이 없으므로 loading 시 남은 바이트가 없으면 건너뜁니다.
-	SerializeStaticMeshCollision(Ar, BodyInstance);
+	SerializeStaticMeshCollision(Ar, BodyInstance, CollisionMode);
 
 	// 3. 로딩 시 Section → MaterialIndex 매핑 캐싱 (매 프레임 문자열 비교 방지)
 	if (Ar.IsLoading())
@@ -315,6 +338,15 @@ void UStaticMesh::ClearBodySetup()
 {
 	delete BodyInstance;
 	BodyInstance = nullptr;
+	if (CollisionMode == EStaticMeshCollisionMode::Simple)
+	{
+		CollisionMode = EStaticMeshCollisionMode::None;
+	}
+}
+
+void UStaticMesh::SetCollisionMode(EStaticMeshCollisionMode InMode)
+{
+	CollisionMode = InMode;
 }
 
 bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeType)
@@ -350,6 +382,7 @@ bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeT
 		Box.HalfY = (std::max)(Extent.Y, 0.001f);
 		Box.HalfZ = (std::max)(Extent.Z, 0.001f);
 		Body->AggregateGeom.BoxElems.push_back(Box);
+		CollisionMode = EStaticMeshCollisionMode::Simple;
 		return true;
 	}
 	case EStaticMeshSimpleCollisionShape::Sphere:
@@ -365,6 +398,7 @@ bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeT
 		Sphere.Center = Center;
 		Sphere.Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
 		Body->AggregateGeom.SphereElems.push_back(Sphere);
+		CollisionMode = EStaticMeshCollisionMode::Simple;
 		return true;
 	}
 	case EStaticMeshSimpleCollisionShape::Capsule:
@@ -396,9 +430,30 @@ bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeT
 		Capsule.Radius = Radius;
 		Capsule.HalfHeight = HalfAxisLength;
 		Body->AggregateGeom.CapsuleElems.push_back(Capsule);
+		CollisionMode = EStaticMeshCollisionMode::Simple;
 		return true;
 	}
 	default:
 		return false;
 	}
+}
+
+bool UStaticMesh::GenerateTriangleMeshCollision()
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty() || StaticMeshAsset->Indices.size() < 3 || StaticMeshAsset->Indices.size() % 3 != 0)
+	{
+		return false;
+	}
+
+	CollisionMode = EStaticMeshCollisionMode::TriangleMesh;
+	return true;
+}
+
+bool UStaticMesh::HasTriangleMeshCollision() const
+{
+	return CollisionMode == EStaticMeshCollisionMode::TriangleMesh
+		&& StaticMeshAsset
+		&& !StaticMeshAsset->Vertices.empty()
+		&& StaticMeshAsset->Indices.size() >= 3
+		&& StaticMeshAsset->Indices.size() % 3 == 0;
 }
