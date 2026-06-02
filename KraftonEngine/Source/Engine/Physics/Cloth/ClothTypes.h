@@ -161,6 +161,9 @@ struct FClothSettings
 	float Damping = 0.1f;
 	float DragCoefficient = 0.0f;
 	float LiftCoefficient = 0.0f;
+	float LinearInertia = 1.0f;
+	float AngularInertia = 1.0f;
+	float CentrifugalInertia = 1.0f;
 
 	float PhaseStiffness = 1.0f;
 	float PhaseStiffnessMultiplier = 1.0f;

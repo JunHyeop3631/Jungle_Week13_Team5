@@ -74,7 +74,7 @@ constexpr int CudaSuccess = 0;
 constexpr float ClothSphereCollisionMargin = 1.0f;
 constexpr float ClothCapsuleCollisionMargin = 1.0f;
 constexpr float ClothBoxCollisionMargin = 1.0f;
-constexpr float ClothTeleportDistanceThreshold = 500.0f;
+constexpr float ClothTeleportDistanceThreshold = 5.0f;
 constexpr float ClothTeleportRotationDotThreshold = 0.5f;
 
 struct FNvClothCudaDriver
@@ -1803,6 +1803,9 @@ void FNvClothScene::ApplyClothSettings(FNvClothInstanceRecord& Record)
 	Record.Cloth->setWindVelocity(ToPxVec3(Settings.WindVelocity));
 	Record.Cloth->setDragCoefficient(Settings.DragCoefficient);
 	Record.Cloth->setLiftCoefficient(Settings.LiftCoefficient);
+	Record.Cloth->setLinearInertia(physx::PxVec3(Settings.LinearInertia, Settings.LinearInertia, Settings.LinearInertia));
+	Record.Cloth->setAngularInertia(physx::PxVec3(Settings.AngularInertia, Settings.AngularInertia, Settings.AngularInertia));
+	Record.Cloth->setCentrifugalInertia(physx::PxVec3(Settings.CentrifugalInertia, Settings.CentrifugalInertia, Settings.CentrifugalInertia));
 	Record.Cloth->setSolverFrequency(std::max(Settings.SolverFrequency, 1.0f));
 	Record.Cloth->setStiffnessFrequency(std::max(Settings.StiffnessFrequency, 1.0f));
 	Record.Cloth->setTetherConstraintScale(Settings.TetherScale);
