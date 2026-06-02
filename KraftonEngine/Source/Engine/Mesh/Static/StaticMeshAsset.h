@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Core/Types/CoreTypes.h"
+#include "Math/Quat.h"
 #include "Math/Vector.h"
 #include "Engine/Object/Object.h"
 #include "Render/Resource/Buffer.h"
@@ -10,6 +11,38 @@
 #include "Materials/MaterialManager.h"
 #include <memory>
 #include <algorithm>
+
+enum class EStaticMeshCollisionShapeType : uint8
+{
+	Box,
+	Sphere,
+	Capsule,
+	Convex,
+};
+
+struct FStaticMeshCollisionShape
+{
+	EStaticMeshCollisionShapeType ShapeType = EStaticMeshCollisionShapeType::Box;
+	FVector Center = FVector(0.0f, 0.0f, 0.0f);
+	FQuat Rotation = FQuat();
+	FVector HalfExtent = FVector(0.5f, 0.5f, 0.5f);
+	float Radius = 0.5f;
+	float HalfHeight = 0.5f;
+	TArray<FVector> ConvexVertices;
+
+	friend FArchive& operator<<(FArchive& Ar, FStaticMeshCollisionShape& Shape)
+	{
+		Ar << Shape.ShapeType;
+		Ar << Shape.Center;
+		Ar << Shape.Rotation;
+		Ar << Shape.HalfExtent;
+		Ar << Shape.Radius;
+		Ar << Shape.HalfHeight;
+		Ar << Shape.ConvexVertices;
+		return Ar;
+	}
+};
+
 // Cooked Data 내부용 정점
 struct FNormalVertex
 {
