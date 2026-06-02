@@ -28,7 +28,7 @@ public:
 	virtual bool SetClothCollisionSpheres(FClothInstance* Instance, const TArray<FClothCollisionSphere>& Spheres) = 0;
 	virtual bool SetClothCollisionCapsules(FClothInstance* Instance, const TArray<FClothCollisionCapsule>& Capsules) = 0;
 	virtual bool SetClothCollision(FClothInstance* Instance, const FClothCollisionDesc& Collision) = 0;
-	virtual bool SetClothWorldMatrix(FClothInstance* Instance, const FMatrix& WorldMatrix) = 0;
+	virtual bool SetClothWorldMatrix(FClothInstance* Instance, const FMatrix& WorldMatrix, float DeltaTime = 0.0f) = 0;
 
 	virtual void RegisterShapeCollider(UShapeComponent* ShapeComponent) = 0;
 	virtual void UnregisterShapeCollider(UShapeComponent* ShapeComponent) = 0;

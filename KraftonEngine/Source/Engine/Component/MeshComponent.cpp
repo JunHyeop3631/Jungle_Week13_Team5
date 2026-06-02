@@ -292,7 +292,7 @@ void UMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		{
 			if (IClothScene* ClothScene = World->GetClothScene())
 			{
-				ClothScene->SetClothWorldMatrix(MeshClothInstance, GetWorldMatrix());
+				ClothScene->SetClothWorldMatrix(MeshClothInstance, GetWorldMatrix(), DeltaTime);
 			}
 		}
 		MarkWorldBoundsDirty();

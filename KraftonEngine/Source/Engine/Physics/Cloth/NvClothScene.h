@@ -41,7 +41,7 @@ public:
 	bool SetClothCollisionSpheres(FClothInstance* Instance, const TArray<FClothCollisionSphere>& Spheres) override;
 	bool SetClothCollisionCapsules(FClothInstance* Instance, const TArray<FClothCollisionCapsule>& Capsules) override;
 	bool SetClothCollision(FClothInstance* Instance, const FClothCollisionDesc& Collision) override;
-	bool SetClothWorldMatrix(FClothInstance* Instance, const FMatrix& WorldMatrix) override;
+	bool SetClothWorldMatrix(FClothInstance* Instance, const FMatrix& WorldMatrix, float DeltaTime = 0.0f) override;
 
 	void RegisterShapeCollider(UShapeComponent* ShapeComponent) override;
 	void UnregisterShapeCollider(UShapeComponent* ShapeComponent) override;

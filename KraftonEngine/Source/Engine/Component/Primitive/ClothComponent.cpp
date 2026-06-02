@@ -89,7 +89,7 @@ void UClothComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 		{
 			if (IClothScene* Scene = World->GetClothScene())
 			{
-				Scene->SetClothWorldMatrix(ClothInstance, GetWorldMatrix());
+				Scene->SetClothWorldMatrix(ClothInstance, GetWorldMatrix(), DeltaTime);
 			}
 		}
 	}

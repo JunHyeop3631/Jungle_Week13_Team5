@@ -75,6 +75,8 @@ constexpr float ClothSphereCollisionMargin = 1.0f;
 constexpr float ClothCapsuleCollisionMargin = 1.0f;
 constexpr float ClothBoxCollisionMargin = 1.0f;
 constexpr float ClothTeleportDistanceThreshold = 5.0f;
+constexpr float ClothTeleportReferenceDeltaTime = 1.0f / 60.0f;
+constexpr float ClothTeleportSpeedThreshold = ClothTeleportDistanceThreshold / ClothTeleportReferenceDeltaTime;
 constexpr float ClothTeleportRotationDotThreshold = 0.5f;
 
 struct FNvClothCudaDriver
@@ -209,6 +211,16 @@ physx::PxQuat ToPxQuat(const FQuat& Value)
 physx::PxVec4 ToPxParticle(const FClothParticle& Particle)
 {
 	return physx::PxVec4(Particle.Position.X, Particle.Position.Y, Particle.Position.Z, Particle.InvMass);
+}
+
+float GetClothTeleportDistanceThreshold(float DeltaTime)
+{
+	if (std::isfinite(DeltaTime) && DeltaTime > 1.0e-6f)
+	{
+		return ClothTeleportSpeedThreshold * DeltaTime;
+	}
+
+	return ClothTeleportDistanceThreshold;
 }
 
 void TeleportClothWithoutInertia(nv::cloth::Cloth& Cloth, const FVector& Location, const FQuat& Rotation)
@@ -1488,7 +1500,7 @@ bool FNvClothScene::SetClothCollision(FClothInstance* Instance, const FClothColl
 	return true;
 }
 
-bool FNvClothScene::SetClothWorldMatrix(FClothInstance* Instance, const FMatrix& WorldMatrix)
+bool FNvClothScene::SetClothWorldMatrix(FClothInstance* Instance, const FMatrix& WorldMatrix, float DeltaTime)
 {
 	FNvClothInstanceRecord* Record = FindInstanceRecord(Instance);
 	if (!Record)
@@ -1514,7 +1526,8 @@ bool FNvClothScene::SetClothWorldMatrix(FClothInstance* Instance, const FMatrix&
 				+ NewRotation.Y * Record->LastClothWorldRotation.Y
 				+ NewRotation.Z * Record->LastClothWorldRotation.Z
 				+ NewRotation.W * Record->LastClothWorldRotation.W);
-			const bool bLargeTeleport = DeltaLocation.LengthSquared() > ClothTeleportDistanceThreshold * ClothTeleportDistanceThreshold
+			const float EffectiveTeleportDistanceThreshold = GetClothTeleportDistanceThreshold(DeltaTime);
+			const bool bLargeTeleport = DeltaLocation.LengthSquared() > EffectiveTeleportDistanceThreshold * EffectiveTeleportDistanceThreshold
 				|| RotationDot < ClothTeleportRotationDotThreshold;
 
 			if (bLargeTeleport)
