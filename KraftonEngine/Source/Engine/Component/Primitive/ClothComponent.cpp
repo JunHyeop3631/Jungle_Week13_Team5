@@ -1,4 +1,4 @@
-#include "Component/Primitive/ClothComponent.h"
+﻿#include "Component/Primitive/ClothComponent.h"
 
 #include "GameFramework/World.h"
 #include "Physics/Cloth/IClothScene.h"
@@ -270,7 +270,24 @@ bool UClothComponent::ExtractClothDebugLines(TArray<FPhysicsDebugLine>& OutLines
 	}
 
 	const size_t OldCount = OutLines.size();
-	Scene->ExtractClothDebugLines(ClothInstance, OutLines, Options);
+	TArray<FPhysicsDebugLine> LocalLines;
+	Scene->ExtractClothDebugLines(ClothInstance, LocalLines, Options);
+	if (LocalLines.empty())
+	{
+		return false;
+	}
+
+	const FMatrix WorldMatrix = GetWorldMatrix();
+	OutLines.reserve(OutLines.size() + LocalLines.size());
+	for (const FPhysicsDebugLine& LocalLine : LocalLines)
+	{
+		FPhysicsDebugLine WorldLine;
+		WorldLine.Start = WorldMatrix.TransformPositionWithW(LocalLine.Start);
+		WorldLine.End = WorldMatrix.TransformPositionWithW(LocalLine.End);
+		WorldLine.Color = LocalLine.Color;
+		OutLines.push_back(WorldLine);
+	}
+
 	return OutLines.size() != OldCount;
 }
 

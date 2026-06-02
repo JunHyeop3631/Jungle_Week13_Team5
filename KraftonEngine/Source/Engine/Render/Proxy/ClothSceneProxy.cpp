@@ -12,6 +12,7 @@ FClothSceneProxy::FClothSceneProxy(UClothComponent* InComponent)
 {
 	ProxyFlags |= EPrimitiveProxyFlags::PerViewportUpdate;
 	ProxyFlags |= EPrimitiveProxyFlags::NeverCull;
+	ProxyFlags |= EPrimitiveProxyFlags::Cloth;
 
 	bCurrentTwoSided = InComponent && InComponent->ShouldRenderTwoSided();
 	RecreateDefaultMaterial();

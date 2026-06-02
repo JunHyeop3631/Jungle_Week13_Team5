@@ -1,6 +1,7 @@
 ﻿#include "RenderCollector.h"
 
 #include "Component/ActorComponent.h"
+#include "Component/Primitive/ClothComponent.h"
 #include "Component/Primitive/SkeletalMeshComponent.h"
 #include "GameFramework/AActor.h"
 #include "GameFramework/World.h"
@@ -12,6 +13,7 @@
 #include "Render/Types/LODContext.h"
 #include "Render/Proxy/PrimitiveSceneProxy.h"
 #include "Render/Proxy/ParticleSystemSceneProxy.h"
+#include "Render/Proxy/ClothSceneProxy.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 #include "Render/Scene/FScene.h"
 
@@ -239,6 +241,35 @@ void FRenderCollector::FilterVisibleProxies(const FFrameContext& Frame, FScene& 
 
 					TArray<FPhysicsDebugLine> ClothDebugLines;
 					if (SkeletalComponent->ExtractSkeletalClothDebugLines(ClothDebugLines, DebugOptions))
+					{
+						AddClothDebugLinesToScene(Scene, ClothDebugLines);
+					}
+				}
+			}
+		}
+
+		if (Proxy->HasProxyFlag(EPrimitiveProxyFlags::Cloth))
+		{
+			const FClothSceneProxy* ClothProxy = static_cast<const FClothSceneProxy*>(Proxy);
+			UClothComponent* ClothComponent = ClothProxy ? ClothProxy->GetClothComponent() : nullptr;
+			if (ClothComponent)
+			{
+				FClothStats ClothStats;
+				if (ClothComponent->GetClothStats(ClothStats))
+				{
+					Output.ClothStats.Accumulate(ClothStats);
+				}
+
+				const FShowFlags& ShowFlags = Frame.RenderOptions.ShowFlags;
+				if (ShowFlags.bDebugDraw && ShowFlags.bClothDebug)
+				{
+					FClothDebugDrawOptions DebugOptions;
+					DebugOptions.bParticles = ShowFlags.bClothParticles;
+					DebugOptions.bConstraints = ShowFlags.bClothConstraints;
+					DebugOptions.bCollision = ShowFlags.bClothCollision;
+
+					TArray<FPhysicsDebugLine> ClothDebugLines;
+					if (ClothComponent->ExtractClothDebugLines(ClothDebugLines, DebugOptions))
 					{
 						AddClothDebugLinesToScene(Scene, ClothDebugLines);
 					}

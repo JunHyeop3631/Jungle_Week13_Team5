@@ -19,8 +19,9 @@ public:
 	bool PrepareDrawBuffer(ID3D11Device* Device, ID3D11DeviceContext* Context,
 		FDrawCommandBuffer& OutBuffer) const override;
 
-private:
 	UClothComponent* GetClothComponent() const;
+
+private:
 	void RecreateDefaultMaterial();
 	void RebuildSectionDraws();
 
