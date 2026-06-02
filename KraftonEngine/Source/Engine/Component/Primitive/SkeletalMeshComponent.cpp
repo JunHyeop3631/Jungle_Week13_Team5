@@ -76,15 +76,28 @@ namespace
         ShapeDesc.Material.Density = 1.0f;
     }
 
-    void AppendPhysicsShapes(const UBodySetup& BodySetup, FPhysicsBodyDesc& BodyDesc)
+    float GetPhysicsAssetUniformScale(const FVector& WorldScale)
+    {
+        return (std::max)({ std::fabs(WorldScale.X), std::fabs(WorldScale.Y), std::fabs(WorldScale.Z), 0.001f });
+    }
+
+    bool IsNearlyUniformScale(const FVector& WorldScale, float Tolerance = 0.001f)
+    {
+        const float Scale = GetPhysicsAssetUniformScale(WorldScale);
+        return std::fabs(std::fabs(WorldScale.X) - Scale) <= Tolerance
+            && std::fabs(std::fabs(WorldScale.Y) - Scale) <= Tolerance
+            && std::fabs(std::fabs(WorldScale.Z) - Scale) <= Tolerance;
+    }
+
+    void AppendPhysicsShapes(const UBodySetup& BodySetup, FPhysicsBodyDesc& BodyDesc, float PhysicsAssetScale)
     {
         for (const FKSphereElem& Sphere : BodySetup.AggregateGeom.SphereElems)
         {
             FPhysicsShapeDesc ShapeDesc;
             ShapeDesc.Name = BodySetup.BoneName + "_Sphere";
             ShapeDesc.ShapeType = EPhysicsShapeType::Sphere;
-            ShapeDesc.LocalTransform = MakeUnitScaleTransform(Sphere.Center);
-            ShapeDesc.Radius = Sphere.Radius;
+            ShapeDesc.LocalTransform = MakeUnitScaleTransform(Sphere.Center * PhysicsAssetScale);
+            ShapeDesc.Radius = Sphere.Radius * PhysicsAssetScale;
             ApplyBodyMaterial(BodySetup, ShapeDesc);
             BodyDesc.Shapes.push_back(ShapeDesc);
         }
@@ -94,8 +107,8 @@ namespace
             FPhysicsShapeDesc ShapeDesc;
             ShapeDesc.Name = BodySetup.BoneName + "_Box";
             ShapeDesc.ShapeType = EPhysicsShapeType::Box;
-            ShapeDesc.LocalTransform = MakeUnitScaleTransform(Box.Center, Box.Rotation);
-            ShapeDesc.HalfExtent = FVector(Box.HalfX, Box.HalfY, Box.HalfZ);
+            ShapeDesc.LocalTransform = MakeUnitScaleTransform(Box.Center * PhysicsAssetScale, Box.Rotation);
+            ShapeDesc.HalfExtent = FVector(Box.HalfX, Box.HalfY, Box.HalfZ) * PhysicsAssetScale;
             ApplyBodyMaterial(BodySetup, ShapeDesc);
             BodyDesc.Shapes.push_back(ShapeDesc);
         }
@@ -105,10 +118,10 @@ namespace
             FPhysicsShapeDesc ShapeDesc;
             ShapeDesc.Name = BodySetup.BoneName + "_Capsule";
             ShapeDesc.ShapeType = EPhysicsShapeType::Capsule;
-            ShapeDesc.LocalTransform = MakeUnitScaleTransform(Capsule.Center, Capsule.Rotation);
-            ShapeDesc.Radius = Capsule.Radius;
+            ShapeDesc.LocalTransform = MakeUnitScaleTransform(Capsule.Center * PhysicsAssetScale, Capsule.Rotation);
+            ShapeDesc.Radius = Capsule.Radius * PhysicsAssetScale;
             // PhysX PxCapsuleGeometry expects the half distance between the two sphere centers.
-            ShapeDesc.HalfHeight = std::max(0.0f, Capsule.HalfHeight - Capsule.Radius);
+            ShapeDesc.HalfHeight = std::max(0.0f, Capsule.HalfHeight - Capsule.Radius) * PhysicsAssetScale;
             ApplyBodyMaterial(BodySetup, ShapeDesc);
             BodyDesc.Shapes.push_back(ShapeDesc);
         }
@@ -117,6 +130,11 @@ namespace
     FVector TransformPoint(const FMatrix& Matrix, const FVector& Point)
     {
         return Matrix.TransformPositionWithW(Point);
+    }
+
+    float QuatAbsDot(const FQuat& A, const FQuat& B)
+    {
+        return std::fabs(A.X * B.X + A.Y * B.Y + A.Z * B.Z + A.W * B.W);
     }
 }
 
@@ -763,7 +781,20 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
 
     PhysicsSceneOwner = &Scene;
     Bodies.assign(Asset->Bones.size(), nullptr);
+    BodyToBoneOffsets.assign(Asset->Bones.size(), FMatrix::Identity);
     Constraints.clear();
+
+    const FVector PhysicsAssetWorldScale = GetWorldScale();
+    const float PhysicsAssetScale = GetPhysicsAssetUniformScale(PhysicsAssetWorldScale);
+    if (!IsNearlyUniformScale(PhysicsAssetWorldScale))
+    {
+        UE_LOG(
+            "PhysicsAsset non-uniform component scale is approximated as uniform. Scale=(%.4f, %.4f, %.4f) Applied=%.4f",
+            PhysicsAssetWorldScale.X,
+            PhysicsAssetWorldScale.Y,
+            PhysicsAssetWorldScale.Z,
+            PhysicsAssetScale);
+    }
 
     bool bCreatedAnyBody = false;
 
@@ -827,7 +858,7 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
         BodyDesc.bStartAwake = true;
         BodyDesc.Aggregate = PhysicsAggregate;   // 무효 핸들이면 CreateRigidBody 가 씬 직접 추가로 폴백
 
-        AppendPhysicsShapes(*BodySetup, BodyDesc);
+        AppendPhysicsShapes(*BodySetup, BodyDesc, PhysicsAssetScale);
         if (BodyDesc.Shapes.empty())
         {
             continue;
@@ -841,6 +872,14 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
         }
 
         Bodies[BoneIndex] = Body;
+        {
+            FTransform BodyWorldTransform;
+            if (!Scene.GetBodyTransform(Body, BodyWorldTransform))
+            {
+                BodyWorldTransform = BodyDesc.WorldTransform;
+            }
+            BodyToBoneOffsets[BoneIndex] = BoneWorldTransform.ToMatrix() * BodyWorldTransform.ToMatrix().GetInverse();
+        }
         bCreatedAnyBody = true;
 
         // per-pair 필터 인덱스 부여 (bEnableSelfCollision 일 때만 의미 있음).
@@ -867,6 +906,7 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
             PhysicsAggregate = {};
         }
         Bodies.clear();
+        BodyToBoneOffsets.clear();
         PhysicsSceneOwner = nullptr;
         return false;
     }
@@ -901,7 +941,7 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
             continue;
         }
 
-        const FTransform ParentLocalFrame = MakeUnitScaleTransform(Setup->ParentAnchorPos, Setup->ParentAnchorRot);
+        const FTransform ParentLocalFrame = MakeUnitScaleTransform(Setup->ParentAnchorPos * PhysicsAssetScale, Setup->ParentAnchorRot);
         const FTransform JointWorldFrame = MakeWorldTransform(ParentLocalFrame, ParentBodyWorld);
 
         FPhysicsConstraintDesc ConstraintDesc;
@@ -997,6 +1037,7 @@ void USkeletalMeshComponent::DestroyPhysicsAssetBodies()
     RagdollFilterGroupId = 0;
     Constraints.clear();
     Bodies.clear();
+    BodyToBoneOffsets.clear();
     PhysicsSceneOwner = nullptr;
 }
 
@@ -1046,7 +1087,48 @@ bool USkeletalMeshComponent::EnterRagdollState()
         FTransform BoneWorldTransform;
         if (GetBoneWorldTransformByIndex(BoneIndex, BoneWorldTransform))
         {
-            PhysicsSceneOwner->SetBodyTransform(Body, BoneWorldTransform, /*bTeleport*/ true);
+            FTransform TargetBodyWorld = BoneWorldTransform;
+            if (BoneIndex < static_cast<int32>(BodyToBoneOffsets.size()))
+            {
+                TargetBodyWorld = FTransform(BodyToBoneOffsets[BoneIndex].GetInverse() * BoneWorldTransform.ToMatrix());
+            }
+
+            PhysicsSceneOwner->SetBodyTransform(Body, TargetBodyWorld, /*bTeleport*/ true);
+
+            FTransform BodyWorldAfterSync;
+            if (PhysicsSceneOwner->GetBodyTransform(Body, BodyWorldAfterSync))
+            {
+                FTransform BoneWorldAfterSync = BodyWorldAfterSync;
+                if (BoneIndex < static_cast<int32>(BodyToBoneOffsets.size()))
+                {
+                    BoneWorldAfterSync = FTransform(BodyToBoneOffsets[BoneIndex] * BodyWorldAfterSync.ToMatrix());
+                }
+
+                const FVector DeltaLocation = BoneWorldAfterSync.Location - BoneWorldTransform.Location;
+                const float RotationAbsDot = QuatAbsDot(BoneWorldAfterSync.Rotation.GetNormalized(), BoneWorldTransform.Rotation.GetNormalized());
+                UE_LOG(
+                    "Ragdoll sync pose: Bone=%s Index=%d BoneLoc=(%.4f, %.4f, %.4f) BodyLoc=(%.4f, %.4f, %.4f) OffsetBoneLoc=(%.4f, %.4f, %.4f) DeltaLoc=(%.6f, %.6f, %.6f) DeltaLen=%.6f RotAbsDot=%.6f",
+                    Body->BoneName.c_str(),
+                    BoneIndex,
+                    BoneWorldTransform.Location.X,
+                    BoneWorldTransform.Location.Y,
+                    BoneWorldTransform.Location.Z,
+                    BodyWorldAfterSync.Location.X,
+                    BodyWorldAfterSync.Location.Y,
+                    BodyWorldAfterSync.Location.Z,
+                    BoneWorldAfterSync.Location.X,
+                    BoneWorldAfterSync.Location.Y,
+                    BoneWorldAfterSync.Location.Z,
+                    DeltaLocation.X,
+                    DeltaLocation.Y,
+                    DeltaLocation.Z,
+                    DeltaLocation.Length(),
+                    RotationAbsDot);
+            }
+            else
+            {
+                UE_LOG("Ragdoll sync pose: GetBodyTransform failed after SetBodyTransform. Bone=%s Index=%d", Body->BoneName.c_str(), BoneIndex);
+            }
         }
 
         PhysicsSceneOwner->SetBodyType(Body, EPhysicsBodyType::Dynamic);
@@ -1216,7 +1298,8 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
     LocalPose.resize(BoneCount);
 
     // body 트랜스폼은 world 기준이고 본 local pose 는 component-local 누적이므로 world↔component 변환이 필요하다.
-    // InstantiatePhysicsAssetBodies 가 본 world == body actor pose 로 생성했기 때문에 body→bone 별도 오프셋 보정은 없다.
+    // BodyToBoneOffsets 는 현재 authoring path 에선 보통 identity 이지만, write-back 은 항상 명시적으로
+    // BoneWorld = BodyToBone * BodyWorld 관계를 통해 계산한다.
     const FMatrix ComponentWorldInv = GetWorldInverseMatrix();
 
     for (int32 BoneIndex = 0; BoneIndex < BoneCount; ++BoneIndex)
@@ -1237,8 +1320,14 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
             FTransform BodyWorld;
             if (PhysicsSceneOwner->GetBodyTransform(Body, BodyWorld))
             {
-                // body world → component-local global.
-                ComponentGlobal = BodyWorld.ToMatrix() * ComponentWorldInv;
+                FMatrix BoneWorldMatrix = BodyWorld.ToMatrix();
+                if (BoneIndex < static_cast<int32>(BodyToBoneOffsets.size()))
+                {
+                    BoneWorldMatrix = BodyToBoneOffsets[BoneIndex] * BoneWorldMatrix;
+                }
+
+                // body world -> bone world -> component-local global.
+                ComponentGlobal = BoneWorldMatrix * ComponentWorldInv;
 
                 // 컴포넌트 월드 스케일(예: 씬 2x)이 ComponentWorldInv 를 통해 본 글로벌 선형부에 1/S 로
                 // 새어들어가 스키닝 행렬(InverseBind * Global)을 왜곡한다 → 메시가 body 에 쪼그라들어 끼는 현상.
