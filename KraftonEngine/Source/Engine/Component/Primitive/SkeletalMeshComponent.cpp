@@ -1349,6 +1349,8 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
             continue;
         }
 
+        int32 SolvedChildIndex = -1;
+        int32 SolvedChildCount = 0;
         for (int32 ChildIndex = 0; ChildIndex < BoneCount; ++ChildIndex)
         {
             if (Asset->Bones[ChildIndex].ParentIndex != BoneIndex || !bHasSolvedGlobal[ChildIndex])
@@ -1356,10 +1358,19 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
                 continue;
             }
 
-            const FMatrix ChildRefLocal = Asset->Bones[ChildIndex].GetReferenceLocalPose();
-            ComponentLocalGlobals[BoneIndex] = ChildRefLocal.GetInverse() * ComponentLocalGlobals[ChildIndex];
+            SolvedChildIndex = ChildIndex;
+            ++SolvedChildCount;
+            if (SolvedChildCount > 1)
+            {
+                break;
+            }
+        }
+
+        if (SolvedChildCount == 1)
+        {
+            const FMatrix ChildRefLocal = Asset->Bones[SolvedChildIndex].GetReferenceLocalPose();
+            ComponentLocalGlobals[BoneIndex] = ChildRefLocal.GetInverse() * ComponentLocalGlobals[SolvedChildIndex];
             bHasSolvedGlobal[BoneIndex] = 1;
-            break;
         }
     }
 
