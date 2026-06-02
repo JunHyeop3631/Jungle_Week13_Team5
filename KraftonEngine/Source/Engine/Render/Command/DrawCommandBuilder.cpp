@@ -215,6 +215,25 @@ void FDrawCommandBuilder::BuildCommandForProxy(FScene& Scene, const FPrimitiveSc
 	{
 		BuildCommandForSection(Scene, Proxy, Section, Pass, BuildCtx);
 	}
+
+	if (SkeletalProxy && SkeletalProxy->HasRenderableCloth())
+	{
+		FDrawCommandBuffer ClothBuffer;
+		if (SkeletalProxy->PrepareClothDrawBuffer(CachedDevice, Ctx, ClothBuffer) && ClothBuffer.HasBuffers())
+		{
+			FProxyCommandBuildContext ClothBuildCtx = BuildCtx;
+			ClothBuildCtx.ProxyBuffer = ClothBuffer;
+			ClothBuildCtx.SkeletalProxy = nullptr;
+			ClothBuildCtx.bSkeletal = false;
+			ClothBuildCtx.bGPUSkinning = false;
+			ClothBuildCtx.bWeightBoneHeatMap = false;
+
+			for (const FMeshSectionDraw& Section : SkeletalProxy->GetClothSectionDraws())
+			{
+				BuildCommandForSection(Scene, Proxy, Section, Pass, ClothBuildCtx);
+			}
+		}
+	}
 }
 
 // ============================================================
@@ -440,6 +459,36 @@ void FDrawCommandBuilder::BuildMeshCommands(FScene& Scene, const FPrimitiveScene
 		}
 
 		BuildCommandForSection(Scene, *Proxy, Section, SectionPass, BuildCtx);
+	}
+
+	if (BuildCtx.SkeletalProxy && BuildCtx.SkeletalProxy->HasRenderableCloth())
+	{
+		FDrawCommandBuffer ClothBuffer;
+		if (BuildCtx.SkeletalProxy->PrepareClothDrawBuffer(CachedDevice, CachedContext, ClothBuffer) && ClothBuffer.HasBuffers())
+		{
+			FProxyCommandBuildContext ClothBuildCtx = BuildCtx;
+			ClothBuildCtx.ProxyBuffer = ClothBuffer;
+			ClothBuildCtx.SkeletalProxy = nullptr;
+			ClothBuildCtx.bSkeletal = false;
+			ClothBuildCtx.bGPUSkinning = false;
+			ClothBuildCtx.bWeightBoneHeatMap = false;
+
+			for (const FMeshSectionDraw& Section : BuildCtx.SkeletalProxy->GetClothSectionDraws())
+			{
+				ERenderPass SectionPass = ERenderPass::Opaque;
+				if (Section.Material)
+				{
+					SectionPass = Section.Material->GetRenderPass();
+				}
+
+				if (SectionPass == ERenderPass::Opaque)
+				{
+					BuildCommandForSection(Scene, *Proxy, Section, ERenderPass::PreDepth, ClothBuildCtx);
+				}
+
+				BuildCommandForSection(Scene, *Proxy, Section, SectionPass, ClothBuildCtx);
+			}
+		}
 	}
 }
 
