@@ -3,12 +3,14 @@
 #include "Physics/PhysXHelpers.h"
 #include "Physics/PhysXSceneLock.h"
 #include "Component/PrimitiveComponent.h"
+#include "Component/Primitive/StaticMeshComponent.h"
 #include "Component/Shape/BoxComponent.h"
 #include "Component/Shape/CapsuleComponent.h"
 #include "Component/Shape/SphereComponent.h"
 #include "GameFramework/AActor.h"
 #include "Object/Object.h"
 #include "Core/Logging/Log.h"
+#include "Physics/Asset/BodySetup.h"
 
 #include <algorithm>
 #include <cmath>
@@ -58,6 +60,194 @@ namespace
 			}
 		}
 		return false;
+	}
+
+	float GetMaxAbsScale(const FVector& Scale)
+	{
+		return (std::max)((std::max)(std::abs(Scale.X), std::abs(Scale.Y)), std::abs(Scale.Z));
+	}
+
+	bool IsBodyQueryCollisionEnabled(const UBodySetup& BodySetup)
+	{
+		return BodySetup.CollisionEnabled == EBodyCollisionEnabled::QueryOnly
+			|| BodySetup.CollisionEnabled == EBodyCollisionEnabled::QueryAndPhysics;
+	}
+
+	bool IsBodyPhysicsCollisionEnabled(const UBodySetup& BodySetup)
+	{
+		return BodySetup.CollisionEnabled == EBodyCollisionEnabled::PhysicsOnly
+			|| BodySetup.CollisionEnabled == EBodyCollisionEnabled::QueryAndPhysics;
+	}
+
+	void ApplyBodyMaterial(const UBodySetup& BodySetup, FPhysicsShapeDesc& ShapeDesc)
+	{
+		ShapeDesc.Material.StaticFriction = BodySetup.Friction;
+		ShapeDesc.Material.DynamicFriction = BodySetup.Friction;
+		ShapeDesc.Material.Restitution = BodySetup.Restitution;
+	}
+
+	void ApplyCollisionFlags(const UPrimitiveComponent* Comp, const UBodySetup& BodySetup, FPhysicsShapeDesc& ShapeDesc)
+	{
+		const bool bBodyQuery = IsBodyQueryCollisionEnabled(BodySetup);
+		const bool bBodyPhysics = IsBodyPhysicsCollisionEnabled(BodySetup);
+		const bool bHasBlockResponse = HasAnyBlockResponse(Comp);
+		const bool bTrigger = Comp && Comp->GetGenerateOverlapEvents()
+			&& (!Comp->IsPhysicsCollisionEnabled() || !bBodyPhysics || !bHasBlockResponse);
+
+		ShapeDesc.bTriggerShape = bTrigger;
+		ShapeDesc.bSimulationShape = !bTrigger && bBodyPhysics && Comp && Comp->IsPhysicsCollisionEnabled();
+		ShapeDesc.bSceneQueryShape = bBodyQuery && Comp && Comp->IsQueryCollisionEnabled();
+	}
+
+	void ApplyComponentCollisionFlags(const UPrimitiveComponent* Comp, FPhysicsShapeDesc& ShapeDesc)
+	{
+		const bool bHasBlockResponse = HasAnyBlockResponse(Comp);
+		const bool bTrigger = Comp && Comp->GetGenerateOverlapEvents()
+			&& (!Comp->IsPhysicsCollisionEnabled() || !bHasBlockResponse);
+
+		ShapeDesc.bTriggerShape = bTrigger;
+		ShapeDesc.bSimulationShape = !bTrigger && Comp && Comp->IsPhysicsCollisionEnabled();
+		ShapeDesc.bSceneQueryShape = Comp && Comp->IsQueryCollisionEnabled();
+	}
+
+	void AppendStaticMeshBodySetupShapes(const UStaticMeshComponent* Comp, const UBodySetup& BodySetup, FPhysicsBodyDesc& BodyDesc)
+	{
+		const FVector Scale = Comp ? Comp->GetWorldScale() : FVector(1.0f, 1.0f, 1.0f);
+		const FVector AbsScale(std::abs(Scale.X), std::abs(Scale.Y), std::abs(Scale.Z));
+		const float UniformScale = (std::max)(GetMaxAbsScale(AbsScale), 0.001f);
+
+		for (const FKSphereElem& Sphere : BodySetup.AggregateGeom.SphereElems)
+		{
+			FPhysicsShapeDesc ShapeDesc;
+			ShapeDesc.Name = BodySetup.BoneName + "_Sphere";
+			ShapeDesc.ShapeType = EPhysicsShapeType::Sphere;
+			ShapeDesc.LocalTransform = FTransform(
+				FVector(Sphere.Center.X * Scale.X, Sphere.Center.Y * Scale.Y, Sphere.Center.Z * Scale.Z),
+				FQuat::Identity,
+				FVector(1.0f, 1.0f, 1.0f));
+			ShapeDesc.Radius = (std::max)(Sphere.Radius * UniformScale, 0.001f);
+			ApplyBodyMaterial(BodySetup, ShapeDesc);
+			ApplyCollisionFlags(Comp, BodySetup, ShapeDesc);
+			BodyDesc.Shapes.push_back(ShapeDesc);
+		}
+
+		for (const FKBoxElem& Box : BodySetup.AggregateGeom.BoxElems)
+		{
+			FPhysicsShapeDesc ShapeDesc;
+			ShapeDesc.Name = BodySetup.BoneName + "_Box";
+			ShapeDesc.ShapeType = EPhysicsShapeType::Box;
+			ShapeDesc.LocalTransform = FTransform(
+				FVector(Box.Center.X * Scale.X, Box.Center.Y * Scale.Y, Box.Center.Z * Scale.Z),
+				Box.Rotation,
+				FVector(1.0f, 1.0f, 1.0f));
+			ShapeDesc.HalfExtent = FVector(
+				(std::max)(Box.HalfX * AbsScale.X, 0.001f),
+				(std::max)(Box.HalfY * AbsScale.Y, 0.001f),
+				(std::max)(Box.HalfZ * AbsScale.Z, 0.001f));
+			ApplyBodyMaterial(BodySetup, ShapeDesc);
+			ApplyCollisionFlags(Comp, BodySetup, ShapeDesc);
+			BodyDesc.Shapes.push_back(ShapeDesc);
+		}
+
+		for (const FKCapsuleElem& Capsule : BodySetup.AggregateGeom.CapsuleElems)
+		{
+			FPhysicsShapeDesc ShapeDesc;
+			ShapeDesc.Name = BodySetup.BoneName + "_Capsule";
+			ShapeDesc.ShapeType = EPhysicsShapeType::Capsule;
+			ShapeDesc.LocalTransform = FTransform(
+				FVector(Capsule.Center.X * Scale.X, Capsule.Center.Y * Scale.Y, Capsule.Center.Z * Scale.Z),
+				Capsule.Rotation,
+				FVector(1.0f, 1.0f, 1.0f));
+			ShapeDesc.Radius = (std::max)(Capsule.Radius * UniformScale, 0.001f);
+			ShapeDesc.HalfHeight = (std::max)(0.0f, Capsule.HalfHeight - Capsule.Radius) * UniformScale;
+			ApplyBodyMaterial(BodySetup, ShapeDesc);
+			ApplyCollisionFlags(Comp, BodySetup, ShapeDesc);
+			BodyDesc.Shapes.push_back(ShapeDesc);
+		}
+	}
+
+	bool AppendStaticMeshTriangleMeshShape(const UStaticMeshComponent* Comp, FPhysicsBodyDesc& BodyDesc)
+	{
+		if (!Comp)
+		{
+			return false;
+		}
+
+		UStaticMesh* StaticMesh = Comp->GetStaticMesh();
+		if (!StaticMesh || !StaticMesh->HasTriangleMeshCollision())
+		{
+			return false;
+		}
+
+		const FStaticMesh* MeshAsset = StaticMesh->GetStaticMeshAsset();
+		if (!MeshAsset || MeshAsset->Vertices.empty() || MeshAsset->Indices.size() < 3 || MeshAsset->Indices.size() % 3 != 0)
+		{
+			return false;
+		}
+
+		FPhysicsShapeDesc ShapeDesc;
+		ShapeDesc.Name = "StaticMesh_TriangleMesh";
+		ShapeDesc.ShapeType = EPhysicsShapeType::TriangleMesh;
+		ShapeDesc.LocalTransform = FTransform();
+		ApplyComponentCollisionFlags(Comp, ShapeDesc);
+		if (ShapeDesc.bTriggerShape)
+		{
+			ShapeDesc.bTriggerShape = false;
+			ShapeDesc.bSimulationShape = false;
+		}
+
+		const FVector Scale = Comp->GetWorldScale();
+		ShapeDesc.TriangleMeshVertices.reserve(MeshAsset->Vertices.size());
+		for (const FNormalVertex& Vertex : MeshAsset->Vertices)
+		{
+			ShapeDesc.TriangleMeshVertices.push_back(FVector(Vertex.pos.X * Scale.X, Vertex.pos.Y * Scale.Y, Vertex.pos.Z * Scale.Z));
+		}
+		ShapeDesc.TriangleMeshIndices = MeshAsset->Indices;
+
+		BodyDesc.Shapes.push_back(ShapeDesc);
+		return true;
+	}
+
+	PxTriangleMesh* CookTriangleMesh(PxFoundation* Foundation, PxPhysics* Physics, const FPhysicsShapeDesc& Desc)
+	{
+		if (!Foundation || !Physics || Desc.TriangleMeshVertices.empty() || Desc.TriangleMeshIndices.size() < 3 || Desc.TriangleMeshIndices.size() % 3 != 0)
+		{
+			return nullptr;
+		}
+
+		PxTriangleMeshDesc MeshDesc;
+		MeshDesc.points.count = static_cast<PxU32>(Desc.TriangleMeshVertices.size());
+		MeshDesc.points.stride = sizeof(FVector);
+		MeshDesc.points.data = Desc.TriangleMeshVertices.data();
+		MeshDesc.triangles.count = static_cast<PxU32>(Desc.TriangleMeshIndices.size() / 3);
+		MeshDesc.triangles.stride = sizeof(uint32) * 3;
+		MeshDesc.triangles.data = Desc.TriangleMeshIndices.data();
+
+		PxCookingParams Params(Physics->getTolerancesScale());
+		Params.meshPreprocessParams |= PxMeshPreprocessingFlag::eWELD_VERTICES;
+		Params.meshWeldTolerance = 0.001f;
+
+		PxCooking* Cooking = PxCreateCooking(PX_PHYSICS_VERSION, *Foundation, Params);
+		if (!Cooking)
+		{
+			UE_LOG("[PhysXRuntime] Failed to create PhysX cooking interface for triangle mesh collision");
+			return nullptr;
+		}
+
+		PxDefaultMemoryOutputStream CookedData;
+		if (!Cooking->cookTriangleMesh(MeshDesc, CookedData))
+		{
+			UE_LOG("[PhysXRuntime] Failed to cook triangle mesh collision (%u vertices, %u triangles)",
+				MeshDesc.points.count,
+				MeshDesc.triangles.count);
+			Cooking->release();
+			return nullptr;
+		}
+
+		PxDefaultMemoryInputData InputData(CookedData.getData(), CookedData.getSize());
+		PxTriangleMesh* TriangleMesh = Physics->createTriangleMesh(InputData);
+		Cooking->release();
+		return TriangleMesh;
 	}
 
 	PxFilterData BuildComponentFilterData(const UPrimitiveComponent* Comp)
@@ -919,6 +1109,49 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 		// PhysX capsules are X-axis aligned; engine capsules use local Z as their long axis.
 		ShapeDesc.LocalTransform.Rotation = FQuat::FromAxisAngle(FVector(0.0f, 1.0f, 0.0f), -PhysicsPi * 0.5f);
 	}
+	else if (UStaticMeshComponent* StaticMeshComp = Cast<UStaticMeshComponent>(Comp))
+	{
+		UStaticMesh* StaticMesh = StaticMeshComp->GetStaticMesh();
+		if (StaticMesh && StaticMesh->GetCollisionMode() == EStaticMeshCollisionMode::TriangleMesh)
+		{
+			if (Comp->GetSimulatePhysics())
+			{
+				UE_LOG("[PhysXRuntime] Triangle mesh collision is supported only for static static-mesh components");
+				return false;
+			}
+
+			OutDesc = FPhysicsBodyDesc();
+			OutDesc.OwnerComponent = Comp;
+			OutDesc.BodyName = "StaticMeshTriangleMesh";
+			OutDesc.BodyType = EPhysicsBodyType::Static;
+			OutDesc.WorldTransform = FTransform(Comp->GetWorldLocation(), Comp->GetWorldRotation(), FVector(1.0f, 1.0f, 1.0f));
+			OutDesc.Mass = std::max(0.001f, Comp->GetMass());
+			OutDesc.bUseGravity = false;
+			OutDesc.bEnableCCD = false;
+			AppendStaticMeshTriangleMeshShape(StaticMeshComp, OutDesc);
+			return !OutDesc.Shapes.empty();
+		}
+
+		UBodySetup* BodySetup = StaticMeshComp->GetBodySetup();
+		if (!BodySetup || BodySetup->AggregateGeom.IsEmpty() || BodySetup->CollisionEnabled == EBodyCollisionEnabled::NoCollision)
+		{
+			return false;
+		}
+
+		OutDesc = FPhysicsBodyDesc();
+		OutDesc.OwnerComponent = Comp;
+		OutDesc.BodyName = BodySetup->BoneName.empty() ? FString("StaticMesh") : BodySetup->BoneName;
+		OutDesc.BodyType = Comp->GetSimulatePhysics() ? EPhysicsBodyType::Dynamic : EPhysicsBodyType::Static;
+		OutDesc.WorldTransform = FTransform(Comp->GetWorldLocation(), Comp->GetWorldRotation(), FVector(1.0f, 1.0f, 1.0f));
+		OutDesc.Mass = std::max(0.001f, Comp->GetMass() > 0.0f ? Comp->GetMass() : BodySetup->Mass);
+		OutDesc.LinearDamping = BodySetup->LinearDamping;
+		OutDesc.AngularDamping = BodySetup->AngularDamping;
+		OutDesc.bUseGravity = BodySetup->bEnableGravity;
+		OutDesc.bEnableCCD = Comp->GetSimulatePhysics();
+
+		AppendStaticMeshBodySetupShapes(StaticMeshComp, *BodySetup, OutDesc);
+		return !OutDesc.Shapes.empty();
+	}
 	else
 	{
 		return false;
@@ -1246,6 +1479,15 @@ void FPhysXRuntime::DestroyRigidBody(FBodyInstance* Body)
 		}
 	}
 
+	for (FPhysicsTriangleMeshHandle& MeshHandle : Body->TriangleMeshHandles)
+	{
+		if (PxTriangleMesh* TriangleMesh = static_cast<PxTriangleMesh*>(MeshHandle.NativePtr))
+		{
+			TriangleMesh->release();
+		}
+	}
+	Body->TriangleMeshHandles.clear();
+
 	delete Body;
 }
 
@@ -1325,14 +1567,42 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape_AssumesLocked(FBodyInstance* Body
 	}
 
 	PxGeometryHolder Geometry;
-	if (!PhysXHelpers::BuildGeometry(Desc, Geometry))
+	PxTriangleMesh* CookedTriangleMesh = nullptr;
+	PxTriangleMeshGeometry TriangleMeshGeometry;
+	const PxGeometry* GeometryPtr = nullptr;
+	if (Desc.ShapeType == EPhysicsShapeType::TriangleMesh)
 	{
-		return {};
+		if (Body->BodyType != EPhysicsBodyType::Static && Desc.bSimulationShape)
+		{
+			UE_LOG("[PhysXRuntime] Triangle mesh simulation shape can be attached only to static actors");
+			return {};
+		}
+
+		CookedTriangleMesh = CookTriangleMesh(Foundation, Physics, Desc);
+		if (!CookedTriangleMesh)
+		{
+			return {};
+		}
+
+		TriangleMeshGeometry = PxTriangleMeshGeometry(CookedTriangleMesh);
+		GeometryPtr = &TriangleMeshGeometry;
+	}
+	else
+	{
+		if (!PhysXHelpers::BuildGeometry(Desc, Geometry))
+		{
+			return {};
+		}
+		GeometryPtr = &Geometry.any();
 	}
 
-	PxShape* Shape = PxRigidActorExt::createExclusiveShape(*Actor, Geometry.any(), *DefaultMaterial);
+	PxShape* Shape = PxRigidActorExt::createExclusiveShape(*Actor, *GeometryPtr, *DefaultMaterial);
 	if (!Shape)
 	{
+		if (CookedTriangleMesh)
+		{
+			CookedTriangleMesh->release();
+		}
 		return {};
 	}
 
@@ -1364,6 +1634,10 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape_AssumesLocked(FBodyInstance* Body
 
 	FPhysicsShapeHandle Handle{ Shape, AllocateSerial() };
 	Body->ShapeHandles.push_back(Handle);
+	if (CookedTriangleMesh)
+	{
+		Body->TriangleMeshHandles.push_back({ CookedTriangleMesh, AllocateSerial() });
+	}
 
 	if (PxRigidDynamic* Dynamic = PhysXHelpers::GetPxDynamic(Body))
 	{

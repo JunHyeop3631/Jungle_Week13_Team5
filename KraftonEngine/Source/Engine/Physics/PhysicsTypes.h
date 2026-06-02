@@ -50,6 +50,14 @@ struct FPhysicsShapeHandle
 	bool IsValid() const { return NativePtr != nullptr; }
 };
 
+struct FPhysicsTriangleMeshHandle
+{
+	void* NativePtr = nullptr;
+	uint64 Serial = 0;
+
+	bool IsValid() const { return NativePtr != nullptr; }
+};
+
 struct FPhysicsJointHandle
 {
 	void* NativePtr = nullptr;
@@ -101,6 +109,8 @@ struct FPhysicsShapeDesc
 	float Radius = 50.0f;
 	float HalfHeight = 100.0f;
 	TArray<FVector> ConvexVertices;
+	TArray<FVector> TriangleMeshVertices;
+	TArray<uint32> TriangleMeshIndices;
 
 	bool bSimulationShape = true;
 	bool bTriggerShape = false;

@@ -8,6 +8,7 @@
 #include "Object/Ptr/SoftObjectPtr.h"
 
 class UMaterialInterface;
+class UBodySetup;
 class FPrimitiveSceneProxy;
 
 namespace json { class JSON; }
@@ -35,6 +36,7 @@ public:
 
 	void SetStaticMesh(UStaticMesh* InMesh);
 	UStaticMesh* GetStaticMesh() const;
+	UBodySetup* GetBodySetup() const;
 
 	void SetMaterial(int32 ElementIndex, UMaterialInterface* InMaterial);
 	UMaterialInterface* GetMaterial(int32 ElementIndex) const;
