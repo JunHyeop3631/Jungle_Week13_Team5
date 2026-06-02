@@ -74,7 +74,7 @@ constexpr int CudaSuccess = 0;
 constexpr float ClothSphereCollisionMargin = 1.0f;
 constexpr float ClothCapsuleCollisionMargin = 1.0f;
 constexpr float ClothBoxCollisionMargin = 1.0f;
-constexpr float ClothTeleportDistanceThreshold = 500.0f;
+constexpr float ClothTeleportDistanceThreshold = 5.0f;
 constexpr float ClothTeleportRotationDotThreshold = 0.5f;
 
 struct FNvClothCudaDriver
@@ -209,6 +209,30 @@ physx::PxQuat ToPxQuat(const FQuat& Value)
 physx::PxVec4 ToPxParticle(const FClothParticle& Particle)
 {
 	return physx::PxVec4(Particle.Position.X, Particle.Position.Y, Particle.Position.Z, Particle.InvMass);
+}
+
+void TeleportClothWithoutInertia(nv::cloth::Cloth& Cloth, const FVector& Location, const FQuat& Rotation)
+{
+	Cloth.teleportToLocation(ToPxVec3(Location), ToPxQuat(Rotation));
+	Cloth.clearInertia();
+	Cloth.ignoreVelocityDiscontinuity();
+}
+
+bool ResetPreviousParticlesToCurrent(nv::cloth::Cloth& Cloth)
+{
+	nv::cloth::MappedRange<physx::PxVec4> CurrentParticles = Cloth.getCurrentParticles();
+	nv::cloth::MappedRange<physx::PxVec4> PreviousParticles = Cloth.getPreviousParticles();
+	if (CurrentParticles.size() != PreviousParticles.size())
+	{
+		return false;
+	}
+
+	for (uint32 Index = 0; Index < CurrentParticles.size(); ++Index)
+	{
+		PreviousParticles[Index] = CurrentParticles[Index];
+	}
+
+	return true;
 }
 
 physx::PxVec4 ToPxSphere(const FClothCollisionSphere& Sphere)
@@ -554,6 +578,7 @@ struct FNvClothInstanceRecord
 	FQuat LastClothWorldRotation = FQuat::Identity;
 	bool bHasClothWorldTransform = false;
 	bool bUseRegisteredShapeCollision = false;
+	bool bResetParticleHistoryBeforeSim = false;
 	nv::cloth::Cloth* Cloth = nullptr;
 	FNvClothFabricRecord* FabricRecord = nullptr;
 	TArray<nv::cloth::PhaseConfig> PhaseConfigs;
@@ -1477,8 +1502,8 @@ bool FNvClothScene::SetClothWorldMatrix(FClothInstance* Instance, const FMatrix&
 	{
 		if (!Record->bHasClothWorldTransform)
 		{
-			Record->Cloth->teleportToLocation(ToPxVec3(NewLocation), ToPxQuat(NewRotation));
-			Record->Cloth->clearInertia();
+			TeleportClothWithoutInertia(*Record->Cloth, NewLocation, NewRotation);
+			Record->bResetParticleHistoryBeforeSim = true;
 			Record->bHasClothWorldTransform = true;
 		}
 		else
@@ -1494,8 +1519,8 @@ bool FNvClothScene::SetClothWorldMatrix(FClothInstance* Instance, const FMatrix&
 
 			if (bLargeTeleport)
 			{
-				Record->Cloth->teleportToLocation(ToPxVec3(NewLocation), ToPxQuat(NewRotation));
-				Record->Cloth->clearInertia();
+				TeleportClothWithoutInertia(*Record->Cloth, NewLocation, NewRotation);
+				Record->bResetParticleHistoryBeforeSim = true;
 			}
 			else
 			{
@@ -1546,6 +1571,15 @@ void FNvClothScene::SimulateCloth(float DeltaTime)
 
 	DeltaTime = std::min(DeltaTime, 1.0f / 30.0f);
 	const auto StartTime = std::chrono::high_resolution_clock::now();
+
+	for (std::unique_ptr<FNvClothInstanceRecord>& Record : Instances)
+	{
+		if (Record && Record->Cloth && Record->bResetParticleHistoryBeforeSim)
+		{
+			ResetPreviousParticlesToCurrent(*Record->Cloth);
+			Record->bResetParticleHistoryBeforeSim = false;
+		}
+	}
 
 	for (std::unique_ptr<FNvClothInstanceRecord>& Record : Instances)
 	{
@@ -1803,6 +1837,9 @@ void FNvClothScene::ApplyClothSettings(FNvClothInstanceRecord& Record)
 	Record.Cloth->setWindVelocity(ToPxVec3(Settings.WindVelocity));
 	Record.Cloth->setDragCoefficient(Settings.DragCoefficient);
 	Record.Cloth->setLiftCoefficient(Settings.LiftCoefficient);
+	Record.Cloth->setLinearInertia(physx::PxVec3(Settings.LinearInertia, Settings.LinearInertia, Settings.LinearInertia));
+	Record.Cloth->setAngularInertia(physx::PxVec3(Settings.AngularInertia, Settings.AngularInertia, Settings.AngularInertia));
+	Record.Cloth->setCentrifugalInertia(physx::PxVec3(Settings.CentrifugalInertia, Settings.CentrifugalInertia, Settings.CentrifugalInertia));
 	Record.Cloth->setSolverFrequency(std::max(Settings.SolverFrequency, 1.0f));
 	Record.Cloth->setStiffnessFrequency(std::max(Settings.StiffnessFrequency, 1.0f));
 	Record.Cloth->setTetherConstraintScale(Settings.TetherScale);

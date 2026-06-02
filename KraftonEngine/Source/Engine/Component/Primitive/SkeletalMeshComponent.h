@@ -184,20 +184,18 @@ private:
     bool ResolveSkeletalClothAttachment(FSkeletalClothParticleAttachment& Attachment) const;
     FMatrix GetSkeletalClothWorldMatrix() const;
 
-    // 래그돌 진입 시: 형제 충돌 컴포넌트(캡슐/스피어/박스/스태틱메시 콜라이더 등) collision off +
-    // movement 컴포넌트 정지 → 본체 래그돌 바디와의 "중복 충돌"로 인한 튕김 방지. 종료 시 복원.
+    // 래그돌 진입 시: movement 컴포넌트만 정지해 캡슐을 더는 구동하지 않게 한다("조작" 차단).
+    // 형제 콜라이더의 collision 은 끄지 않는다 — same-actor 필터 셰이더가 캡슐 ↔ 래그돌 바디 중복
+    // 충돌을 막으므로 켜둬도 안전하고, 켜둬야 캡슐이 래그돌 중에도 물리로 움직인다. 종료 시 복원.
     // dangling 방지: 복원은 Owner 의 현재 컴포넌트 목록과 대조해 살아있는 것만 건드린다.
-    void DisableOwnerCollisionForRagdoll();
-    void RestoreOwnerCollisionAfterRagdoll();
+    void DeactivateOwnerMovementForRagdoll();
+    void RestoreOwnerMovementAfterRagdoll();
 
-    // 복원용 저장소. PrevEnabled = 진입 직전 collision 값.
-    struct FRagdollSavedCollision
-    {
-        UPrimitiveComponent* Component = nullptr;
-        ECollisionEnabled    PrevEnabled = ECollisionEnabled::NoCollision;
-    };
-    TArray<FRagdollSavedCollision> RagdollDisabledCollisions;   // 끈 형제 충돌 컴포넌트
-    TArray<UActorComponent*>       RagdollDeactivatedMovement;  // 정지시킨 movement 컴포넌트
+    TArray<UActorComponent*> RagdollDeactivatedMovement;  // 정지시킨 movement 컴포넌트
+
+    // 래그돌 진입 직전 CharacterMovement 의 속도(m/s). movement 정지 시 캡처해 EnterRagdollState 가
+    // 모든 바디(+캡슐)에 부여 → 이동/낙하 중 전환해도 가속/관성을 유지하며 날아가게 한다.
+    FVector RagdollEntryLinearVelocity = FVector(0.0f, 0.0f, 0.0f);
 
 protected:
     // Animation 런타임 상태.

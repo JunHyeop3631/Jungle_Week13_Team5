@@ -10,6 +10,7 @@
 #include "Asset/AssetRegistry.h"
 #include "Core/Logging/Log.h"
 #include "Component/Movement/MovementComponent.h"
+#include "Component/Movement/CharacterMovementComponent.h"
 #include "Component/PrimitiveComponent.h"
 #include "GameFramework/AActor.h"
 #include "GameFramework/World.h"
@@ -1134,6 +1135,11 @@ bool USkeletalMeshComponent::EnterRagdollState()
         }
 
         PhysicsSceneOwner->SetBodyType(Body, EPhysicsBodyType::Dynamic);
+
+        // 진입 시점의 이동/낙하 관성을 모든 바디에 동일 선형 속도로 부여 → 가속/관성을 유지하며
+        // 날아간다. teleport(setGlobalPose) 는 속도에 영향이 없고, Dynamic 전환 직후라야 적용된다.
+        // 속도가 0(정지 중 진입)이면 그대로 제자리에서 쓰러진다 — 무해.
+        PhysicsSceneOwner->SetBodyLinearVelocity(Body, RagdollEntryLinearVelocity);
     }
 
     return true;
@@ -1148,10 +1154,10 @@ void USkeletalMeshComponent::CreateRagdoll()
     }
 }
 
-void USkeletalMeshComponent::DisableOwnerCollisionForRagdoll()
+void USkeletalMeshComponent::DeactivateOwnerMovementForRagdoll()
 {
-    RagdollDisabledCollisions.clear();
     RagdollDeactivatedMovement.clear();
+    RagdollEntryLinearVelocity = FVector(0.0f, 0.0f, 0.0f);
 
     AActor* OwnerActor = GetOwner();
     if (!OwnerActor)
@@ -1159,27 +1165,23 @@ void USkeletalMeshComponent::DisableOwnerCollisionForRagdoll()
         return;
     }
 
+    // Movement 컴포넌트만 정지한다(active 였던 것만) — 캡슐을 계속 구동해 래그돌을 "조작" 하지
+    // 못하게 막는다. 형제 충돌 컴포넌트(캡슐 등)의 collision 은 끄지 않는다: 09_ragdoll_session_fixes.md
+    // §5-3 의 same-actor 필터 셰이더(word3 = owner UUID 일치 시 SUPPRESS)가 캡슐 ↔ 래그돌 바디
+    // "중복 충돌" 을 이미 막으므로 콜라이더를 켜둬도 튕기지 않는다. 켜둬야 캡슐이 래그돌 중에도
+    // 월드와 충돌하며 물리로 "움직" 인다 → 결과적으로 "움직이되 조작 불가".
     for (UActorComponent* Comp : OwnerActor->GetComponents())
     {
-        if (!Comp)
-        {
-            continue;
-        }
-
-        // (A) 형제 충돌 컴포넌트 — 래그돌 본체(this) 제외, 현재 켜진 것만 끈다.
-        if (UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Comp))
-        {
-            if (Prim != this && Prim->IsCollisionEnabled())
-            {
-                RagdollDisabledCollisions.push_back({ Prim, Prim->GetCollisionEnabled() });
-                Prim->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-            }
-            continue;
-        }
-
-        // (B) Movement 컴포넌트 — 캡슐을 계속 구동해 래그돌과 싸우지 않도록 정지(active 였던 것만).
         if (UMovementComponent* Move = Cast<UMovementComponent>(Comp))
         {
+            // 정지 "직전" 의 속도를 캡처해 래그돌 진입 관성으로 넘긴다(걷기=XY, 낙하=XY+중력 Z).
+            // 속도 벡터는 CharacterMovement 만 보유 — 정지(SetActive(false)) 는 이 값을 건드리지 않지만
+            // 의미상 정지 전에 읽는다.
+            if (UCharacterMovementComponent* CharacterMove = Cast<UCharacterMovementComponent>(Move))
+            {
+                RagdollEntryLinearVelocity = CharacterMove->GetVelocity();
+            }
+
             if (Move->IsActive())
             {
                 Move->SetActive(false);
@@ -1189,7 +1191,7 @@ void USkeletalMeshComponent::DisableOwnerCollisionForRagdoll()
     }
 }
 
-void USkeletalMeshComponent::RestoreOwnerCollisionAfterRagdoll()
+void USkeletalMeshComponent::RestoreOwnerMovementAfterRagdoll()
 {
     // dangling 방지: 저장 포인터를 곧장 deref 하지 않고, Owner 의 "현재" 컴포넌트 목록에
     // 아직 존재하는(주소 일치) 것만 복원한다. 래그돌 중 파괴된 컴포넌트는 목록에서 빠지므로 건너뛴다.
@@ -1205,14 +1207,6 @@ void USkeletalMeshComponent::RestoreOwnerCollisionAfterRagdoll()
             return false;
         };
 
-        for (const FRagdollSavedCollision& Saved : RagdollDisabledCollisions)
-        {
-            if (Saved.Component && IsLive(Saved.Component))
-            {
-                Saved.Component->SetCollisionEnabled(Saved.PrevEnabled);
-            }
-        }
-
         for (UActorComponent* Move : RagdollDeactivatedMovement)
         {
             if (Move && IsLive(Move))
@@ -1222,7 +1216,6 @@ void USkeletalMeshComponent::RestoreOwnerCollisionAfterRagdoll()
         }
     }
 
-    RagdollDisabledCollisions.clear();
     RagdollDeactivatedMovement.clear();
 }
 
@@ -1235,12 +1228,11 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
 
     if (bSimulate)
     {
-        // 콜라이더(캡슐/박스 등 형제 충돌 컴포넌트)를 "바디 생성 전에" 먼저 씬에서 제거하고
-        // movement 도 정지한다. 본 래그돌 바디가 활성 콜라이더와 겹친 채 생성·웨이크업되면 첫
-        // 시뮬 스텝에서 중복 충돌/겹침 해소로 튕기기 때문이다(World::Tick 은 Simulate→Tick 순서라
-        // 이 시점에 끄면 다음 Simulate 부터 콜라이더가 빠진 상태가 보장된다).
-        // 진입(인스턴스화/EnterRagdollState) 실패 시 끈 것을 원복한다.
-        DisableOwnerCollisionForRagdoll();
+        // movement 를 정지해 캡슐을 더는 구동하지 않게 한다(래그돌 "조작" 차단). 캡슐 등 형제
+        // 콜라이더의 collision 은 끄지 않는다 — same-actor 필터 셰이더(§5-3)가 캡슐 ↔ 래그돌 바디
+        // 중복 충돌을 막으므로, 콜라이더를 켜둬야 캡슐이 래그돌 중에도 물리로 움직인다.
+        // 진입(인스턴스화/EnterRagdollState) 실패 시 정지한 movement 를 원복한다.
+        DeactivateOwnerMovementForRagdoll();
 
         // 진입 시점에 바디가 없으면 소유 월드의 물리 씬에서 즉석 인스턴스화한다.
         // InstantiatePhysicsAssetBodies 가 현재 애님 본 월드 포즈를 읽으므로 진입 순간 포즈가 그대로 포착된다.
@@ -1252,13 +1244,13 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
             if (!Scene || !PhysicsAsset)
             {
                 UE_LOG("SetSimulatingPhysics(true) skipped: no physics scene or physics asset.");
-                RestoreOwnerCollisionAfterRagdoll();
+                RestoreOwnerMovementAfterRagdoll();
                 return;
             }
             if (!InstantiatePhysicsAssetBodies(*Scene, PhysicsAsset))
             {
                 UE_LOG("SetSimulatingPhysics(true) skipped: physics asset instantiation failed.");
-                RestoreOwnerCollisionAfterRagdoll();
+                RestoreOwnerMovementAfterRagdoll();
                 return;
             }
         }
@@ -1266,10 +1258,33 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
         if (EnterRagdollState())
         {
             bSimulatingPhysics = true;
+
+            // 캡슐(루트 dynamic 바디)을 "현재 씬 위치로 맞춘 뒤" 같은 진입 관성을 줘 메시 래그돌과
+            // 함께 날아가게 한다. movement 는 SetWorldLocation(씬 트랜스폼만 갱신)으로 캡슐을 옮겨와,
+            // 캡슐의 물리 바디는 옛 정착 위치(스폰/착지 지점)에 머물러 있다. 이 teleport 없이 관성으로
+            // 깨우면 물리 write-back 이 캡슐을 그 옛 위치로 되돌려 "처음 위치로 점프" 한다.
+            // (A) 수정으로 캡슐 collision 이 켜진 채라 dynamic 바디가 살아 있고, same-actor 필터가
+            // 캡슐 ↔ 래그돌 충돌을 막으므로 둘이 같은 속도로 가도 서로 튕기지 않는다. 캡슐이 dynamic
+            // 바디가 아니면 두 호출 모두 내부에서 no-op 이라 안전.
+            if (AActor* OwnerActor = GetOwner())
+            {
+                if (UPrimitiveComponent* RootPrim = Cast<UPrimitiveComponent>(OwnerActor->GetRootComponent()))
+                {
+                    if (RootPrim != this)
+                    {
+                        const FTransform CapsuleWorld(
+                            RootPrim->GetWorldLocation(),
+                            RootPrim->GetWorldRotation(),
+                            RootPrim->GetWorldScale());
+                        PhysicsSceneOwner->SetComponentWorldTransform(RootPrim, CapsuleWorld, /*bTeleport*/ true);
+                        PhysicsSceneOwner->SetLinearVelocity(RootPrim, RagdollEntryLinearVelocity);
+                    }
+                }
+            }
         }
         else
         {
-            RestoreOwnerCollisionAfterRagdoll();
+            RestoreOwnerMovementAfterRagdoll();
         }
     }
     else
@@ -1287,8 +1302,8 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
             }
         }
         bSimulatingPhysics = false;
-        // 진입 시 끈 형제 충돌 / 정지한 movement 복원 (dangling 안전).
-        RestoreOwnerCollisionAfterRagdoll();
+        // 진입 시 정지한 movement 복원 (dangling 안전).
+        RestoreOwnerMovementAfterRagdoll();
     }
 }
 
