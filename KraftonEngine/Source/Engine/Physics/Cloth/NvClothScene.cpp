@@ -14,6 +14,7 @@
 #include "NvClothExt/ClothMeshDesc.h"
 #include "foundation/PxAllocatorCallback.h"
 #include "foundation/PxErrorCallback.h"
+#include "foundation/PxQuat.h"
 #include "foundation/PxVec3.h"
 #include "foundation/PxVec4.h"
 
@@ -63,10 +64,17 @@ bool GClothCallbacksInitialized = false;
 constexpr float ClothSphereCollisionMargin = 1.0f;
 constexpr float ClothCapsuleCollisionMargin = 1.0f;
 constexpr float ClothBoxCollisionMargin = 1.0f;
+constexpr float ClothTeleportDistanceThreshold = 500.0f;
+constexpr float ClothTeleportRotationDotThreshold = 0.5f;
 
 physx::PxVec3 ToPxVec3(const FVector& Value)
 {
 	return physx::PxVec3(Value.X, Value.Y, Value.Z);
+}
+
+physx::PxQuat ToPxQuat(const FQuat& Value)
+{
+	return physx::PxQuat(Value.X, Value.Y, Value.Z, Value.W);
 }
 
 physx::PxVec4 ToPxParticle(const FClothParticle& Particle)
@@ -413,6 +421,9 @@ struct FNvClothInstanceRecord
 	FClothInstance Instance;
 	FClothCollisionDesc UserCollision;
 	FMatrix ClothWorldMatrix = FMatrix::Identity;
+	FVector LastClothWorldLocation = FVector::ZeroVector;
+	FQuat LastClothWorldRotation = FQuat::Identity;
+	bool bHasClothWorldTransform = false;
 	bool bUseRegisteredShapeCollision = false;
 	nv::cloth::Cloth* Cloth = nullptr;
 	FNvClothFabricRecord* FabricRecord = nullptr;
@@ -1249,7 +1260,43 @@ bool FNvClothScene::SetClothWorldMatrix(FClothInstance* Instance, const FMatrix&
 		return false;
 	}
 
+	const FVector NewLocation = WorldMatrix.GetLocation();
+	const FQuat NewRotation = WorldMatrix.ToQuat().GetNormalized();
+	if (Record->Cloth)
+	{
+		if (!Record->bHasClothWorldTransform)
+		{
+			Record->Cloth->teleportToLocation(ToPxVec3(NewLocation), ToPxQuat(NewRotation));
+			Record->Cloth->clearInertia();
+			Record->bHasClothWorldTransform = true;
+		}
+		else
+		{
+			const FVector DeltaLocation = NewLocation - Record->LastClothWorldLocation;
+			const float RotationDot = std::abs(
+				NewRotation.X * Record->LastClothWorldRotation.X
+				+ NewRotation.Y * Record->LastClothWorldRotation.Y
+				+ NewRotation.Z * Record->LastClothWorldRotation.Z
+				+ NewRotation.W * Record->LastClothWorldRotation.W);
+			const bool bLargeTeleport = DeltaLocation.LengthSquared() > ClothTeleportDistanceThreshold * ClothTeleportDistanceThreshold
+				|| RotationDot < ClothTeleportRotationDotThreshold;
+
+			if (bLargeTeleport)
+			{
+				Record->Cloth->teleportToLocation(ToPxVec3(NewLocation), ToPxQuat(NewRotation));
+				Record->Cloth->clearInertia();
+			}
+			else
+			{
+				Record->Cloth->setTranslation(ToPxVec3(NewLocation));
+				Record->Cloth->setRotation(ToPxQuat(NewRotation));
+			}
+		}
+	}
+
 	Record->ClothWorldMatrix = WorldMatrix;
+	Record->LastClothWorldLocation = NewLocation;
+	Record->LastClothWorldRotation = NewRotation;
 	Record->bUseRegisteredShapeCollision = true;
 	return true;
 }
