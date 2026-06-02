@@ -206,6 +206,9 @@ protected:
 
 	TArray<FBodyInstance*> Bodies;
 	TArray<FConstraintInstance*> Constraints;
+    // Body actor frame -> bone frame offset. With the current authoring path this is usually identity,
+    // but keeping it explicit prevents ragdoll write-back from assuming BodyWorld == BoneWorld forever.
+    TArray<FMatrix> BodyToBoneOffsets;
     IPhysicsScene* PhysicsSceneOwner = nullptr;
     FPhysicsAggregateHandle PhysicsAggregate;   // 래그돌 바디를 묶는 aggregate(자기충돌 제어). 무효면 직접 씬 추가.
     uint32 RagdollFilterGroupId = 0;            // per-pair 자기충돌 시뮬 필터 그룹 id(0=미설정). 인스턴스화마다 갱신.
