@@ -1643,7 +1643,16 @@ void FPhysXRuntime::DestroyVehicle4W(FVehicle4WInstance* Vehicle)
 		return;
 	}
 
-	Vehicles.erase(std::remove(Vehicles.begin(), Vehicles.end(), Vehicle), Vehicles.end());
+	// freed-safe 멤버십 가드: 추적 목록에 없는 vehicle(예: Shutdown 이 먼저 전부 해제한 뒤
+	// AVehicleActor::EndPlay 가 dangling VehicleInstance 로 재호출하는 경우)이면 deref/delete 전에
+	// 안전하게 빠진다. std::find 는 포인터 "주소" 비교만 하므로 freed 메모리를 deref 하지 않는다.
+	// (Vehicle->ChassisBody deref 와 delete Vehicle 의 double-free 를 차단)
+	auto VehicleIt = std::find(Vehicles.begin(), Vehicles.end(), Vehicle);
+	if (VehicleIt == Vehicles.end())
+	{
+		return;
+	}
+	Vehicles.erase(VehicleIt);
 
 	FPhysXVehicle4WData* Data = GetVehicleData(Vehicle);
 	if (Data)
