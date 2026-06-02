@@ -582,6 +582,37 @@ void FMeshEditorWidget::RenderBodySetupDetails(UBodySetup* Setup)
 	ImGui::Text("Body: %s", Setup->BoneName.c_str());
 	ImGui::Separator();
 
+	// Center를 월드 스페이스로 표시/편집하기 위한 본 트랜스폼
+	USkeletalMeshComponent* MeshComp_Detail = ViewportClient.GetPreviewMeshComponent();
+	const FSkeletalMesh* MeshAsset_Detail = (MeshComp_Detail && MeshComp_Detail->GetSkeletalMesh())
+	    ? MeshComp_Detail->GetSkeletalMesh()->GetSkeletalMeshAsset() : nullptr;
+	FVector BoneWorldPos  = FVector(0.f, 0.f, 0.f);
+	FQuat   BoneWorldQuat = FQuat::Identity;
+	if (MeshComp_Detail && MeshAsset_Detail)
+	{
+	    for (int32 i = 0; i < (int32)MeshAsset_Detail->Bones.size(); ++i)
+	    {
+	        if (MeshAsset_Detail->Bones[i].Name == Setup->BoneName)
+	        {
+	            BoneWorldPos  = MeshComp_Detail->GetBoneLocationByIndex(i);
+	            BoneWorldQuat = MeshComp_Detail->GetBoneQuatByIndex(i);
+	            break;
+	        }
+	    }
+	}
+	// localCenter ↔ 월드 변환 후 DragFloat3 표시. 편집 시 역변환해서 로컬로 저장.
+	auto EditCenterWorld = [&](FVector& LocalCenter) -> bool
+	{
+	    FVector W = BoneWorldPos + BoneWorldQuat.RotateVector(LocalCenter);
+	    float Arr[3] = { W.X, W.Y, W.Z };
+	    if (ImGui::DragFloat3("Center (World)", Arr, 0.1f))
+	    {
+	        LocalCenter = BoneWorldQuat.Inverse().RotateVector(FVector(Arr[0], Arr[1], Arr[2]) - BoneWorldPos);
+	        return true;
+	    }
+	    return false;
+	};
+
 	if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		if (ImGui::DragFloat("Mass (kg)",       &Setup->Mass,           0.01f, 0.001f, 1000.f)) MarkDirty();
@@ -625,7 +656,7 @@ void FMeshEditorWidget::RenderBodySetupDetails(UBodySetup* Setup)
 			}
 			if (bOpen)
 			{
-				if (ImGui::DragFloat3("Center", &E.Center.X, 0.1f)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
+				if (EditCenterWorld(E.Center)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
 				if (ImGui::DragFloat("Radius",  &E.Radius,   0.01f, 0.01f, 500.f)) MarkDirty();
 				if (ImGui::SmallButton("Remove"))
 				{
@@ -654,7 +685,7 @@ void FMeshEditorWidget::RenderBodySetupDetails(UBodySetup* Setup)
 			}
 			if (bOpen)
 			{
-				if (ImGui::DragFloat3("Center", &E.Center.X, 0.1f)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
+				if (EditCenterWorld(E.Center)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
 				if (ImGui::DragFloat("Half X",  &E.HalfX, 0.01f, 0.01f, 500.f)) MarkDirty();
 				if (ImGui::DragFloat("Half Y",  &E.HalfY, 0.01f, 0.01f, 500.f)) MarkDirty();
 				if (ImGui::DragFloat("Half Z",  &E.HalfZ, 0.01f, 0.01f, 500.f)) MarkDirty();
@@ -685,7 +716,7 @@ void FMeshEditorWidget::RenderBodySetupDetails(UBodySetup* Setup)
 			}
 			if (bOpen)
 			{
-				if (ImGui::DragFloat3("Center", &E.Center.X, 0.1f)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
+				if (EditCenterWorld(E.Center)) { MarkDirty(); UpdatePhysicsShapeGizmo(); }
 				if (ImGui::DragFloat("Radius",      &E.Radius, 0.01f, 0.01f, 500.f)) MarkDirty();
 				if (ImGui::DragFloat("Half Height", &E.HalfHeight, 0.01f, 0.01f, 500.f)) MarkDirty();
 				if (ImGui::SmallButton("Remove"))
