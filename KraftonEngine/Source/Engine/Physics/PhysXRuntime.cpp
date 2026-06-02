@@ -1141,6 +1141,11 @@ FBodyInstance* FPhysXRuntime::CreateRigidBody(const FPhysicsBodyDesc& Desc)
 			Dynamic->setRigidBodyFlag(PxRigidBodyFlag::eENABLE_CCD, Desc.bEnableCCD);
 			Dynamic->setLinearDamping(Desc.LinearDamping);
 			Dynamic->setAngularDamping(Desc.AngularDamping);
+			// 깊이침투(depenetration) 분리 속도 상한. 미설정 시 PhysX 기본값은 사실상 무제한이라,
+			// 래그돌 진입 순간 인접 바디/바닥과의 겹침이 한 스텝에 폭발적으로 풀리며 액터가 솟아오른다.
+			// 월드 단위는 미터(TolerancesScale.length=1, gravity=-9.81)이므로 1 m/s 로 클램프해
+			// 튐을 막는다(5cm 겹침이 ~3프레임에 해소). 값은 솟구침/끼임 사이에서 튜닝 가능.
+			Dynamic->setMaxDepenetrationVelocity(1.0f);
 		}
 		Actor = Dynamic;
 	}
