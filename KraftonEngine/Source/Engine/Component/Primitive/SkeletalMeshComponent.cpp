@@ -1289,10 +1289,15 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
 
     const int32 BoneCount = static_cast<int32>(Asset->Bones.size());
 
-    // 본 인덱스 오름차순 = parent-first 가 엔진 규약이라 단순 순회로 부모 글로벌이 항상 채워진 뒤
-    // 자식이 사용한다. ComponentLocalGlobals[i] 는 component-local 본 글로벌 행렬을 누적한다.
+    // ComponentLocalGlobals[i] 는 component-local 본 글로벌 행렬을 누적한다.
+    // 1) body 가 있는 본은 PhysX 결과로 채운다.
+    // 2) body 가 없는 중간 본은 유효한 자식 본에서 ref local 을 역산해 따라오게 한다.
+    // 3) 남은 본은 parent-first ref pose 로 채운 뒤, 마지막에 local pose 로 변환한다.
     TArray<FMatrix> ComponentLocalGlobals;
     ComponentLocalGlobals.resize(BoneCount, FMatrix::Identity);
+
+    TArray<uint8> bHasSolvedGlobal;
+    bHasSolvedGlobal.assign(BoneCount, 0);
 
     TArray<FTransform> LocalPose;
     LocalPose.resize(BoneCount);
@@ -1304,16 +1309,7 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
 
     for (int32 BoneIndex = 0; BoneIndex < BoneCount; ++BoneIndex)
     {
-        const int32 ParentIndex = Asset->Bones[BoneIndex].ParentIndex;
-        const FMatrix ParentGlobal = (ParentIndex >= 0)
-            ? ComponentLocalGlobals[ParentIndex]
-            : FMatrix::Identity;
-        const FMatrix RefLocal = Asset->Bones[BoneIndex].GetReferenceLocalPose();
-
         FBodyInstance* Body = (BoneIndex < static_cast<int32>(Bodies.size())) ? Bodies[BoneIndex] : nullptr;
-
-        FMatrix LocalMatrix = RefLocal;
-        FMatrix ComponentGlobal = RefLocal * ParentGlobal;
 
         if (Body && Body->bValid)
         {
@@ -1327,7 +1323,7 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
                 }
 
                 // body world -> bone world -> component-local global.
-                ComponentGlobal = BoneWorldMatrix * ComponentWorldInv;
+                FMatrix ComponentGlobal = BoneWorldMatrix * ComponentWorldInv;
 
                 // 컴포넌트 월드 스케일(예: 씬 2x)이 ComponentWorldInv 를 통해 본 글로벌 선형부에 1/S 로
                 // 새어들어가 스키닝 행렬(InverseBind * Global)을 왜곡한다 → 메시가 body 에 쪼그라들어 끼는 현상.
@@ -1340,14 +1336,54 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
                 GlobalNoScale.Scale = FVector::OneVector;
                 ComponentGlobal = GlobalNoScale.ToMatrix();
 
-                // 루트(ParentIndex < 0)는 ParentGlobal == Identity 이므로 component global 이 곧 local 이 된다.
-                LocalMatrix = (ParentIndex >= 0)
-                    ? ComponentGlobal * ParentGlobal.GetInverse()
-                    : ComponentGlobal;
+                ComponentLocalGlobals[BoneIndex] = ComponentGlobal;
+                bHasSolvedGlobal[BoneIndex] = 1;
             }
         }
+    }
 
-        ComponentLocalGlobals[BoneIndex] = ComponentGlobal;
+    for (int32 BoneIndex = BoneCount - 1; BoneIndex >= 0; --BoneIndex)
+    {
+        if (bHasSolvedGlobal[BoneIndex])
+        {
+            continue;
+        }
+
+        for (int32 ChildIndex = 0; ChildIndex < BoneCount; ++ChildIndex)
+        {
+            if (Asset->Bones[ChildIndex].ParentIndex != BoneIndex || !bHasSolvedGlobal[ChildIndex])
+            {
+                continue;
+            }
+
+            const FMatrix ChildRefLocal = Asset->Bones[ChildIndex].GetReferenceLocalPose();
+            ComponentLocalGlobals[BoneIndex] = ChildRefLocal.GetInverse() * ComponentLocalGlobals[ChildIndex];
+            bHasSolvedGlobal[BoneIndex] = 1;
+            break;
+        }
+    }
+
+    for (int32 BoneIndex = 0; BoneIndex < BoneCount; ++BoneIndex)
+    {
+        if (!bHasSolvedGlobal[BoneIndex])
+        {
+            const int32 ParentIndex = Asset->Bones[BoneIndex].ParentIndex;
+            const FMatrix ParentGlobal = (ParentIndex >= 0)
+                ? ComponentLocalGlobals[ParentIndex]
+                : FMatrix::Identity;
+            ComponentLocalGlobals[BoneIndex] = Asset->Bones[BoneIndex].GetReferenceLocalPose() * ParentGlobal;
+        }
+    }
+
+    for (int32 BoneIndex = 0; BoneIndex < BoneCount; ++BoneIndex)
+    {
+        const int32 ParentIndex = Asset->Bones[BoneIndex].ParentIndex;
+        const FMatrix ParentGlobal = (ParentIndex >= 0)
+            ? ComponentLocalGlobals[ParentIndex]
+            : FMatrix::Identity;
+        const FMatrix LocalMatrix = (ParentIndex >= 0)
+            ? ComponentLocalGlobals[BoneIndex] * ParentGlobal.GetInverse()
+            : ComponentLocalGlobals[BoneIndex];
         LocalPose[BoneIndex] = FTransform(LocalMatrix);
     }
 
