@@ -11,6 +11,13 @@
 struct ID3D11Device;
 class UBodySetup;
 
+enum class EStaticMeshSimpleCollisionShape : uint8
+{
+	Box,
+	Sphere,
+	Capsule,
+};
+
 // LOD 단계별 GPU 리소스
 struct FLODMeshData
 {
@@ -41,6 +48,11 @@ public:
 
 	void InitResources(ID3D11Device* InDevice);
 
+	UBodySetup* GetBodySetup() const { return BodyInstance; }
+	UBodySetup* GetOrCreateBodySetup();
+	void ClearBodySetup();
+	bool GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeType);
+
 	//스태틱 메시 picking / Mesh Decal 최적화를 위한 BVH 트리 빌드 및 판정 호출 함수
 	void EnsureMeshTrianglePickingBVHBuilt() const;
 	bool RaycastMeshTrianglesWithBVHLocal(const FVector& LocalOrigin, const FVector& LocalDirection, FHitResult& OutHitResult) const;
@@ -61,5 +73,5 @@ private:
 	FLODMeshData AdditionalLODs[3];
 	bool bHasLOD = false;
 
-	UBodySetup* BodyInstance;
+	UBodySetup* BodyInstance = nullptr;
 };

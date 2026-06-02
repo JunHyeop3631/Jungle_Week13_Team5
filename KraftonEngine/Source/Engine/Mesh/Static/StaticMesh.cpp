@@ -6,6 +6,57 @@
 #include "Texture/Texture2D.h"
 #include "Engine/Profiling/Stats/MemoryStats.h"
 #include "Mesh/MeshSimplifier.h"
+#include "Physics/Asset/BodySetup.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace
+{
+	constexpr float StaticMeshCollisionPi = 3.14159265358979323846f;
+	constexpr const char* StaticMeshBodyName = "StaticMesh";
+
+	FVector GetAxisVector(int32 Axis)
+	{
+		if (Axis == 1) return FVector(0.0f, 1.0f, 0.0f);
+		if (Axis == 2) return FVector(0.0f, 0.0f, 1.0f);
+		return FVector(1.0f, 0.0f, 0.0f);
+	}
+
+	float GetAxisValue(const FVector& V, int32 Axis)
+	{
+		if (Axis == 1) return V.Y;
+		if (Axis == 2) return V.Z;
+		return V.X;
+	}
+
+	FQuat MakeRotationFromCapsuleXAxisToAxis(int32 Axis)
+	{
+		if (Axis == 1)
+		{
+			return FQuat::FromAxisAngle(FVector(0.0f, 0.0f, 1.0f), StaticMeshCollisionPi * 0.5f);
+		}
+		if (Axis == 2)
+		{
+			return FQuat::FromAxisAngle(FVector(0.0f, 1.0f, 0.0f), -StaticMeshCollisionPi * 0.5f);
+		}
+		return FQuat::Identity;
+	}
+
+	void ResetBodyForStaticMesh(UBodySetup* Body)
+	{
+		if (!Body) return;
+
+		Body->BoneName = StaticMeshBodyName;
+		Body->AggregateGeom.SphereElems.clear();
+		Body->AggregateGeom.BoxElems.clear();
+		Body->AggregateGeom.CapsuleElems.clear();
+		Body->bSimulatePhysics = false;
+		Body->bEnableGravity = false;
+		Body->PhysicsType = EBodyPhysicsType::Kinematic;
+		Body->CollisionEnabled = EBodyCollisionEnabled::QueryAndPhysics;
+	}
+}
 
 UStaticMesh::~UStaticMesh()
 {
@@ -17,6 +68,9 @@ UStaticMesh::~UStaticMesh()
 
 		MemoryStats::SubStaticMeshCPUMemory(CPUSize);
 	}
+
+	delete BodyInstance;
+	BodyInstance = nullptr;
 }
 
 void UStaticMesh::Serialize(FArchive& Ar)
@@ -191,4 +245,106 @@ const TArray<FStaticMeshSection>& UStaticMesh::GetLODSections(uint32 LODLevel) c
 	if (LODLevel >= 1 && LODLevel <= 3 && bHasLOD)
 		return AdditionalLODs[LODLevel - 1].Sections;
 	return StaticMeshAsset ? StaticMeshAsset->Sections : EmptySections;
+}
+
+UBodySetup* UStaticMesh::GetOrCreateBodySetup()
+{
+	if (!BodyInstance)
+	{
+		BodyInstance = new UBodySetup();
+		ResetBodyForStaticMesh(BodyInstance);
+	}
+	return BodyInstance;
+}
+
+void UStaticMesh::ClearBodySetup()
+{
+	delete BodyInstance;
+	BodyInstance = nullptr;
+}
+
+bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeType)
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty())
+	{
+		return false;
+	}
+
+	if (!StaticMeshAsset->bBoundsValid)
+	{
+		StaticMeshAsset->CacheBounds();
+	}
+	if (!StaticMeshAsset->bBoundsValid)
+	{
+		return false;
+	}
+
+	UBodySetup* Body = GetOrCreateBodySetup();
+	ResetBodyForStaticMesh(Body);
+
+	const FVector Center = StaticMeshAsset->BoundsCenter;
+	const FVector Extent = StaticMeshAsset->BoundsExtent;
+
+	switch (ShapeType)
+	{
+	case EStaticMeshSimpleCollisionShape::Box:
+	{
+		FKBoxElem Box;
+		Box.Center = Center;
+		Box.Rotation = FQuat::Identity;
+		Box.HalfX = (std::max)(Extent.X, 0.001f);
+		Box.HalfY = (std::max)(Extent.Y, 0.001f);
+		Box.HalfZ = (std::max)(Extent.Z, 0.001f);
+		Body->AggregateGeom.BoxElems.push_back(Box);
+		return true;
+	}
+	case EStaticMeshSimpleCollisionShape::Sphere:
+	{
+		float RadiusSq = 0.0f;
+		for (const FNormalVertex& Vertex : StaticMeshAsset->Vertices)
+		{
+			const FVector Delta = Vertex.pos - Center;
+			RadiusSq = (std::max)(RadiusSq, Delta.X * Delta.X + Delta.Y * Delta.Y + Delta.Z * Delta.Z);
+		}
+
+		FKSphereElem Sphere;
+		Sphere.Center = Center;
+		Sphere.Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
+		Body->AggregateGeom.SphereElems.push_back(Sphere);
+		return true;
+	}
+	case EStaticMeshSimpleCollisionShape::Capsule:
+	{
+		int32 Axis = 0;
+		if (Extent.Y > Extent.X && Extent.Y >= Extent.Z) Axis = 1;
+		else if (Extent.Z > Extent.X && Extent.Z > Extent.Y) Axis = 2;
+
+		float MinAxis = GetAxisValue(StaticMeshAsset->Vertices[0].pos, Axis);
+		float MaxAxis = MinAxis;
+		float RadiusSq = 0.0f;
+		const FVector AxisVector = GetAxisVector(Axis);
+		for (const FNormalVertex& Vertex : StaticMeshAsset->Vertices)
+		{
+			const float AxisValue = GetAxisValue(Vertex.pos, Axis);
+			MinAxis = (std::min)(MinAxis, AxisValue);
+			MaxAxis = (std::max)(MaxAxis, AxisValue);
+
+			const FVector AxialPoint = Center + AxisVector * (AxisValue - GetAxisValue(Center, Axis));
+			const FVector Perp = Vertex.pos - AxialPoint;
+			RadiusSq = (std::max)(RadiusSq, Perp.X * Perp.X + Perp.Y * Perp.Y + Perp.Z * Perp.Z);
+		}
+
+		const float Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
+		const float HalfAxisLength = (std::max)((MaxAxis - MinAxis) * 0.5f, Radius);
+		FKCapsuleElem Capsule;
+		Capsule.Center = Center;
+		Capsule.Rotation = MakeRotationFromCapsuleXAxisToAxis(Axis);
+		Capsule.Radius = Radius;
+		Capsule.HalfHeight = HalfAxisLength;
+		Body->AggregateGeom.CapsuleElems.push_back(Capsule);
+		return true;
+	}
+	default:
+		return false;
+	}
 }

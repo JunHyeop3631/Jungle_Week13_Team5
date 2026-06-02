@@ -3,12 +3,14 @@
 #include "Physics/PhysXHelpers.h"
 #include "Physics/PhysXSceneLock.h"
 #include "Component/PrimitiveComponent.h"
+#include "Component/Primitive/StaticMeshComponent.h"
 #include "Component/Shape/BoxComponent.h"
 #include "Component/Shape/CapsuleComponent.h"
 #include "Component/Shape/SphereComponent.h"
 #include "GameFramework/AActor.h"
 #include "Object/Object.h"
 #include "Core/Logging/Log.h"
+#include "Physics/Asset/BodySetup.h"
 
 #include <algorithm>
 #include <cmath>
@@ -58,6 +60,99 @@ namespace
 			}
 		}
 		return false;
+	}
+
+	float GetMaxAbsScale(const FVector& Scale)
+	{
+		return (std::max)((std::max)(std::abs(Scale.X), std::abs(Scale.Y)), std::abs(Scale.Z));
+	}
+
+	bool IsBodyQueryCollisionEnabled(const UBodySetup& BodySetup)
+	{
+		return BodySetup.CollisionEnabled == EBodyCollisionEnabled::QueryOnly
+			|| BodySetup.CollisionEnabled == EBodyCollisionEnabled::QueryAndPhysics;
+	}
+
+	bool IsBodyPhysicsCollisionEnabled(const UBodySetup& BodySetup)
+	{
+		return BodySetup.CollisionEnabled == EBodyCollisionEnabled::PhysicsOnly
+			|| BodySetup.CollisionEnabled == EBodyCollisionEnabled::QueryAndPhysics;
+	}
+
+	void ApplyBodyMaterial(const UBodySetup& BodySetup, FPhysicsShapeDesc& ShapeDesc)
+	{
+		ShapeDesc.Material.StaticFriction = BodySetup.Friction;
+		ShapeDesc.Material.DynamicFriction = BodySetup.Friction;
+		ShapeDesc.Material.Restitution = BodySetup.Restitution;
+	}
+
+	void ApplyCollisionFlags(const UPrimitiveComponent* Comp, const UBodySetup& BodySetup, FPhysicsShapeDesc& ShapeDesc)
+	{
+		const bool bBodyQuery = IsBodyQueryCollisionEnabled(BodySetup);
+		const bool bBodyPhysics = IsBodyPhysicsCollisionEnabled(BodySetup);
+		const bool bHasBlockResponse = HasAnyBlockResponse(Comp);
+		const bool bTrigger = Comp && Comp->GetGenerateOverlapEvents()
+			&& (!Comp->IsPhysicsCollisionEnabled() || !bBodyPhysics || !bHasBlockResponse);
+
+		ShapeDesc.bTriggerShape = bTrigger;
+		ShapeDesc.bSimulationShape = !bTrigger && bBodyPhysics && Comp && Comp->IsPhysicsCollisionEnabled();
+		ShapeDesc.bSceneQueryShape = bBodyQuery && Comp && Comp->IsQueryCollisionEnabled();
+	}
+
+	void AppendStaticMeshBodySetupShapes(const UStaticMeshComponent* Comp, const UBodySetup& BodySetup, FPhysicsBodyDesc& BodyDesc)
+	{
+		const FVector Scale = Comp ? Comp->GetWorldScale() : FVector(1.0f, 1.0f, 1.0f);
+		const FVector AbsScale(std::abs(Scale.X), std::abs(Scale.Y), std::abs(Scale.Z));
+		const float UniformScale = (std::max)(GetMaxAbsScale(AbsScale), 0.001f);
+
+		for (const FKSphereElem& Sphere : BodySetup.AggregateGeom.SphereElems)
+		{
+			FPhysicsShapeDesc ShapeDesc;
+			ShapeDesc.Name = BodySetup.BoneName + "_Sphere";
+			ShapeDesc.ShapeType = EPhysicsShapeType::Sphere;
+			ShapeDesc.LocalTransform = FTransform(
+				FVector(Sphere.Center.X * Scale.X, Sphere.Center.Y * Scale.Y, Sphere.Center.Z * Scale.Z),
+				FQuat::Identity,
+				FVector(1.0f, 1.0f, 1.0f));
+			ShapeDesc.Radius = (std::max)(Sphere.Radius * UniformScale, 0.001f);
+			ApplyBodyMaterial(BodySetup, ShapeDesc);
+			ApplyCollisionFlags(Comp, BodySetup, ShapeDesc);
+			BodyDesc.Shapes.push_back(ShapeDesc);
+		}
+
+		for (const FKBoxElem& Box : BodySetup.AggregateGeom.BoxElems)
+		{
+			FPhysicsShapeDesc ShapeDesc;
+			ShapeDesc.Name = BodySetup.BoneName + "_Box";
+			ShapeDesc.ShapeType = EPhysicsShapeType::Box;
+			ShapeDesc.LocalTransform = FTransform(
+				FVector(Box.Center.X * Scale.X, Box.Center.Y * Scale.Y, Box.Center.Z * Scale.Z),
+				Box.Rotation,
+				FVector(1.0f, 1.0f, 1.0f));
+			ShapeDesc.HalfExtent = FVector(
+				(std::max)(Box.HalfX * AbsScale.X, 0.001f),
+				(std::max)(Box.HalfY * AbsScale.Y, 0.001f),
+				(std::max)(Box.HalfZ * AbsScale.Z, 0.001f));
+			ApplyBodyMaterial(BodySetup, ShapeDesc);
+			ApplyCollisionFlags(Comp, BodySetup, ShapeDesc);
+			BodyDesc.Shapes.push_back(ShapeDesc);
+		}
+
+		for (const FKCapsuleElem& Capsule : BodySetup.AggregateGeom.CapsuleElems)
+		{
+			FPhysicsShapeDesc ShapeDesc;
+			ShapeDesc.Name = BodySetup.BoneName + "_Capsule";
+			ShapeDesc.ShapeType = EPhysicsShapeType::Capsule;
+			ShapeDesc.LocalTransform = FTransform(
+				FVector(Capsule.Center.X * Scale.X, Capsule.Center.Y * Scale.Y, Capsule.Center.Z * Scale.Z),
+				Capsule.Rotation,
+				FVector(1.0f, 1.0f, 1.0f));
+			ShapeDesc.Radius = (std::max)(Capsule.Radius * UniformScale, 0.001f);
+			ShapeDesc.HalfHeight = (std::max)(0.0f, Capsule.HalfHeight - Capsule.Radius) * UniformScale;
+			ApplyBodyMaterial(BodySetup, ShapeDesc);
+			ApplyCollisionFlags(Comp, BodySetup, ShapeDesc);
+			BodyDesc.Shapes.push_back(ShapeDesc);
+		}
 	}
 
 	PxFilterData BuildComponentFilterData(const UPrimitiveComponent* Comp)
@@ -918,6 +1013,28 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 		ShapeDesc.HalfHeight = (std::max)(0.0f, HalfHeight - Radius);
 		// PhysX capsules are X-axis aligned; engine capsules use local Z as their long axis.
 		ShapeDesc.LocalTransform.Rotation = FQuat::FromAxisAngle(FVector(0.0f, 1.0f, 0.0f), -PhysicsPi * 0.5f);
+	}
+	else if (UStaticMeshComponent* StaticMeshComp = Cast<UStaticMeshComponent>(Comp))
+	{
+		UBodySetup* BodySetup = StaticMeshComp->GetBodySetup();
+		if (!BodySetup || BodySetup->AggregateGeom.IsEmpty() || BodySetup->CollisionEnabled == EBodyCollisionEnabled::NoCollision)
+		{
+			return false;
+		}
+
+		OutDesc = FPhysicsBodyDesc();
+		OutDesc.OwnerComponent = Comp;
+		OutDesc.BodyName = BodySetup->BoneName.empty() ? FString("StaticMesh") : BodySetup->BoneName;
+		OutDesc.BodyType = Comp->GetSimulatePhysics() ? EPhysicsBodyType::Dynamic : EPhysicsBodyType::Static;
+		OutDesc.WorldTransform = FTransform(Comp->GetWorldLocation(), Comp->GetWorldRotation(), FVector(1.0f, 1.0f, 1.0f));
+		OutDesc.Mass = std::max(0.001f, Comp->GetMass() > 0.0f ? Comp->GetMass() : BodySetup->Mass);
+		OutDesc.LinearDamping = BodySetup->LinearDamping;
+		OutDesc.AngularDamping = BodySetup->AngularDamping;
+		OutDesc.bUseGravity = BodySetup->bEnableGravity;
+		OutDesc.bEnableCCD = Comp->GetSimulatePhysics();
+
+		AppendStaticMeshBodySetupShapes(StaticMeshComp, *BodySetup, OutDesc);
+		return !OutDesc.Shapes.empty();
 	}
 	else
 	{

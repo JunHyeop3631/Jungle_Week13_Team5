@@ -93,6 +93,11 @@ UStaticMesh* UStaticMeshComponent::GetStaticMesh() const
 	return StaticMesh;
 }
 
+UBodySetup* UStaticMeshComponent::GetBodySetup() const
+{
+	return StaticMesh ? StaticMesh->GetBodySetup() : nullptr;
+}
+
 void UStaticMeshComponent::SetMaterial(int32 ElementIndex, UMaterialInterface* InMaterial)
 {
 	if (ElementIndex >= 0 && ElementIndex < static_cast<int32>(OverrideMaterials.size()))
