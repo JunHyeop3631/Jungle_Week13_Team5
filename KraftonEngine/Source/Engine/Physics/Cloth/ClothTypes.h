@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Core/Types/CoreTypes.h"
 #include "Math/Vector.h"
@@ -126,10 +126,23 @@ struct FClothCollisionCapsule
 	uint32 SphereB = 0;
 };
 
+struct FClothCollisionPlane
+{
+	FVector Normal = FVector::UpVector;
+	float Distance = 0.0f;
+};
+
+struct FClothCollisionConvex
+{
+	uint32 PlaneMask = 0;
+};
+
 struct FClothCollisionDesc
 {
 	TArray<FClothCollisionSphere> Spheres;
 	TArray<FClothCollisionCapsule> Capsules;
+	TArray<FClothCollisionPlane> Planes;
+	TArray<FClothCollisionConvex> Convexes;
 };
 
 struct FClothPinnedParticle
@@ -222,6 +235,8 @@ struct FClothStats
 	uint32 NumSeparationConstraints = 0;
 	uint32 NumCollisionSpheres = 0;
 	uint32 NumCollisionCapsules = 0;
+	uint32 NumCollisionPlanes = 0;
+	uint32 NumCollisionConvexes = 0;
 	uint32 NumSolverChunks = 0;
 	float LastSimulationMs = 0.0f;
 	bool bSolverError = false;
@@ -237,6 +252,8 @@ struct FClothStats
 		NumSeparationConstraints += Other.NumSeparationConstraints;
 		NumCollisionSpheres += Other.NumCollisionSpheres;
 		NumCollisionCapsules += Other.NumCollisionCapsules;
+		NumCollisionPlanes += Other.NumCollisionPlanes;
+		NumCollisionConvexes += Other.NumCollisionConvexes;
 		NumSolverChunks = (NumSolverChunks > Other.NumSolverChunks) ? NumSolverChunks : Other.NumSolverChunks;
 		LastSimulationMs = (LastSimulationMs > Other.LastSimulationMs) ? LastSimulationMs : Other.LastSimulationMs;
 		bSolverError = bSolverError || Other.bSolverError;
