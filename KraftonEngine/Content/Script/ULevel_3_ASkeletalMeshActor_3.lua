@@ -117,6 +117,23 @@ local function stop_raygun()
     end
 end
 
+-- "R" 토글: ragdoll(dynamic) <-> kinematic.
+-- SetSimulatingPhysics(true) 는 바디가 없으면 월드 물리 씬에서 자동 인스턴스화한 뒤 진입하고,
+-- (false) 는 바디를 kinematic 으로 되돌려 애님 경로로 복귀시킨다.
+local function toggle_ragdoll()
+    if mesh == nil or not mesh:HasPhysicsAsset() then
+        return
+    end
+
+    if mesh:IsSimulatingPhysics() then
+        mesh:SetSimulatingPhysics(false)
+        print("[Ragdoll] kinematic mode")
+    else
+        mesh:SetSimulatingPhysics(true)
+        print("[Ragdoll] ragdoll mode")
+    end
+end
+
 local function update_raygun_beam()
     if gunActor == nil then
         stop_raygun()
@@ -149,6 +166,11 @@ end
 function Tick(dt)
     if mesh == nil then
         return
+    end
+
+    -- "R" 한 번 누를 때마다 ragdoll <-> kinematic 토글 (GetKeyDown 은 눌린 프레임만 true).
+    if Input.GetKeyDown(Key.R) then
+        toggle_ragdoll()
     end
 
     local mode = _G.YuiCombatMode or "Sword"
