@@ -2258,6 +2258,30 @@ void FPhysXRuntime::SetBodyType(FBodyInstance* Body, EPhysicsBodyType NewType)
 	}
 }
 
+void FPhysXRuntime::SetBodyLinearVelocity(FBodyInstance* Body, const FVector& Velocity)
+{
+	// kinematic 바디에 선형 속도를 주면 PhysX 가 막고 경고한다 — Dynamic 일 때만 적용.
+	if (!Body || Body->BodyType != EPhysicsBodyType::Dynamic)
+	{
+		return;
+	}
+
+	PxRigidDynamic* Dynamic = GetPxDynamic(Body);
+	if (!Scene || !Dynamic)
+	{
+		return;
+	}
+
+	PHYSX_SCENE_WRITE_LOCK(Scene);
+	Dynamic->setLinearVelocity(ToPxVec3(Velocity));
+}
+
+void FPhysXRuntime::SetComponentWorldTransform(UPrimitiveComponent* Comp, const FTransform& WorldTransform, bool bTeleport)
+{
+	// 컴포넌트의 단일 바디를 찾아 그대로 SetBodyTransform 에 위임(바디 없으면 내부에서 no-op).
+	SetBodyTransform(FindBodyByComponent(Comp), WorldTransform, bTeleport);
+}
+
 void FPhysXRuntime::SetRagdollBodyFilter(FBodyInstance* Body, uint32 GroupId, uint32 BodyIndex, uint32 IgnoreMask)
 {
 	if (!Scene || !Body || GroupId == 0 || BodyIndex > 31)

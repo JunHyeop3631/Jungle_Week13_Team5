@@ -76,6 +76,15 @@ public:
 	// Static conversion would require actor recreation, so runtime implementations may ignore it.
 	virtual void SetBodyType(FBodyInstance* Body, EPhysicsBodyType NewType) = 0;
 
+	// 바디 단위 선형 속도 설정(단위 m/s). 래그돌 진입 시 이동/낙하 관성을 각 바디에 직접 부여하는 용도.
+	// Comp 단위 SetLinearVelocity 와 달리 인스턴스화된 ragdoll 바디(FBodyInstance) 를 직접 가리킨다.
+	virtual void SetBodyLinearVelocity(FBodyInstance* Body, const FVector& Velocity) = 0;
+
+	// 컴포넌트의 물리 바디를 주어진 월드 트랜스폼으로 강제 이동(teleport=setGlobalPose). 씬 트랜스폼만
+	// 옮기는 SceneComponent::SetWorldLocation 과 달리 물리 바디 위치를 직접 맞춘다. movement 가
+	// 씬만 옮기는 동안 벌어진 캡슐의 물리↔씬 위치 불일치를, 래그돌 진입 시 현재 위치로 동기화하는 용도.
+	virtual void SetComponentWorldTransform(UPrimitiveComponent* Comp, const FTransform& WorldTransform, bool bTeleport = true) = 0;
+
 	// 래그돌 자기충돌 per-pair 비활성. GroupId 는 래그돌마다 nonzero/유일, BodyIndex 는 [0,31],
 	// IgnoreMask 는 충돌을 끌 peer 인덱스 비트들의 OR. 시뮬 필터 데이터만 갱신(query 무손상). 최대 32바디.
 	virtual void SetRagdollBodyFilter(FBodyInstance* Body, uint32 GroupId, uint32 BodyIndex, uint32 IgnoreMask) = 0;

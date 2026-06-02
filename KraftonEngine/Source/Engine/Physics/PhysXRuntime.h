@@ -77,6 +77,8 @@ public:
 	void SetBodyTransform(FBodyInstance* Body, const FTransform& Transform, bool bTeleport = true) override;
 	void SetKinematicTarget(FBodyInstance* Body, const FTransform& Transform) override;
 	void SetBodyType(FBodyInstance* Body, EPhysicsBodyType NewType) override;
+	void SetBodyLinearVelocity(FBodyInstance* Body, const FVector& Velocity) override;
+	void SetComponentWorldTransform(UPrimitiveComponent* Comp, const FTransform& WorldTransform, bool bTeleport = true) override;
 	void SetRagdollBodyFilter(FBodyInstance* Body, uint32 GroupId, uint32 BodyIndex, uint32 IgnoreMask) override;
 
 	void GetPhysicsStats(FPhysicsStats& OutStats) const override;
