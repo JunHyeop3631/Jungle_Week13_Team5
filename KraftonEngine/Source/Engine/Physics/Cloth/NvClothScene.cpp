@@ -60,6 +60,9 @@ FNvClothAllocator GClothAllocator;
 FNvClothErrorCallback GClothErrorCallback;
 FNvClothAssertHandler GClothAssertHandler;
 bool GClothCallbacksInitialized = false;
+constexpr float ClothSphereCollisionMargin = 1.0f;
+constexpr float ClothCapsuleCollisionMargin = 1.0f;
+constexpr float ClothBoxCollisionMargin = 1.0f;
 
 physx::PxVec3 ToPxVec3(const FVector& Value)
 {
@@ -478,6 +481,7 @@ FClothCollisionPlane MakePlaneFromPointNormal(const FVector& Point, const FVecto
 void AppendBoxConvexToClothCollision(
 	const UBoxComponent* Box,
 	const FMatrix& ClothWorldInverse,
+	float Margin,
 	FClothCollisionDesc& OutCollision)
 {
 	if (!Box)
@@ -508,8 +512,8 @@ void AppendBoxConvexToClothCollision(
 		const FVector Axis = WorldAxes[AxisIndex];
 		const float AxisExtent = WorldExtents[AxisIndex];
 
-		const FVector PositivePointWorld = Center + Axis * AxisExtent;
-		const FVector NegativePointWorld = Center - Axis * AxisExtent;
+		const FVector PositivePointWorld = Center + Axis * (AxisExtent + Margin);
+		const FVector NegativePointWorld = Center - Axis * (AxisExtent + Margin);
 
 		const FVector PositivePointLocal = TransformPoint(ClothWorldInverse, PositivePointWorld);
 		const FVector PositiveNormalLocal = SafeNormal(
@@ -561,7 +565,7 @@ bool AppendShapeColliderToClothCollision(
 
 	if (const USphereComponent* Sphere = Cast<USphereComponent>(Shape))
 	{
-		const float Radius = Sphere->GetScaledSphereRadius() * RadiusScale;
+		const float Radius = (Sphere->GetScaledSphereRadius() + ClothSphereCollisionMargin) * RadiusScale;
 		if (Radius <= 0.0f)
 		{
 			return false;
@@ -578,7 +582,7 @@ bool AppendShapeColliderToClothCollision(
 	{
 		const float WorldRadius = Capsule->GetScaledCapsuleRadius();
 		const float WorldHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
-		const float Radius = WorldRadius * RadiusScale;
+		const float Radius = (WorldRadius + ClothCapsuleCollisionMargin) * RadiusScale;
 		const float SegmentHalfLength = (std::max)(0.0f, WorldHalfHeight - WorldRadius);
 		if (Radius <= 0.0f || WorldHalfHeight <= 0.0f)
 		{
@@ -614,7 +618,7 @@ bool AppendShapeColliderToClothCollision(
 
 	if (const UBoxComponent* Box = Cast<UBoxComponent>(Shape))
 	{
-		AppendBoxConvexToClothCollision(Box, ClothWorldInverse, OutCollision);
+		AppendBoxConvexToClothCollision(Box, ClothWorldInverse, ClothBoxCollisionMargin, OutCollision);
 		return true;
 	}
 
