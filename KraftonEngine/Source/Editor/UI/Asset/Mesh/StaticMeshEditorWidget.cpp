@@ -390,6 +390,17 @@ void FStaticMeshEditorWidget::RenderCollisionPanel(UStaticMesh* Mesh)
 	ImGui::SameLine();
 	AddBtn("Add Sphere",  &UStaticMesh::AddDefaultSphereCollisionFromBounds);
 	AddBtn("Add Capsule", &UStaticMesh::AddDefaultCapsuleCollisionFromBounds);
+	if (ImGui::Button("Use Triangle Mesh Collision", ImVec2(-1.0f, 0)))
+	{
+		if (Mesh->GenerateTriangleMeshCollision())
+		{
+			LocalShapes.clear();
+			SelectedShapeIndex = -1;
+			UpdateShapeGizmo(Mesh);
+			ViewportClient.RefreshCollisionDebug();
+			MarkDirty();
+		}
+	}
 
 	if (ImGui::Button("Clear All", ImVec2(-1.0f, 0)))
 	{
