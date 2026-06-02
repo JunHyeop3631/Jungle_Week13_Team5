@@ -1,5 +1,6 @@
 #include "Render/Proxy/ClothSceneProxy.h"
 
+#include "Component/MeshComponent.h"
 #include "Component/Primitive/ClothComponent.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialManager.h"
@@ -7,14 +8,24 @@
 #include "Render/Shader/ShaderManager.h"
 #include "Render/Types/FrameContext.h"
 
-FClothSceneProxy::FClothSceneProxy(UClothComponent* InComponent)
+namespace
+{
+struct FClothDefaultMaterialConstants
+{
+	FVector4 SectionColor = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+	float HasNormalMap = 0.0f;
+	float Padding[3] = { 0.0f, 0.0f, 0.0f };
+};
+}
+
+FClothSceneProxy::FClothSceneProxy(UMeshComponent* InComponent)
 	: FPrimitiveSceneProxy(InComponent)
 {
 	ProxyFlags |= EPrimitiveProxyFlags::PerViewportUpdate;
 	ProxyFlags |= EPrimitiveProxyFlags::NeverCull;
 	ProxyFlags |= EPrimitiveProxyFlags::Cloth;
 
-	bCurrentTwoSided = InComponent && InComponent->ShouldRenderTwoSided();
+	bCurrentTwoSided = InComponent && InComponent->ShouldRenderClothTwoSided();
 	RecreateDefaultMaterial();
 }
 
@@ -22,6 +33,7 @@ FClothSceneProxy::~FClothSceneProxy()
 {
 	DynamicVertexBuffer.Release();
 	DynamicIndexBuffer.Release();
+	DefaultMaterialCB.Release();
 	if (DefaultMaterial)
 	{
 		FMaterialManager::Get().DestroyTransientMaterial(DefaultMaterial);
@@ -39,20 +51,21 @@ void FClothSceneProxy::UpdateMesh()
 
 void FClothSceneProxy::UpdateMaterial()
 {
-	UClothComponent* Component = GetClothComponent();
-	const bool bNewTwoSided = Component && Component->ShouldRenderTwoSided();
+	UMeshComponent* Component = GetMeshComponent();
+	const bool bNewTwoSided = Component && Component->ShouldRenderClothTwoSided();
 	if (bCurrentTwoSided != bNewTwoSided)
 	{
 		bCurrentTwoSided = bNewTwoSided;
 		RecreateDefaultMaterial();
 	}
+	UpdateDefaultMaterialConstants();
 
 	RebuildSectionDraws();
 }
 
 void FClothSceneProxy::UpdatePerViewport(const FFrameContext& /*Frame*/)
 {
-	UClothComponent* Component = GetClothComponent();
+	UMeshComponent* Component = GetMeshComponent();
 	if (!Component || !bVisible)
 	{
 		Vertices.clear();
@@ -75,13 +88,18 @@ void FClothSceneProxy::UpdatePerViewport(const FFrameContext& /*Frame*/)
 	Vertices.resize(RenderData.Vertices.size());
 	for (size_t Index = 0; Index < RenderData.Vertices.size(); ++Index)
 	{
-		Vertices[Index].Position = RenderData.Vertices[Index].Position;
-		Vertices[Index].Color = Component->GetRenderColor();
-		Vertices[Index].SubID = 0;
+		const FClothRenderVertex& SrcVertex = RenderData.Vertices[Index];
+		FVertexPNCTT& DstVertex = Vertices[Index];
+		DstVertex.Position = SrcVertex.Position;
+		DstVertex.Normal = SrcVertex.Normal.LengthSquared() > 1.0e-8f ? SrcVertex.Normal : FVector::UpVector;
+		DstVertex.Color = FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+		DstVertex.UV = SrcVertex.UV;
+		DstVertex.Tangent = FVector4(1.0f, 0.0f, 0.0f, 1.0f);
 	}
 
 	Indices = RenderData.Indices;
 	IndexCount = static_cast<uint32>(Indices.size());
+	UpdateDefaultMaterialConstants();
 	RebuildSectionDraws();
 }
 
@@ -95,7 +113,7 @@ bool FClothSceneProxy::PrepareDrawBuffer(ID3D11Device* Device, ID3D11DeviceConte
 
 	if (!bDynamicBuffersCreated)
 	{
-		DynamicVertexBuffer.Create(Device, static_cast<uint32>(Vertices.size()), sizeof(FVertex));
+		DynamicVertexBuffer.Create(Device, static_cast<uint32>(Vertices.size()), sizeof(FVertexPNCTT));
 		DynamicIndexBuffer.Create(Device, static_cast<uint32>(Indices.size()));
 		bDynamicBuffersCreated = true;
 	}
@@ -120,9 +138,14 @@ bool FClothSceneProxy::PrepareDrawBuffer(ID3D11Device* Device, ID3D11DeviceConte
 	return OutBuffer.VB != nullptr && OutBuffer.IB != nullptr;
 }
 
+UMeshComponent* FClothSceneProxy::GetMeshComponent() const
+{
+	return static_cast<UMeshComponent*>(GetOwner());
+}
+
 UClothComponent* FClothSceneProxy::GetClothComponent() const
 {
-	return static_cast<UClothComponent*>(GetOwner());
+	return Cast<UClothComponent>(GetOwner());
 }
 
 void FClothSceneProxy::RecreateDefaultMaterial()
@@ -138,13 +161,43 @@ void FClothSceneProxy::RecreateDefaultMaterial()
 		EBlendState::Opaque,
 		EDepthStencilState::Default,
 		bCurrentTwoSided ? ERasterizerState::SolidNoCull : ERasterizerState::SolidBackCull,
-		FShaderManager::Get().GetOrCreate(EShaderPath::Primitive));
+		FShaderManager::Get().GetOrCreateUberLitPermutation(
+			EUberLitDefines::ELightingModel::Unlit,
+			EUberLitDefines::EVertexFactory::StaticMesh));
+	UpdateDefaultMaterialConstants();
+}
+
+void FClothSceneProxy::UpdateDefaultMaterialConstants()
+{
+	if (!DefaultMaterial)
+	{
+		return;
+	}
+
+	UMeshComponent* Component = GetMeshComponent();
+	FClothDefaultMaterialConstants& Constants =
+		DefaultMaterial->BindPerShaderCB<FClothDefaultMaterialConstants>(&DefaultMaterialCB, ECBSlot::PerShader0);
+	Constants.SectionColor = Component ? Component->GetClothRenderColor() : FVector4(1.0f, 1.0f, 1.0f, 1.0f);
+	Constants.HasNormalMap = 0.0f;
 }
 
 void FClothSceneProxy::RebuildSectionDraws()
 {
 	SectionDraws.clear();
-	if (DefaultMaterial && IndexCount > 0)
+	if (IndexCount == 0)
+	{
+		return;
+	}
+
+	UMeshComponent* Component = GetMeshComponent();
+	UMaterialInterface* ClothMaterial = Component ? Component->GetClothMaterial(0) : nullptr;
+	if (ClothMaterial)
+	{
+		SectionDraws.push_back({ ClothMaterial, 0, IndexCount });
+		return;
+	}
+
+	if (DefaultMaterial)
 	{
 		SectionDraws.push_back({ DefaultMaterial, 0, IndexCount });
 	}

@@ -5,11 +5,12 @@
 #include "Render/Types/VertexTypes.h"
 
 class UClothComponent;
+class UMeshComponent;
 
 class FClothSceneProxy : public FPrimitiveSceneProxy
 {
 public:
-	explicit FClothSceneProxy(UClothComponent* InComponent);
+	explicit FClothSceneProxy(UMeshComponent* InComponent);
 	~FClothSceneProxy() override;
 
 	void UpdateMesh() override;
@@ -19,19 +20,22 @@ public:
 	bool PrepareDrawBuffer(ID3D11Device* Device, ID3D11DeviceContext* Context,
 		FDrawCommandBuffer& OutBuffer) const override;
 
+	UMeshComponent* GetMeshComponent() const;
 	UClothComponent* GetClothComponent() const;
 
 private:
 	void RecreateDefaultMaterial();
+	void UpdateDefaultMaterialConstants();
 	void RebuildSectionDraws();
 
 private:
-	TArray<FVertex> Vertices;
+	TArray<FVertexPNCTT> Vertices;
 	TArray<uint32> Indices;
 	uint32 IndexCount = 0;
 
 	mutable FDynamicVertexBuffer DynamicVertexBuffer;
 	mutable FDynamicIndexBuffer DynamicIndexBuffer;
+	mutable FConstantBuffer DefaultMaterialCB;
 	mutable bool bDynamicBuffersCreated = false;
 	bool bCurrentTwoSided = false;
 };

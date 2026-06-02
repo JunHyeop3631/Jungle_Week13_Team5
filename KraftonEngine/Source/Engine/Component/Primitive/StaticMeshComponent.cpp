@@ -9,17 +9,29 @@
 #include "Engine/Runtime/Engine.h"
 #include "Render/Shader/ShaderManager.h"
 #include "Texture/Texture2D.h"
+#include "Render/Proxy/ClothSceneProxy.h"
 #include "Render/Proxy/StaticMeshSceneProxy.h"
 #include "Render/Proxy/PrimitiveSceneProxy.h"
 #include "Serialization/Archive.h"
 
+#include <cstddef>
+
 FPrimitiveSceneProxy* UStaticMeshComponent::CreateSceneProxy()
 {
+	if (IsMeshClothEnabled())
+	{
+		return new FClothSceneProxy(this);
+	}
 	return new FStaticMeshSceneProxy(this);
 }
 
 void UStaticMeshComponent::SetStaticMesh(UStaticMesh* InMesh)
 {
+	if (IsMeshClothEnabled())
+	{
+		DestroyMeshCloth();
+	}
+
 	StaticMesh = InMesh;
 	if (InMesh)
 	{
@@ -48,6 +60,12 @@ void UStaticMeshComponent::SetStaticMesh(UStaticMesh* InMesh)
 		MaterialSlots.clear();
 	}
 	CacheLocalBounds();
+
+	if (IsMeshClothEnabled() && bComponentHasBegunPlay)
+	{
+		RecreateMeshCloth();
+	}
+
 	MarkRenderStateDirty();
 	MarkWorldBoundsDirty();
 }
@@ -121,6 +139,11 @@ FMeshDataView UStaticMeshComponent::GetMeshDataView() const
 	View.VertexData  = Asset->Vertices.data();
 	View.VertexCount = (uint32)Asset->Vertices.size();
 	View.Stride      = sizeof(FNormalVertex);
+	View.PositionOffset = offsetof(FNormalVertex, pos);
+	View.NormalOffset   = offsetof(FNormalVertex, normal);
+	View.ColorOffset    = offsetof(FNormalVertex, color);
+	View.UVOffset       = offsetof(FNormalVertex, tex);
+	View.TangentOffset  = offsetof(FNormalVertex, tangent);
 	View.IndexData   = Asset->Indices.data();
 	View.IndexCount  = (uint32)Asset->Indices.size();
 	return View;
@@ -128,6 +151,11 @@ FMeshDataView UStaticMeshComponent::GetMeshDataView() const
 
 void UStaticMeshComponent::UpdateWorldAABB() const
 {
+	if (IsMeshClothEnabled() && UpdateMeshClothWorldAABB())
+	{
+		return;
+	}
+
 	if (!bHasValidBounds)
 	{
 		UPrimitiveComponent::UpdateWorldAABB();
@@ -275,7 +303,7 @@ void UStaticMeshComponent::PostEditChangeProperty(const FPropertyChangedEvent& E
 
 void UStaticMeshComponent::PostEditProperty(const char* PropertyName)
 {
-	UPrimitiveComponent::PostEditProperty(PropertyName);
+	UMeshComponent::PostEditProperty(PropertyName);
 
 	if (strcmp(PropertyName, "StaticMeshPath") == 0 || strcmp(PropertyName, "Static Mesh") == 0)
 	{

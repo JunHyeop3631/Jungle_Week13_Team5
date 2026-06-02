@@ -3,6 +3,7 @@
 #include "Math/Vector.h"
 #include "Render/Types/RenderTypes.h"
 #include <cassert>
+#include <cstddef>
 
 struct FVertex
 {
@@ -72,17 +73,33 @@ struct TMeshData
 using FMeshData = TMeshData<FVertex>;
 
 // 정점 타입에 무관하게 메시 데이터를 참조하는 뷰.
-// 모든 정점 구조체는 FVector Position을 첫 번째 멤버(offset 0)로 가져야 한다.
+// Position은 필수이고, Normal/Color/UV/Tangent는 각 메시가 offset layout으로 제공한다.
 struct FMeshDataView
 {
+	static constexpr uint32 InvalidAttributeOffset = 0xFFFFFFFFu;
+
 	const void*   VertexData  = nullptr;
 	const uint32* IndexData   = nullptr;
 	uint32 VertexCount = 0;
 	uint32 IndexCount  = 0;
 	uint32 Stride      = 0;
+	uint32 PositionOffset = 0;
+	uint32 NormalOffset   = InvalidAttributeOffset;
+	uint32 ColorOffset    = InvalidAttributeOffset;
+	uint32 UVOffset       = InvalidAttributeOffset;
+	uint32 TangentOffset  = InvalidAttributeOffset;
 
 	bool IsValid() const { return VertexData && IndexCount > 0; }
 	uint32 GetTriangleCount() const { return IndexCount / 3; }
+	bool HasAttribute(uint32 Offset, uint32 Size) const
+	{
+		return VertexData && Offset != InvalidAttributeOffset && Size <= Stride && Offset <= Stride - Size;
+	}
+	bool HasPosition() const { return HasAttribute(PositionOffset, sizeof(FVector)); }
+	bool HasNormal() const { return HasAttribute(NormalOffset, sizeof(FVector)); }
+	bool HasColor() const { return HasAttribute(ColorOffset, sizeof(FVector4)); }
+	bool HasUV() const { return HasAttribute(UVOffset, sizeof(FVector2)); }
+	bool HasTangent() const { return HasAttribute(TangentOffset, sizeof(FVector4)); }
 
 	// N번째 정점을 T 타입으로 반환
 	template<typename T>
@@ -93,11 +110,37 @@ struct FMeshDataView
 			static_cast<const uint8*>(VertexData) + Index * Stride);
 	}
 
-	// Position은 모든 정점 타입의 offset 0에 있으므로 타입 없이 접근 가능
+	template<typename T>
+	const T& GetAttribute(uint32 Index, uint32 Offset) const
+	{
+		assert(HasAttribute(Offset, sizeof(T)) && "GetAttribute<T>: invalid vertex attribute layout");
+		return *reinterpret_cast<const T*>(
+			static_cast<const uint8*>(VertexData) + Index * Stride + Offset);
+	}
+
 	const FVector& GetPosition(uint32 Index) const
 	{
-		return *reinterpret_cast<const FVector*>(
-			static_cast<const uint8*>(VertexData) + Index * Stride);
+		return GetAttribute<FVector>(Index, PositionOffset);
+	}
+
+	FVector GetNormal(uint32 Index, const FVector& Fallback = FVector::UpVector) const
+	{
+		return HasNormal() ? GetAttribute<FVector>(Index, NormalOffset) : Fallback;
+	}
+
+	FVector4 GetColor(uint32 Index, const FVector4& Fallback = FVector4(1.0f, 1.0f, 1.0f, 1.0f)) const
+	{
+		return HasColor() ? GetAttribute<FVector4>(Index, ColorOffset) : Fallback;
+	}
+
+	FVector2 GetUV(uint32 Index, const FVector2& Fallback = FVector2()) const
+	{
+		return HasUV() ? GetAttribute<FVector2>(Index, UVOffset) : Fallback;
+	}
+
+	FVector4 GetTangent(uint32 Index, const FVector4& Fallback = FVector4(1.0f, 0.0f, 0.0f, 1.0f)) const
+	{
+		return HasTangent() ? GetAttribute<FVector4>(Index, TangentOffset) : Fallback;
 	}
 
 	// N번째 삼각형의 세 정점 인덱스를 반환

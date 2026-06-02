@@ -23,6 +23,7 @@
 #include "Physics/Asset/PhysicsConstraintSetup.h"
 #include "Physics/Cloth/IClothScene.h"
 #include "Physics/IPhysicsScene.h"
+#include "Render/Proxy/ClothSceneProxy.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 #include "Render/Scene/FScene.h"
 #include "Serialization/Archive.h"
@@ -129,17 +130,31 @@ USkeletalMeshComponent::~USkeletalMeshComponent()
 
 FPrimitiveSceneProxy* USkeletalMeshComponent::CreateSceneProxy()
 {
+    if (IsMeshClothEnabled())
+    {
+        return new FClothSceneProxy(this);
+    }
     return new FSkeletalMeshSceneProxy(this);
 }
 
 void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InMesh)
 {
+    if (IsMeshClothEnabled())
+    {
+        DestroyMeshCloth();
+    }
+
     ClearSkeletalClothBinding();
     DestroyPhysicsAssetBodies();
     Super::SetSkeletalMesh(InMesh);
     // Mesh 가 바뀌면 이전 AnimInstance 가 가리키던 본 인덱스/카운트가 무의미해진다.
     // 새 SkeletalMesh 기준으로 AnimInstance 를 재인스턴스화한다.
     InitializeAnimation();
+
+    if (IsMeshClothEnabled() && bComponentHasBegunPlay)
+    {
+        RecreateMeshCloth();
+    }
 }
 
 void USkeletalMeshComponent::PlayAnimation(UAnimSequenceBase* NewAnimToPlay, bool bLooping)
@@ -1343,8 +1358,10 @@ void USkeletalMeshComponent::BuildPhysicsBodyWireframe(const std::function<void(
 {
 	if (!EmitLine) return;
 
-	USkeletalMesh* Mesh = GetSkeletalMesh();
-	UPhysicsAsset* PA = Mesh ? Mesh->PhysicsAsset : nullptr;
+	// 시뮬과 동일하게 GetPhysicsAsset() 로 해석한다(override=PhysicsAssetOverride 우선).
+	// Mesh->PhysicsAsset 직접 접근은 런타임/PIE 에서 null 이라(에디터 세션만 메시에 꽂아줌)
+	// 와이어가 통째로 사라졌다. 시뮬과 같은 소스를 써서 두 경로(선택/런타임)를 함께 복구.
+	UPhysicsAsset* PA = GetPhysicsAsset();
 	if (!PA) return;
 
 	// 레벨/런타임에선 런타임 Bodies 가 비어 있을 수 있으므로 PhysicsAsset 셰이프를 현재 본 월드 포즈로 그린다.
@@ -1409,12 +1426,11 @@ void USkeletalMeshComponent::GetEditableProperties(TArray<FPropertyValue>& OutPr
 
     // 연결된 PhysicsAsset 의 편집 속성(Enable Self Collision 등)도 노출 — AnimInstance 와 동일한 forward 패턴.
     // 같은 에셋을 쓰는 모든 인스턴스가 공유하는 값(에셋에 저장)이다.
-    if (USkeletalMesh* Mesh = GetSkeletalMesh())
+    // BuildPhysicsBodyWireframe 와 동일 이유: override 우선 게터로 통일해야 런타임/레벨
+    // 디테일 패널에도 PhysicsAsset 속성(Enable Self Collision 등)이 노출된다.
+    if (UPhysicsAsset* PA = GetPhysicsAsset())
     {
-        if (UPhysicsAsset* PA = Mesh->PhysicsAsset)
-        {
-            PA->GetEditableProperties(OutProps);
-        }
+        PA->GetEditableProperties(OutProps);
     }
 }
 

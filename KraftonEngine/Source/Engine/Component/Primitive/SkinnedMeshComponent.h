@@ -35,6 +35,7 @@ public:
 	void SetMaterial(int32 ElementIndex, UMaterialInterface* InMaterial);
 	UMaterialInterface* GetMaterial(int32 ElementIndex) const;
 	const TArray<UMaterialInterface*>& GetOverrideMaterials() const { return OverrideMaterials; }
+	UMaterialInterface* GetClothMaterial(int32 ElementIndex) const override { return GetMaterial(ElementIndex); }
 
 	// Serialization/editor 섹션: asset pointer는 저장하지 않고 path를 저장한 뒤 로드 후 SetSkeletalMesh 흐름으로 복원한다.
 	void PostDuplicate() override;
