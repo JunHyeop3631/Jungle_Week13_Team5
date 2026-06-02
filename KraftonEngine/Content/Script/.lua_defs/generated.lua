@@ -102,6 +102,18 @@ function FloatingPawnMovementComponent:SetMoveInput(input) end
 ---@param input Vector
 function FloatingPawnMovementComponent:SetLookInput(input) end
 
+---@class CharacterMovementComponent
+CharacterMovementComponent = {}
+
+---@return boolean
+function CharacterMovementComponent:IsWalking() end
+
+---@return boolean
+function CharacterMovementComponent:IsFalling() end
+
+---@return number
+function CharacterMovementComponent:GetSpeed() end
+
 ---@class SceneComponent
 ---@field Location Vector
 ---@field Rotation Vector
@@ -265,6 +277,9 @@ function Actor:IsValid() end
 
 ---@return FloatingPawnMovementComponent?
 function Actor:GetFloatingPawnMovement() end
+
+---@return CharacterMovementComponent?
+function Actor:GetCharacterMovement() end
 
 ---@return CameraComponent?
 function Actor:GetCamera() end

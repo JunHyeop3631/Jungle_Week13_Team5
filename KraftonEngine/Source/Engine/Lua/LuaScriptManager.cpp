@@ -9,6 +9,7 @@
 #include "Component/Input/InputComponent.h"
 #include "Animation/Instance/LuaAnimInstance.h"
 #include "Component/Movement/FloatingPawnMovementComponent.h"
+#include "Component/Movement/CharacterMovementComponent.h"
 #include "Component/Camera/CameraComponent.h"
 #include "Component/PrimitiveComponent.h"
 #include "Component/SceneComponent.h"
@@ -922,6 +923,16 @@ void FLuaScriptManager::RegisterActorBindings(sol::state& Lua)
 		.Method("---@param input Vector\nfunction FloatingPawnMovementComponent:SetMoveInput(input) end")
 		.Method("---@param input Vector\nfunction FloatingPawnMovementComponent:SetLookInput(input) end");
 
+	Lua.new_usertype<UCharacterMovementComponent>("CharacterMovementComponent",
+		"IsWalking", &UCharacterMovementComponent::IsWalking,
+		"IsFalling", &UCharacterMovementComponent::IsFalling,
+		"GetSpeed", &UCharacterMovementComponent::GetSpeed);
+
+	FLuaDocRegistry::Get().Type("CharacterMovementComponent")
+		.Method("---@return boolean\nfunction CharacterMovementComponent:IsWalking() end")
+		.Method("---@return boolean\nfunction CharacterMovementComponent:IsFalling() end")
+		.Method("---@return number\nfunction CharacterMovementComponent:GetSpeed() end");
+
 	Lua.new_usertype<USceneComponent>("SceneComponent",
 		"Location", sol::property(
 		[](USceneComponent& Component)
@@ -1118,6 +1129,9 @@ void FLuaScriptManager::RegisterActorBindings(sol::state& Lua)
 		.Method("GetFloatingPawnMovement",
 			"---@return FloatingPawnMovementComponent?\nfunction Actor:GetFloatingPawnMovement() end",
 			[](AActor& Actor) { return Actor.GetComponentByClass<UFloatingPawnMovementComponent>(); })
+		.Method("GetCharacterMovement",
+			"---@return CharacterMovementComponent?\nfunction Actor:GetCharacterMovement() end",
+			[](AActor& Actor) { return Actor.GetComponentByClass<UCharacterMovementComponent>(); })
 		.Method("GetCamera",
 			"---@return CameraComponent?\nfunction Actor:GetCamera() end",
 			[](AActor& Actor) { return Actor.GetComponentByClass<UCameraComponent>(); })

@@ -145,6 +145,15 @@ namespace
 		const bool bRagdoll0 = (FilterData0.word0 & RAGDOLL_FILTER_TAG) != 0;
 		const bool bRagdoll1 = (FilterData1.word0 & RAGDOLL_FILTER_TAG) != 0;
 
+		// 같은 액터(word3 = owner actor UUID 일치) 쌍은 충돌 제외 — 한 액터의 컴포넌트끼리는 물리 충돌
+		// 안 한다(이동용 캡슐/박스 ↔ 래그돌 바디 중복 충돌로 인한 튕김 방지). 단 래그돌-래그돌 자기충돌은
+		// aggregate(self-collision off) / 아래 ragdoll 경로가 전담하므로 여기선 제외한다.
+		if (FilterData0.word3 != 0 && FilterData0.word3 == FilterData1.word3 && !(bRagdoll0 && bRagdoll1)
+			&& !PxFilterObjectIsTrigger(Attributes0) && !PxFilterObjectIsTrigger(Attributes1))
+		{
+			return PxFilterFlag::eSUPPRESS;
+		}
+
 		// 래그돌 바디가 하나라도 끼는 쌍은 여기서 직접 판정한다.
 		// 래그돌 shape 의 "시뮬" 필터 데이터는 (태그|그룹 / 인덱스 / 마스크)로 재해석되므로,
 		// 그룹 시스템 기반 기본 셰이더에 그대로 넘기면 오해석된다 → 비-래그돌 쌍만 위임한다.
@@ -1338,7 +1347,7 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape_AssumesLocked(FBodyInstance* Body
 		Filter.word0 = static_cast<PxU32>(Desc.OverrideObjectType);
 		Filter.word1 = 0;
 		Filter.word2 = 0;
-		Filter.word3 = 0;
+		Filter.word3 = (Body->OwnerComponent && Body->OwnerComponent->GetOwner()) ? Body->OwnerComponent->GetOwner()->GetUUID() : 0;  // 같은 액터 self-filter id: 형제 콜라이더 ↔ 래그돌 바디 충돌 제외용
 		for (int32 Ch = 0; Ch < static_cast<int32>(ECollisionChannel::ActiveCount); ++Ch)
 		{
 			const ECollisionResponse R = Desc.OverrideResponses.GetResponse(static_cast<ECollisionChannel>(Ch));

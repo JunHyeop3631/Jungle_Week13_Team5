@@ -4,6 +4,10 @@ local gunActor = nil
 local gunParticle = nil
 local beamActive = false
 
+-- 캡슐(루트) 물리 상태 전환용. 초기화 동안 kinematic 으로 고정 → 정렬 완료 후 dynamic.
+local capsule = nil
+local capsulePendingDynamic = false
+
 local HAND_BONE = "Bip001 R Hand"
 local HIDDEN_LOCATION = Vector.new(0, 0, -10000)
 local ENEMY_TAG = "enemy"
@@ -47,6 +51,15 @@ function BeginPlay()
         gunParticle:SetEmitterSpawningEnabled(false)
     end
     beamActive = false
+
+    -- 캡슐(루트)을 초기화 동안 kinematic 으로 고정 — PIE 시작 시 캡슐이 dynamic 으로 낙하하며
+    -- movement 와 충돌해 메시가 어긋나는(밖→안으로 빨려드는) 현상을 막는다.
+    -- 정렬이 끝난 직후(첫 Tick = 모든 BeginPlay 완료 후)에 dynamic 으로 전환한다.
+    capsule = obj:GetRootPrimitiveComponent()
+    if capsule ~= nil then
+        capsule:SetSimulatePhysics(false)
+    end
+    capsulePendingDynamic = true
 end
 
 function EndPlay()
@@ -162,6 +175,19 @@ local function update_raygun_beam()
 end
 
 function Tick(dt)
+    -- 캡슐 dynamic 전환은 movement 가 "착지(Walking)"한 뒤에 한다. kinematic 인 동안 movement 가
+    -- 캡슐을 floor 로 내려놓고, 착지하면 그때 물리에 넘긴다 → 공중에서 dynamic 으로 바꿔 또 낙하/
+    -- 흔들리는 것을 방지. (착지 전까지는 매 Tick 대기)
+    if capsulePendingDynamic then
+        local move = obj:GetCharacterMovement()
+        if move ~= nil and move:IsWalking() then
+            if capsule ~= nil then
+                capsule:SetSimulatePhysics(true)
+            end
+            capsulePendingDynamic = false
+        end
+    end
+
     if mesh == nil then
         return
     end
