@@ -1,4 +1,4 @@
-#include "SkeletalMeshComponent.h"
+﻿#include "SkeletalMeshComponent.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 
 #include "Animation/AnimationManager.h"
@@ -9,6 +9,8 @@
 #include "Animation/PoseContext.h"
 #include "Asset/AssetRegistry.h"
 #include "Core/Logging/Log.h"
+#include "Component/Movement/MovementComponent.h"
+#include "Component/PrimitiveComponent.h"
 #include "GameFramework/AActor.h"
 #include "GameFramework/World.h"
 #include "Math/Quat.h"
@@ -1146,6 +1148,84 @@ void USkeletalMeshComponent::CreateRagdoll()
     }
 }
 
+void USkeletalMeshComponent::DisableOwnerCollisionForRagdoll()
+{
+    RagdollDisabledCollisions.clear();
+    RagdollDeactivatedMovement.clear();
+
+    AActor* OwnerActor = GetOwner();
+    if (!OwnerActor)
+    {
+        return;
+    }
+
+    for (UActorComponent* Comp : OwnerActor->GetComponents())
+    {
+        if (!Comp)
+        {
+            continue;
+        }
+
+        // (A) 형제 충돌 컴포넌트 — 래그돌 본체(this) 제외, 현재 켜진 것만 끈다.
+        if (UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Comp))
+        {
+            if (Prim != this && Prim->IsCollisionEnabled())
+            {
+                RagdollDisabledCollisions.push_back({ Prim, Prim->GetCollisionEnabled() });
+                Prim->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+            }
+            continue;
+        }
+
+        // (B) Movement 컴포넌트 — 캡슐을 계속 구동해 래그돌과 싸우지 않도록 정지(active 였던 것만).
+        if (UMovementComponent* Move = Cast<UMovementComponent>(Comp))
+        {
+            if (Move->IsActive())
+            {
+                Move->SetActive(false);
+                RagdollDeactivatedMovement.push_back(Move);
+            }
+        }
+    }
+}
+
+void USkeletalMeshComponent::RestoreOwnerCollisionAfterRagdoll()
+{
+    // dangling 방지: 저장 포인터를 곧장 deref 하지 않고, Owner 의 "현재" 컴포넌트 목록에
+    // 아직 존재하는(주소 일치) 것만 복원한다. 래그돌 중 파괴된 컴포넌트는 목록에서 빠지므로 건너뛴다.
+    if (AActor* OwnerActor = GetOwner())
+    {
+        const TArray<UActorComponent*>& Live = OwnerActor->GetComponents();
+        auto IsLive = [&Live](const UActorComponent* C) -> bool
+        {
+            for (const UActorComponent* L : Live)
+            {
+                if (L == C) return true;
+            }
+            return false;
+        };
+
+        for (const FRagdollSavedCollision& Saved : RagdollDisabledCollisions)
+        {
+            if (Saved.Component && IsLive(Saved.Component))
+            {
+                Saved.Component->SetCollisionEnabled(Saved.PrevEnabled);
+            }
+        }
+
+        for (UActorComponent* Move : RagdollDeactivatedMovement)
+        {
+            if (Move && IsLive(Move))
+            {
+                Move->SetActive(true);
+            }
+        }
+    }
+
+    RagdollDisabledCollisions.clear();
+    RagdollDeactivatedMovement.clear();
+}
+
 void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
 {
     if (bSimulate == bSimulatingPhysics)
@@ -1155,6 +1235,13 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
 
     if (bSimulate)
     {
+        // 콜라이더(캡슐/박스 등 형제 충돌 컴포넌트)를 "바디 생성 전에" 먼저 씬에서 제거하고
+        // movement 도 정지한다. 본 래그돌 바디가 활성 콜라이더와 겹친 채 생성·웨이크업되면 첫
+        // 시뮬 스텝에서 중복 충돌/겹침 해소로 튕기기 때문이다(World::Tick 은 Simulate→Tick 순서라
+        // 이 시점에 끄면 다음 Simulate 부터 콜라이더가 빠진 상태가 보장된다).
+        // 진입(인스턴스화/EnterRagdollState) 실패 시 끈 것을 원복한다.
+        DisableOwnerCollisionForRagdoll();
+
         // 진입 시점에 바디가 없으면 소유 월드의 물리 씬에서 즉석 인스턴스화한다.
         // InstantiatePhysicsAssetBodies 가 현재 애님 본 월드 포즈를 읽으므로 진입 순간 포즈가 그대로 포착된다.
         if (!PhysicsSceneOwner || Bodies.empty())
@@ -1165,11 +1252,13 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
             if (!Scene || !PhysicsAsset)
             {
                 UE_LOG("SetSimulatingPhysics(true) skipped: no physics scene or physics asset.");
+                RestoreOwnerCollisionAfterRagdoll();
                 return;
             }
             if (!InstantiatePhysicsAssetBodies(*Scene, PhysicsAsset))
             {
                 UE_LOG("SetSimulatingPhysics(true) skipped: physics asset instantiation failed.");
+                RestoreOwnerCollisionAfterRagdoll();
                 return;
             }
         }
@@ -1177,6 +1266,10 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
         if (EnterRagdollState())
         {
             bSimulatingPhysics = true;
+        }
+        else
+        {
+            RestoreOwnerCollisionAfterRagdoll();
         }
     }
     else
@@ -1194,6 +1287,8 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
             }
         }
         bSimulatingPhysics = false;
+        // 진입 시 끈 형제 충돌 / 정지한 movement 복원 (dangling 안전).
+        RestoreOwnerCollisionAfterRagdoll();
     }
 }
 

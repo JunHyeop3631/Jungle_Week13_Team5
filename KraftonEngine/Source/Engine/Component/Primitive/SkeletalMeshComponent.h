@@ -6,6 +6,7 @@
 #include "Physics/ConstraintInstance.h"
 #include "Physics/Cloth/ClothTypes.h"
 #include "Physics/PhysicsTypes.h"
+#include "Core/Types/CollisionTypes.h"   // ECollisionEnabled (래그돌 진입 시 형제 충돌 off 저장용)
 
 #include <functional>
 
@@ -182,6 +183,21 @@ private:
     void DrawRuntimePhysicsBodies();
     bool ResolveSkeletalClothAttachment(FSkeletalClothParticleAttachment& Attachment) const;
     FMatrix GetSkeletalClothWorldMatrix() const;
+
+    // 래그돌 진입 시: 형제 충돌 컴포넌트(캡슐/스피어/박스/스태틱메시 콜라이더 등) collision off +
+    // movement 컴포넌트 정지 → 본체 래그돌 바디와의 "중복 충돌"로 인한 튕김 방지. 종료 시 복원.
+    // dangling 방지: 복원은 Owner 의 현재 컴포넌트 목록과 대조해 살아있는 것만 건드린다.
+    void DisableOwnerCollisionForRagdoll();
+    void RestoreOwnerCollisionAfterRagdoll();
+
+    // 복원용 저장소. PrevEnabled = 진입 직전 collision 값.
+    struct FRagdollSavedCollision
+    {
+        UPrimitiveComponent* Component = nullptr;
+        ECollisionEnabled    PrevEnabled = ECollisionEnabled::NoCollision;
+    };
+    TArray<FRagdollSavedCollision> RagdollDisabledCollisions;   // 끈 형제 충돌 컴포넌트
+    TArray<UActorComponent*>       RagdollDeactivatedMovement;  // 정지시킨 movement 컴포넌트
 
 protected:
     // Animation 런타임 상태.

@@ -117,21 +117,19 @@ local function stop_raygun()
     end
 end
 
--- "R" 토글: ragdoll(dynamic) <-> kinematic.
--- SetSimulatingPhysics(true) 는 바디가 없으면 월드 물리 씬에서 자동 인스턴스화한 뒤 진입하고,
--- (false) 는 바디를 kinematic 으로 되돌려 애님 경로로 복귀시킨다.
-local function toggle_ragdoll()
+-- "R": ragdoll 단방향 진입. 원래 상태(kinematic)로 되돌리는 모드는 제거 — 한 번 들어가면 유지한다.
+-- SetSimulatingPhysics(true) 는 바디가 없으면 월드 물리 씬에서 자동 인스턴스화한 뒤 진입한다.
+local function enter_ragdoll()
     if mesh == nil or not mesh:HasPhysicsAsset() then
         return
     end
 
     if mesh:IsSimulatingPhysics() then
-        mesh:SetSimulatingPhysics(false)
-        print("[Ragdoll] kinematic mode")
-    else
-        mesh:SetSimulatingPhysics(true)
-        print("[Ragdoll] ragdoll mode")
+        return  -- 이미 ragdoll 진입 상태 — 복귀 없음.
     end
+
+    mesh:SetSimulatingPhysics(true)
+    print("[Ragdoll] ragdoll mode")
 end
 
 local function update_raygun_beam()
@@ -168,9 +166,9 @@ function Tick(dt)
         return
     end
 
-    -- "R" 한 번 누를 때마다 ragdoll <-> kinematic 토글 (GetKeyDown 은 눌린 프레임만 true).
+    -- "R" 누르면 ragdoll 진입(단방향, 복귀 없음). GetKeyDown 은 눌린 프레임만 true.
     if Input.GetKeyDown(Key.R) then
-        toggle_ragdoll()
+        enter_ragdoll()
     end
 
     local mode = _G.YuiCombatMode or "Sword"

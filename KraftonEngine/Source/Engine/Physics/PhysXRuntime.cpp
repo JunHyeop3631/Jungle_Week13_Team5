@@ -547,6 +547,14 @@ public:
 
 	void onContact(const PxContactPairHeader& PairHeader, const PxContactPair* Pairs, PxU32 NumPairs) override
 	{
+		// 이번 스텝에 actor 가 제거되면(예: SetCollisionEnabled(NoCollision)→DestroyRigidBody, 래그돌 토글)
+		// PairHeader.actors[] 는 이미 해제된 dangling 포인터 → GetComponentFromActor 의 userData deref 가 UAF.
+		// deref 전에 removed 플래그를 먼저 확인해 skip 한다 (아래 onTrigger 의 eREMOVED_SHAPE 가드와 동형).
+		if (PairHeader.flags & (PxContactPairHeaderFlag::eREMOVED_ACTOR_0 | PxContactPairHeaderFlag::eREMOVED_ACTOR_1))
+		{
+			return;
+		}
+
 		UPrimitiveComponent* CompA = GetComponentFromActor(PairHeader.actors[0]);
 		UPrimitiveComponent* CompB = GetComponentFromActor(PairHeader.actors[1]);
 		if (!CompA || !CompB)
@@ -567,6 +575,11 @@ public:
 		for (PxU32 PairIndex = 0; PairIndex < NumPairs; ++PairIndex)
 		{
 			const PxContactPair& Pair = Pairs[PairIndex];
+			// 제거된 shape 가 낀 쌍도 skip — shape/actor 포인터가 dangling 일 수 있다.
+			if (Pair.flags & (PxContactPairFlag::eREMOVED_SHAPE_0 | PxContactPairFlag::eREMOVED_SHAPE_1))
+			{
+				continue;
+			}
 			const bool bTouchFound = Pair.events.isSet(PxPairFlag::eNOTIFY_TOUCH_FOUND);
 			const bool bTouchLost = Pair.events.isSet(PxPairFlag::eNOTIFY_TOUCH_LOST);
 			if (!bTouchFound && !bTouchLost)
