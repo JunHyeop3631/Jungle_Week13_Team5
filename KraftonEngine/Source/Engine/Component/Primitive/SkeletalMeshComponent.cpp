@@ -1209,9 +1209,21 @@ void USkeletalMeshComponent::ApplyPhysicsToBones()
             FTransform BodyWorld;
             if (PhysicsSceneOwner->GetBodyTransform(Body, BodyWorld))
             {
-                // body world → component-local global → parent global inverse 곱으로 local pose 산출.
-                // 루트(ParentIndex < 0)는 ParentGlobal == Identity 이므로 component global 이 곧 local 이 된다.
+                // body world → component-local global.
                 ComponentGlobal = BodyWorld.ToMatrix() * ComponentWorldInv;
+
+                // 컴포넌트 월드 스케일(예: 씬 2x)이 ComponentWorldInv 를 통해 본 글로벌 선형부에 1/S 로
+                // 새어들어가 스키닝 행렬(InverseBind * Global)을 왜곡한다 → 메시가 body 에 쪼그라들어 끼는 현상.
+                // (에디터 프리뷰는 컴포넌트 스케일이 1 이라 이 누수가 없다. 런타임 씬 스케일!=1 에서만 발생.)
+                // 반드시 글로벌 단계에서 스케일을 제거해 회전+이동만 남긴다 — 이래야 자식의 상대 로컬
+                // (translation 포함)이 scale-1 부모 기준으로 일관되게 계산된다. local 단계에서 지우면
+                // 자식 translation 이 어긋난다. 스케일은 애님 경로처럼 렌더러의 컴포넌트 월드행렬이 일괄
+                // 적용한다. (균등 스케일 가정 — 비균등은 미지원)
+                FTransform GlobalNoScale(ComponentGlobal);
+                GlobalNoScale.Scale = FVector::OneVector;
+                ComponentGlobal = GlobalNoScale.ToMatrix();
+
+                // 루트(ParentIndex < 0)는 ParentGlobal == Identity 이므로 component global 이 곧 local 이 된다.
                 LocalMatrix = (ParentIndex >= 0)
                     ? ComponentGlobal * ParentGlobal.GetInverse()
                     : ComponentGlobal;

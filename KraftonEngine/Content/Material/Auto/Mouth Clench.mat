@@ -1,0 +1,21 @@
+{
+  "BlendState" : "AlphaBlend",
+  "DepthStencilState" : "DepthReadOnly",
+  "EmissiveColor" : [1.000000, 1.000000, 1.000000, 1.000000],
+  "EmissiveIntensity" : 0.000000,
+  "Origin" : "FbxImport",
+  "Parameters" : {
+    "HasNormalMap" : 0.000000,
+    "SectionColor" : [1.000000, 1.000000, 1.000000, 0.000000],
+    "_pad" : [0.000000, 0.000000, 0.000000]
+  },
+  "PathFileName" : "Content/Material/Auto/Mouth Clench.mat",
+  "RasterizerState" : "",
+  "RenderPass" : "AlphaBlend",
+  "ShaderPath" : "Shaders/Geometry/UberLit.hlsl",
+  "ShadowMode" : "Opaque",
+  "Textures" : {
+    "DiffuseTexture" : "Content/Texture/Auto/link_ww/linkSS27.png"
+  },
+  "bEnableBloom" : false
+}
