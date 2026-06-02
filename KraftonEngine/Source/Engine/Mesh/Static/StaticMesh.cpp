@@ -6,6 +6,162 @@
 #include "Texture/Texture2D.h"
 #include "Engine/Profiling/Stats/MemoryStats.h"
 #include "Mesh/MeshSimplifier.h"
+#include "Physics/Asset/BodySetup.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace
+{
+	constexpr float StaticMeshCollisionPi = 3.14159265358979323846f;
+	constexpr const char* StaticMeshBodyName = "StaticMesh";
+	constexpr uint32 StaticMeshCollisionMagic = 0x434D534B; // KSMC
+	constexpr uint32 StaticMeshCollisionVersion = 2;
+	constexpr uint32 StaticMeshCollisionVersionLegacyMax = 3; // v3: CollisionShapes 블록 포함 (현재는 폐기)
+
+	FVector GetAxisVector(int32 Axis)
+	{
+		if (Axis == 1) return FVector(0.0f, 1.0f, 0.0f);
+		if (Axis == 2) return FVector(0.0f, 0.0f, 1.0f);
+		return FVector(1.0f, 0.0f, 0.0f);
+	}
+
+	float GetAxisValue(const FVector& V, int32 Axis)
+	{
+		if (Axis == 1) return V.Y;
+		if (Axis == 2) return V.Z;
+		return V.X;
+	}
+
+	FQuat MakeRotationFromCapsuleXAxisToAxis(int32 Axis)
+	{
+		if (Axis == 1)
+		{
+			return FQuat::FromAxisAngle(FVector(0.0f, 0.0f, 1.0f), StaticMeshCollisionPi * 0.5f);
+		}
+		if (Axis == 2)
+		{
+			return FQuat::FromAxisAngle(FVector(0.0f, 1.0f, 0.0f), -StaticMeshCollisionPi * 0.5f);
+		}
+		return FQuat::Identity;
+	}
+
+	void ResetBodyForStaticMesh(UBodySetup* Body)
+	{
+		if (!Body) return;
+
+		Body->BoneName = StaticMeshBodyName;
+		Body->AggregateGeom.SphereElems.clear();
+		Body->AggregateGeom.BoxElems.clear();
+		Body->AggregateGeom.CapsuleElems.clear();
+		Body->bSimulatePhysics = false;
+		Body->bEnableGravity = false;
+		Body->PhysicsType = EBodyPhysicsType::Kinematic;
+		Body->CollisionEnabled = EBodyCollisionEnabled::QueryAndPhysics;
+	}
+
+	void SerializeStaticMeshCollision(FArchive& Ar, UBodySetup*& BodyInstance, EStaticMeshCollisionMode& CollisionMode)
+	{
+		if (Ar.IsSaving())
+		{
+			uint32 Magic = StaticMeshCollisionMagic;
+			uint32 Version = StaticMeshCollisionVersion;
+			uint8 Mode = static_cast<uint8>(CollisionMode);
+			bool bHasBodySetup = BodyInstance != nullptr && !BodyInstance->AggregateGeom.IsEmpty();
+			Ar << Magic;
+			Ar << Version;
+			Ar << Mode;
+			Ar << bHasBodySetup;
+			if (bHasBodySetup)
+			{
+				BodyInstance->Serialize(Ar);
+			}
+			return;
+		}
+
+		if (!Ar.IsLoading() || Ar.RemainingBytes() < sizeof(uint32) * 2 + sizeof(bool))
+		{
+			return;
+		}
+
+		uint32 Magic = 0;
+		uint32 Version = 0;
+		Ar << Magic;
+		Ar << Version;
+
+		if (Magic != StaticMeshCollisionMagic || Version > StaticMeshCollisionVersionLegacyMax)
+		{
+			return;
+		}
+
+		uint8 Mode = static_cast<uint8>(EStaticMeshCollisionMode::None);
+		bool bHasBodySetup = false;
+		if (Version >= 2)
+		{
+			Ar << Mode;
+			Ar << bHasBodySetup;
+		}
+		else
+		{
+			Ar << bHasBodySetup;
+			Mode = bHasBodySetup ? static_cast<uint8>(EStaticMeshCollisionMode::Simple) : static_cast<uint8>(EStaticMeshCollisionMode::None);
+		}
+
+		delete BodyInstance;
+		BodyInstance = nullptr;
+		if (Mode > static_cast<uint8>(EStaticMeshCollisionMode::TriangleMesh))
+		{
+			Mode = static_cast<uint8>(EStaticMeshCollisionMode::None);
+		}
+		CollisionMode = static_cast<EStaticMeshCollisionMode>(Mode);
+
+		if (bHasBodySetup)
+		{
+			BodyInstance = new UBodySetup();
+			BodyInstance->Serialize(Ar);
+			if (BodyInstance->BoneName.empty())
+			{
+				BodyInstance->BoneName = StaticMeshBodyName;
+			}
+		}
+
+		if (CollisionMode == EStaticMeshCollisionMode::Simple && (!BodyInstance || BodyInstance->AggregateGeom.IsEmpty()))
+		{
+			CollisionMode = EStaticMeshCollisionMode::None;
+		}
+
+		// v3 파일: AggregateGeom 이후에 CollisionShapes 블록이 있음 — 읽고 버림 (마이그레이션)
+		if (Version == 3 && Ar.RemainingBytes() >= sizeof(uint32))
+		{
+			uint32 Count = 0;
+			Ar << Count;
+			for (uint32 si = 0; si < Count && Ar.RemainingBytes() > 0; ++si)
+			{
+				uint8 ShapeType = 0;
+				Ar << ShapeType;
+				float cx, cy, cz, rx, ry, rz, rw;
+				Ar << cx << cy << cz << rx << ry << rz << rw;
+				switch (ShapeType)
+				{
+				case 0: // Box
+				{ float hx, hy, hz; Ar << hx << hy << hz; break; }
+				case 1: // Sphere
+				{ float r; Ar << r; break; }
+				case 2: // Capsule
+				{ float r, hh; Ar << r << hh; break; }
+				case 3: // Convex
+				{
+					uint32 vc = 0; Ar << vc;
+					for (uint32 vi = 0; vi < vc; ++vi)
+					{ float vx, vy, vz; Ar << vx << vy << vz; }
+					break;
+				}
+				default: break;
+				}
+			}
+		}
+	}
+}
 
 UStaticMesh::~UStaticMesh()
 {
@@ -17,6 +173,9 @@ UStaticMesh::~UStaticMesh()
 
 		MemoryStats::SubStaticMeshCPUMemory(CPUSize);
 	}
+
+	delete BodyInstance;
+	BodyInstance = nullptr;
 }
 
 void UStaticMesh::Serialize(FArchive& Ar)
@@ -32,6 +191,10 @@ void UStaticMesh::Serialize(FArchive& Ar)
 
 	// 2. 머티리얼 데이터 직렬화 (필수!)
 	Ar << StaticMaterials;
+
+	// 2.5. 스태틱 메시 단순 콜리전 데이터.
+	// 구버전 asset에는 이 블록이 없으므로 loading 시 남은 바이트가 없으면 건너뜁니다.
+	SerializeStaticMeshCollision(Ar, BodyInstance, CollisionMode);
 
 	// 3. 로딩 시 Section → MaterialIndex 매핑 캐싱 (매 프레임 문자열 비교 방지)
 	if (Ar.IsLoading())
@@ -191,4 +354,233 @@ const TArray<FStaticMeshSection>& UStaticMesh::GetLODSections(uint32 LODLevel) c
 	if (LODLevel >= 1 && LODLevel <= 3 && bHasLOD)
 		return AdditionalLODs[LODLevel - 1].Sections;
 	return StaticMeshAsset ? StaticMeshAsset->Sections : EmptySections;
+}
+
+UBodySetup* UStaticMesh::GetOrCreateBodySetup()
+{
+	if (!BodyInstance)
+	{
+		BodyInstance = new UBodySetup();
+		ResetBodyForStaticMesh(BodyInstance);
+	}
+	return BodyInstance;
+}
+
+void UStaticMesh::ClearBodySetup()
+{
+	delete BodyInstance;
+	BodyInstance = nullptr;
+	if (CollisionMode == EStaticMeshCollisionMode::Simple)
+	{
+		CollisionMode = EStaticMeshCollisionMode::None;
+	}
+}
+
+void UStaticMesh::SetCollisionMode(EStaticMeshCollisionMode InMode)
+{
+	CollisionMode = InMode;
+}
+
+bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeType)
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty())
+	{
+		return false;
+	}
+
+	if (!StaticMeshAsset->bBoundsValid)
+	{
+		StaticMeshAsset->CacheBounds();
+	}
+	if (!StaticMeshAsset->bBoundsValid)
+	{
+		return false;
+	}
+
+	UBodySetup* Body = GetOrCreateBodySetup();
+	ResetBodyForStaticMesh(Body);
+
+	const FVector Center = StaticMeshAsset->BoundsCenter;
+	const FVector Extent = StaticMeshAsset->BoundsExtent;
+
+	switch (ShapeType)
+	{
+	case EStaticMeshSimpleCollisionShape::Box:
+	{
+		FKBoxElem Box;
+		Box.Center = Center;
+		Box.Rotation = FQuat::Identity;
+		Box.HalfX = (std::max)(Extent.X, 0.001f);
+		Box.HalfY = (std::max)(Extent.Y, 0.001f);
+		Box.HalfZ = (std::max)(Extent.Z, 0.001f);
+		Body->AggregateGeom.BoxElems.push_back(Box);
+		CollisionMode = EStaticMeshCollisionMode::Simple;
+		return true;
+	}
+	case EStaticMeshSimpleCollisionShape::Sphere:
+	{
+		float RadiusSq = 0.0f;
+		for (const FNormalVertex& Vertex : StaticMeshAsset->Vertices)
+		{
+			const FVector Delta = Vertex.pos - Center;
+			RadiusSq = (std::max)(RadiusSq, Delta.X * Delta.X + Delta.Y * Delta.Y + Delta.Z * Delta.Z);
+		}
+
+		FKSphereElem Sphere;
+		Sphere.Center = Center;
+		Sphere.Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
+		Body->AggregateGeom.SphereElems.push_back(Sphere);
+		CollisionMode = EStaticMeshCollisionMode::Simple;
+		return true;
+	}
+	case EStaticMeshSimpleCollisionShape::Capsule:
+	{
+		int32 Axis = 0;
+		if (Extent.Y > Extent.X && Extent.Y >= Extent.Z) Axis = 1;
+		else if (Extent.Z > Extent.X && Extent.Z > Extent.Y) Axis = 2;
+
+		float MinAxis = GetAxisValue(StaticMeshAsset->Vertices[0].pos, Axis);
+		float MaxAxis = MinAxis;
+		float RadiusSq = 0.0f;
+		const FVector AxisVector = GetAxisVector(Axis);
+		for (const FNormalVertex& Vertex : StaticMeshAsset->Vertices)
+		{
+			const float AxisValue = GetAxisValue(Vertex.pos, Axis);
+			MinAxis = (std::min)(MinAxis, AxisValue);
+			MaxAxis = (std::max)(MaxAxis, AxisValue);
+
+			const FVector AxialPoint = Center + AxisVector * (AxisValue - GetAxisValue(Center, Axis));
+			const FVector Perp = Vertex.pos - AxialPoint;
+			RadiusSq = (std::max)(RadiusSq, Perp.X * Perp.X + Perp.Y * Perp.Y + Perp.Z * Perp.Z);
+		}
+
+		const float Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
+		const float HalfAxisLength = (std::max)((MaxAxis - MinAxis) * 0.5f, Radius);
+		FKCapsuleElem Capsule;
+		Capsule.Center = Center;
+		Capsule.Rotation = MakeRotationFromCapsuleXAxisToAxis(Axis);
+		Capsule.Radius = Radius;
+		Capsule.HalfHeight = HalfAxisLength;
+		Body->AggregateGeom.CapsuleElems.push_back(Capsule);
+		CollisionMode = EStaticMeshCollisionMode::Simple;
+		return true;
+	}
+	default:
+		return false;
+	}
+}
+
+bool UStaticMesh::GenerateTriangleMeshCollision()
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty() || StaticMeshAsset->Indices.size() < 3 || StaticMeshAsset->Indices.size() % 3 != 0)
+	{
+		return false;
+	}
+
+	CollisionMode = EStaticMeshCollisionMode::TriangleMesh;
+	return true;
+}
+
+bool UStaticMesh::HasTriangleMeshCollision() const
+{
+	return CollisionMode == EStaticMeshCollisionMode::TriangleMesh
+		&& StaticMeshAsset
+		&& !StaticMeshAsset->Vertices.empty()
+		&& StaticMeshAsset->Indices.size() >= 3
+		&& StaticMeshAsset->Indices.size() % 3 == 0;
+}
+
+// ── Editor collision shape 생성 — AggregateGeom 직접 편집 ────────────────
+
+bool UStaticMesh::AddDefaultBoxCollisionFromBounds()
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty()) return false;
+	if (!StaticMeshAsset->bBoundsValid) StaticMeshAsset->CacheBounds();
+	if (!StaticMeshAsset->bBoundsValid) return false;
+
+	UBodySetup* Body = GetOrCreateBodySetup();
+	FKBoxElem E;
+	E.Center   = StaticMeshAsset->BoundsCenter;
+	E.Rotation = FQuat::Identity;
+	E.HalfX    = (std::max)(StaticMeshAsset->BoundsExtent.X, 0.001f);
+	E.HalfY    = (std::max)(StaticMeshAsset->BoundsExtent.Y, 0.001f);
+	E.HalfZ    = (std::max)(StaticMeshAsset->BoundsExtent.Z, 0.001f);
+	Body->AggregateGeom.BoxElems.push_back(E);
+	CollisionMode = EStaticMeshCollisionMode::Simple;
+	return true;
+}
+
+bool UStaticMesh::AddDefaultSphereCollisionFromBounds()
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty()) return false;
+	if (!StaticMeshAsset->bBoundsValid) StaticMeshAsset->CacheBounds();
+	if (!StaticMeshAsset->bBoundsValid) return false;
+
+	const FVector Center = StaticMeshAsset->BoundsCenter;
+	float RadiusSq = 0.0f;
+	for (const FNormalVertex& V : StaticMeshAsset->Vertices)
+	{
+		const FVector D = V.pos - Center;
+		RadiusSq = (std::max)(RadiusSq, D.X * D.X + D.Y * D.Y + D.Z * D.Z);
+	}
+
+	UBodySetup* Body = GetOrCreateBodySetup();
+	FKSphereElem E;
+	E.Center = Center;
+	E.Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
+	Body->AggregateGeom.SphereElems.push_back(E);
+	CollisionMode = EStaticMeshCollisionMode::Simple;
+	return true;
+}
+
+bool UStaticMesh::AddDefaultCapsuleCollisionFromBounds()
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty()) return false;
+	if (!StaticMeshAsset->bBoundsValid) StaticMeshAsset->CacheBounds();
+	if (!StaticMeshAsset->bBoundsValid) return false;
+
+	const FVector Extent = StaticMeshAsset->BoundsExtent;
+	int32 Axis = 0;
+	if (Extent.Y > Extent.X && Extent.Y >= Extent.Z) Axis = 1;
+	else if (Extent.Z > Extent.X && Extent.Z > Extent.Y) Axis = 2;
+
+	const FVector Center     = StaticMeshAsset->BoundsCenter;
+	const FVector AxisVector = GetAxisVector(Axis);
+
+	float MinAxis = GetAxisValue(StaticMeshAsset->Vertices[0].pos, Axis);
+	float MaxAxis = MinAxis;
+	float RadiusSq = 0.0f;
+	for (const FNormalVertex& V : StaticMeshAsset->Vertices)
+	{
+		const float AV = GetAxisValue(V.pos, Axis);
+		MinAxis = (std::min)(MinAxis, AV);
+		MaxAxis = (std::max)(MaxAxis, AV);
+		const FVector AxialPoint = Center + AxisVector * (AV - GetAxisValue(Center, Axis));
+		const FVector Perp = V.pos - AxialPoint;
+		RadiusSq = (std::max)(RadiusSq, Perp.X * Perp.X + Perp.Y * Perp.Y + Perp.Z * Perp.Z);
+	}
+
+	const float Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
+
+	UBodySetup* Body = GetOrCreateBodySetup();
+	FKCapsuleElem E;
+	E.Center     = Center;
+	E.Rotation   = MakeRotationFromCapsuleXAxisToAxis(Axis);
+	E.Radius     = Radius;
+	E.HalfHeight = (std::max)((MaxAxis - MinAxis) * 0.5f, Radius);
+	Body->AggregateGeom.CapsuleElems.push_back(E);
+	CollisionMode = EStaticMeshCollisionMode::Simple;
+	return true;
+}
+
+void UStaticMesh::ClearCollisionShapes()
+{
+	if (UBodySetup* Body = GetBodySetup())
+	{
+		Body->AggregateGeom.BoxElems.clear();
+		Body->AggregateGeom.SphereElems.clear();
+		Body->AggregateGeom.CapsuleElems.clear();
+	}
+	if (CollisionMode == EStaticMeshCollisionMode::Simple)
+		CollisionMode = EStaticMeshCollisionMode::None;
 }

@@ -1,6 +1,7 @@
 #include "Component/Primitive/StaticMeshComponent.h"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include "Object/Reflection/ObjectFactory.h"
 #include "Core/Types/PropertyTypes.h"
 #include "Engine/Platform/Paths.h"
@@ -13,8 +14,114 @@
 #include "Render/Proxy/StaticMeshSceneProxy.h"
 #include "Render/Proxy/PrimitiveSceneProxy.h"
 #include "Serialization/Archive.h"
+#include "GameFramework/World.h"
+#include "Physics/IPhysicsScene.h"
+#include "Physics/Asset/BodySetup.h"
+#include "GameFramework/AActor.h"
+#include "Debug/DebugDrawQueue.h"
+#include "Render/Scene/FScene.h"
+#include "Math/Quat.h"
+#include "Math/Vector.h"
 
 #include <cstddef>
+
+// ──────────────────────────────────────────────
+// 로컬 와이어프레임 헬퍼 (SkeletalMeshComponent 와 동일 규약)
+// ──────────────────────────────────────────────
+namespace
+{
+using FDbgLineSink = std::function<void(const FVector&, const FVector&)>;
+
+constexpr float kSMDbgPi  = 3.14159265f;
+constexpr float kSMDbgPi2 = kSMDbgPi * 2.0f;
+
+void SMDbgWireSphere(const FDbgLineSink& Emit, const FVector& C, float R)
+{
+	constexpr int32 Seg = 16;
+	const FVector Ax[3] = { FVector(1,0,0), FVector(0,1,0), FVector(0,0,1) };
+	for (int32 p = 0; p < 3; ++p)
+	{
+		const FVector U = Ax[p], V = Ax[(p + 1) % 3];
+		FVector Prev = C + U * R;
+		for (int32 i = 1; i <= Seg; ++i)
+		{
+			const float a = kSMDbgPi2 * i / Seg;
+			const FVector Cur = C + (U * cosf(a) + V * sinf(a)) * R;
+			Emit(Prev, Cur);
+			Prev = Cur;
+		}
+	}
+}
+
+void SMDbgWireBox(const FDbgLineSink& Emit, const FVector& C, const FQuat& Rot, float HX, float HY, float HZ)
+{
+	const FVector L[8] = {
+		{-HX,-HY,-HZ},{HX,-HY,-HZ},{HX,HY,-HZ},{-HX,HY,-HZ},
+		{-HX,-HY, HZ},{HX,-HY, HZ},{HX,HY, HZ},{-HX,HY, HZ},
+	};
+	FVector P[8];
+	for (int32 k = 0; k < 8; ++k) P[k] = C + Rot.RotateVector(L[k]);
+	static const int32 E[12][2] = {
+		{0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7}
+	};
+	for (int32 e = 0; e < 12; ++e) Emit(P[E[e][0]], P[E[e][1]]);
+}
+
+void SMDbgWireCapsule(const FDbgLineSink& Emit, const FVector& C, const FQuat& Rot, float Radius, float HalfH)
+{
+	constexpr int32 Seg = 16;
+	const FVector Axis = Rot.RotateVector(FVector(1,0,0));
+	const FVector U    = Rot.RotateVector(FVector(0,1,0));
+	const FVector V    = Rot.RotateVector(FVector(0,0,1));
+	const FVector TopC = C + Axis * HalfH, BotC = C - Axis * HalfH;
+
+	// 양쪽 끝 반원 + 실린더 4개 세로 줄
+	for (int32 i = 0; i < Seg; ++i)
+	{
+		const float a0 = kSMDbgPi2 * i / Seg;
+		const float a1 = kSMDbgPi2 * (i + 1) / Seg;
+		const FVector r0 = (U * cosf(a0) + V * sinf(a0)) * Radius;
+		const FVector r1 = (U * cosf(a1) + V * sinf(a1)) * Radius;
+		// 실린더 링
+		Emit(TopC + r0, TopC + r1);
+		Emit(BotC + r0, BotC + r1);
+	}
+
+	// 반구 (4분면 2개씩)
+	for (int32 pass = 0; pass < 2; ++pass)
+	{
+		const FVector& Cap = (pass == 0) ? TopC : BotC;
+		const float sign  = (pass == 0) ? 1.0f : -1.0f;
+		const FVector UA = (pass == 0) ? U : U;
+		const FVector VA = V;
+		for (int32 i = 0; i < Seg / 2; ++i)
+		{
+			const float a0 = kSMDbgPi * i / (Seg / 2);
+			const float a1 = kSMDbgPi * (i + 1) / (Seg / 2);
+			// U-Axis 평면 반원
+			{
+				const FVector p0 = Cap + Axis * (sign * Radius * sinf(a0)) + UA * (Radius * cosf(a0));
+				const FVector p1 = Cap + Axis * (sign * Radius * sinf(a1)) + UA * (Radius * cosf(a1));
+				Emit(p0, p1);
+			}
+			// V-Axis 평면 반원
+			{
+				const FVector p0 = Cap + Axis * (sign * Radius * sinf(a0)) + VA * (Radius * cosf(a0));
+				const FVector p1 = Cap + Axis * (sign * Radius * sinf(a1)) + VA * (Radius * cosf(a1));
+				Emit(p0, p1);
+			}
+		}
+	}
+
+	// 세로줄 4개 (연결선)
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const float a = kSMDbgPi2 * i / 4;
+		const FVector r = (U * cosf(a) + V * sinf(a)) * Radius;
+		Emit(TopC + r, BotC + r);
+	}
+}
+} // namespace
 
 FPrimitiveSceneProxy* UStaticMeshComponent::CreateSceneProxy()
 {
@@ -91,6 +198,39 @@ void UStaticMeshComponent::CacheLocalBounds()
 UStaticMesh* UStaticMeshComponent::GetStaticMesh() const
 {
 	return StaticMesh;
+}
+
+UBodySetup* UStaticMeshComponent::GetBodySetup() const
+{
+	return StaticMesh ? StaticMesh->GetBodySetup() : nullptr;
+}
+
+void UStaticMeshComponent::SetMobility(EComponentMobility InMobility)
+{
+	if (Mobility == InMobility) return;
+	Mobility = InMobility;
+	// bSimulatePhysics를 동기화하면 NotifyPhysicsBodyDirty가 PhysX Body를 재빌드
+	SetSimulatePhysics(InMobility == EComponentMobility::Dynamic);
+}
+
+void UStaticMeshComponent::CreatePhysicsState()
+{
+	// Mobility → bSimulatePhysics (Static=false → PxRigidStatic, Dynamic=true → PxRigidDynamic)
+	// AggregateGeom은 이미 에디터 편집 시 실시간으로 업데이트됨.
+	bSimulatePhysics = (Mobility == EComponentMobility::Dynamic);
+
+	// 3. Physics scene에 등록. BeginPlay 이후면 RebuildBody로 기존 actor 교체,
+	//    이전이면 데이터 준비만 — BeginPlay에서 RegisterComponent가 자동 호출됨.
+	if (!Owner) return;
+	UWorld* World = Owner->GetWorld();
+	if (!World) return;
+	if (IPhysicsScene* Scene = World->GetPhysicsScene())
+	{
+		if (bComponentHasBegunPlay)
+			Scene->RebuildBody(this);
+		else if (IsCollisionEnabled())
+			Scene->RegisterComponent(this);
+	}
 }
 
 void UStaticMeshComponent::SetMaterial(int32 ElementIndex, UMaterialInterface* InMaterial)
@@ -305,6 +445,12 @@ void UStaticMeshComponent::PostEditProperty(const char* PropertyName)
 {
 	UMeshComponent::PostEditProperty(PropertyName);
 
+	if (strcmp(PropertyName, "Mobility") == 0)
+	{
+		SetMobility(Mobility);
+		return;
+	}
+
 	if (strcmp(PropertyName, "StaticMeshPath") == 0 || strcmp(PropertyName, "Static Mesh") == 0)
 	{
 		if (StaticMeshPath.empty() || StaticMeshPath == "None")
@@ -365,4 +511,61 @@ void UStaticMeshComponent::PostEditProperty(const char* PropertyName)
 			}
 		}
 	}
+}
+
+// ──────────────────────────────────────────────
+// Physics body 디버그 와이어프레임
+// ──────────────────────────────────────────────
+void UStaticMeshComponent::BuildPhysicsBodyWireframe(
+	const std::function<void(const FVector&, const FVector&)>& EmitLine) const
+{
+	if (!EmitLine) return;
+
+	UBodySetup* BS = GetBodySetup();
+	if (!BS) return;
+
+	// 컴포넌트 월드 위치/회전 추출
+	const FVector WorldPos  = GetWorldLocation();
+	const FQuat   WorldRot  = CachedWorldMatrix.ToQuat();
+
+	for (const FKSphereElem& E : BS->AggregateGeom.SphereElems)
+		SMDbgWireSphere(EmitLine, WorldPos + WorldRot.RotateVector(E.Center), E.Radius);
+
+	for (const FKBoxElem& E : BS->AggregateGeom.BoxElems)
+		SMDbgWireBox(EmitLine, WorldPos + WorldRot.RotateVector(E.Center),
+			WorldRot * E.Rotation, E.HalfX, E.HalfY, E.HalfZ);
+
+	for (const FKCapsuleElem& E : BS->AggregateGeom.CapsuleElems)
+		SMDbgWireCapsule(EmitLine, WorldPos + WorldRot.RotateVector(E.Center),
+			WorldRot * E.Rotation, E.Radius, E.HalfHeight);
+}
+
+void UStaticMeshComponent::ContributeSelectedVisuals(FScene& Scene) const
+{
+	if (!bShowPhysicsBodies) return;
+
+	BuildPhysicsBodyWireframe([&Scene](const FVector& A, const FVector& B)
+	{
+		Scene.AddDebugLine(A, B, FColor::Green());
+	});
+}
+
+void UStaticMeshComponent::DrawRuntimePhysicsBodies()
+{
+	if (!bShowPhysicsBodies) return;
+
+	UWorld* World = GetWorld();
+	if (!World || !World->HasBegunPlay()) return;
+
+	FDebugDrawQueue& Queue = World->GetScene().GetDebugDrawQueue();
+	BuildPhysicsBodyWireframe([&Queue](const FVector& A, const FVector& B)
+	{
+		Queue.AddLine(A, B, FColor::Green(), 0.0f);
+	});
+}
+
+void UStaticMeshComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction& ThisTickFunction)
+{
+	UMeshComponent::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	DrawRuntimePhysicsBodies();
 }

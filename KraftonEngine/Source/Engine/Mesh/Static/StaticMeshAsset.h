@@ -2,6 +2,7 @@
 
 #include "Core/Types/CoreTypes.h"
 #include "Math/Vector.h"
+#include "Math/Quat.h"
 #include "Engine/Object/Object.h"
 #include "Render/Resource/Buffer.h"
 #include "Serialization/Archive.h"
@@ -72,7 +73,30 @@ struct FStaticMaterial
 	}
 };
 
-// Cooked Data — GPU용 정점/인덱스
+// ── Static Mesh 콜리전 셰이프 ──────────────────────────────────────────────
+
+enum class EStaticMeshCollisionShapeType : uint8
+{
+	Box     = 0,
+	Sphere  = 1,
+	Capsule = 2,
+	Convex  = 3,
+};
+
+// 에디터 UI 전용 — 직렬화하지 않음. 소스 오브 트루스는 UBodySetup::AggregateGeom.
+struct FStaticMeshCollisionShape
+{
+	EStaticMeshCollisionShapeType ShapeType = EStaticMeshCollisionShapeType::Box;
+
+	FVector Center     = FVector(0.f, 0.f, 0.f);
+	FQuat   Rotation   = FQuat::Identity;
+
+	FVector HalfExtent = FVector(0.1f, 0.1f, 0.1f); // Box
+	float   Radius     = 0.1f;                        // Sphere, Capsule
+	float   HalfHeight = 0.1f;                        // Capsule
+};
+
+// ── Cooked Data — GPU용 정점/인덱스 ───────────────────────────────────────
 // FStaticMeshLODResources in UE5
 struct FStaticMesh
 {

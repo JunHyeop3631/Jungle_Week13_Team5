@@ -14,6 +14,7 @@ struct FBodyInstance
 
 	FPhysicsActorHandle ActorHandle;
 	TArray<FPhysicsShapeHandle> ShapeHandles;
+	TArray<FPhysicsTriangleMeshHandle> TriangleMeshHandles;
 
 	FTransform CachedWorldTransform;
 
@@ -29,6 +30,7 @@ struct FBodyInstance
 		BodyType = EPhysicsBodyType::Static;
 		ActorHandle = {};
 		ShapeHandles.clear();
+		TriangleMeshHandles.clear();
 		CachedWorldTransform = FTransform();
 		bValid = false;
 		bSimulating = false;
