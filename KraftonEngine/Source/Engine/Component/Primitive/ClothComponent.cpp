@@ -85,6 +85,13 @@ void UClothComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 	if (bSimulateCloth && ClothInstance)
 	{
 		ApplyClothSettings();
+		if (UWorld* World = GetWorld())
+		{
+			if (IClothScene* Scene = World->GetClothScene())
+			{
+				Scene->SetClothWorldMatrix(ClothInstance, GetWorldMatrix());
+			}
+		}
 	}
 }
 
@@ -192,6 +199,7 @@ bool UClothComponent::RecreateCloth()
 	CachedRenderData.Reset();
 	CachedMeshData.Vertices.clear();
 	CachedMeshData.Indices.clear();
+	Scene->SetClothWorldMatrix(ClothInstance, GetWorldMatrix());
 	ApplyClothSettings();
 	MarkWorldBoundsDirty();
 	MarkProxyDirty(EDirtyFlag::Mesh);
