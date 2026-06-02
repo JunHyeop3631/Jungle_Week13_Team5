@@ -162,6 +162,9 @@ FClothSettings UClothComponent::BuildClothSettings() const
 	Settings.WindVelocity = ClampVectorLength(WindVelocity, 50.0f);
 	Settings.DragCoefficient = (std::min)((std::max)(WindDragCoefficient, 0.0f), 0.05f);
 	Settings.LiftCoefficient = (std::min)((std::max)(WindLiftCoefficient, 0.0f), 0.02f);
+	Settings.LinearInertia = 0.0f;
+	Settings.AngularInertia = 0.0f;
+	Settings.CentrifugalInertia = 0.0f;
 	return Settings;
 }
 
