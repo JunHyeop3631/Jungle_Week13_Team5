@@ -14,6 +14,8 @@ public:
 	GENERATED_BODY()
 	UShapeComponent();
 
+	void BeginPlay() override;
+	void EndPlay() override;
 	void PostEditProperty(const char* PropertyName) override;
 	bool SupportsOutline() const override { return false; }
 	FPrimitiveSceneProxy* CreateSceneProxy() override;

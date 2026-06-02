@@ -1,5 +1,9 @@
 ﻿#include "Physics/Cloth/NvClothScene.h"
 
+#include "Component/Shape/BoxComponent.h"
+#include "Component/Shape/CapsuleComponent.h"
+#include "Component/Shape/SphereComponent.h"
+#include "Component/ShapeComponent.h"
 #include "NvCloth/Callbacks.h"
 #include "NvCloth/Cloth.h"
 #include "NvCloth/Fabric.h"
@@ -399,6 +403,9 @@ struct FNvClothFabricRecord
 struct FNvClothInstanceRecord
 {
 	FClothInstance Instance;
+	FClothCollisionDesc UserCollision;
+	FMatrix ClothWorldMatrix = FMatrix::Identity;
+	bool bUseRegisteredShapeCollision = false;
 	nv::cloth::Cloth* Cloth = nullptr;
 	FNvClothFabricRecord* FabricRecord = nullptr;
 	TArray<nv::cloth::PhaseConfig> PhaseConfigs;
@@ -408,6 +415,141 @@ struct FNvClothInstanceRecord
 
 namespace
 {
+FVector TransformPoint(const FMatrix& Matrix, const FVector& Point)
+{
+	return Matrix.TransformPositionWithW(Point);
+}
+
+bool HasBoundsPoints(const FBoundingBox& Bounds)
+{
+	return Bounds.Min.X <= Bounds.Max.X
+		&& Bounds.Min.Y <= Bounds.Max.Y
+		&& Bounds.Min.Z <= Bounds.Max.Z;
+}
+
+bool BoundsIntersect(const FBoundingBox& A, const FBoundingBox& B)
+{
+	return HasBoundsPoints(A) && HasBoundsPoints(B) && A.IsIntersected(B);
+}
+
+FBoundingBox ExpandBounds(const FBoundingBox& Bounds, float Padding)
+{
+	if (!HasBoundsPoints(Bounds))
+	{
+		return Bounds;
+	}
+
+	const FVector Delta(Padding, Padding, Padding);
+	return FBoundingBox(Bounds.Min - Delta, Bounds.Max + Delta);
+}
+
+float GetWorldToClothRadiusScale(const FMatrix& ClothWorldMatrix)
+{
+	const FVector Scale = ClothWorldMatrix.GetScale();
+	const float MaxScale = (std::max)({ std::abs(Scale.X), std::abs(Scale.Y), std::abs(Scale.Z) });
+	return MaxScale > 1.0e-4f ? 1.0f / MaxScale : 1.0f;
+}
+
+FBoundingBox BuildClothWorldBounds(const FNvClothInstanceRecord& Record)
+{
+	FBoundingBox Bounds;
+	if (!Record.Cloth)
+	{
+		return Bounds;
+	}
+
+	auto CurrentParticles = Record.Cloth->getCurrentParticles();
+	for (uint32 Index = 0; Index < CurrentParticles.size(); ++Index)
+	{
+		const physx::PxVec4& Particle = CurrentParticles[Index];
+		Bounds.Expand(TransformPoint(Record.ClothWorldMatrix, FVector(Particle.x, Particle.y, Particle.z)));
+	}
+	return Bounds;
+}
+
+bool AppendShapeColliderToClothCollision(
+	const UShapeComponent* Shape,
+	const FMatrix& ClothWorldInverse,
+	float RadiusScale,
+	FClothCollisionDesc& OutCollision)
+{
+	if (!Shape || !Shape->IsCollisionEnabled())
+	{
+		return false;
+	}
+
+	if (const USphereComponent* Sphere = Cast<USphereComponent>(Shape))
+	{
+		const float Radius = Sphere->GetScaledSphereRadius() * RadiusScale;
+		if (Radius <= 0.0f)
+		{
+			return false;
+		}
+
+		FClothCollisionSphere ClothSphere;
+		ClothSphere.Center = TransformPoint(ClothWorldInverse, Sphere->GetWorldLocation());
+		ClothSphere.Radius = Radius;
+		OutCollision.Spheres.push_back(ClothSphere);
+		return true;
+	}
+
+	if (const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Shape))
+	{
+		const float WorldRadius = Capsule->GetScaledCapsuleRadius();
+		const float WorldHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+		const float Radius = WorldRadius * RadiusScale;
+		const float SegmentHalfLength = (std::max)(0.0f, WorldHalfHeight - WorldRadius);
+		if (Radius <= 0.0f || WorldHalfHeight <= 0.0f)
+		{
+			return false;
+		}
+
+		FVector Axis = Capsule->GetUpVector();
+		if (Axis.Length() <= 1.0e-4f)
+		{
+			Axis = FVector::ZAxisVector;
+		}
+		Axis.Normalize();
+
+		const FVector Center = Capsule->GetWorldLocation();
+		const uint32 SphereBase = static_cast<uint32>(OutCollision.Spheres.size());
+
+		FClothCollisionSphere SphereA;
+		SphereA.Center = TransformPoint(ClothWorldInverse, Center + Axis * SegmentHalfLength);
+		SphereA.Radius = Radius;
+		OutCollision.Spheres.push_back(SphereA);
+
+		FClothCollisionSphere SphereB;
+		SphereB.Center = TransformPoint(ClothWorldInverse, Center - Axis * SegmentHalfLength);
+		SphereB.Radius = Radius;
+		OutCollision.Spheres.push_back(SphereB);
+
+		FClothCollisionCapsule ClothCapsule;
+		ClothCapsule.SphereA = SphereBase;
+		ClothCapsule.SphereB = SphereBase + 1;
+		OutCollision.Capsules.push_back(ClothCapsule);
+		return true;
+	}
+
+	if (const UBoxComponent* Box = Cast<UBoxComponent>(Shape))
+	{
+		const FVector Extent = Box->GetScaledBoxExtent();
+		const float Radius = std::sqrt(Extent.LengthSquared()) * RadiusScale;
+		if (Radius <= 0.0f)
+		{
+			return false;
+		}
+
+		FClothCollisionSphere ClothSphere;
+		ClothSphere.Center = TransformPoint(ClothWorldInverse, Box->GetWorldLocation());
+		ClothSphere.Radius = Radius;
+		OutCollision.Spheres.push_back(ClothSphere);
+		return true;
+	}
+
+	return false;
+}
+
 uint32 CountPinnedParticles(const FNvClothInstanceRecord& Record)
 {
 	if (!Record.Cloth)
@@ -787,6 +929,7 @@ FClothInstance* FNvClothScene::CreateClothInstance(const FClothInstanceDesc& Des
 	Record->Instance.Settings = Desc.Settings;
 	Record->Instance.NumParticles = FabricRecord->NumParticles;
 	Record->Instance.bValid = true;
+	Record->UserCollision = Desc.Collision;
 
 	ApplyClothSettings(*Record);
 
@@ -969,12 +1112,12 @@ bool FNvClothScene::SetClothConstraints(FClothInstance* Instance, const FClothCo
 bool FNvClothScene::SetClothCollisionSpheres(FClothInstance* Instance, const TArray<FClothCollisionSphere>& Spheres)
 {
 	FNvClothInstanceRecord* Record = FindInstanceRecord(Instance);
-	if (!Record || !Record->Cloth || !ValidateCapsules(Instance->Collision.Capsules, static_cast<uint32>(Spheres.size())))
+	if (!Record || !Record->Cloth || !ValidateCapsules(Record->UserCollision.Capsules, static_cast<uint32>(Spheres.size())))
 	{
 		return false;
 	}
 
-	FClothCollisionDesc Collision = Instance->Collision;
+	FClothCollisionDesc Collision = Record->UserCollision;
 	Collision.Spheres = Spheres;
 
 	if (!ApplyClothCollision(*Record, Collision))
@@ -982,6 +1125,7 @@ bool FNvClothScene::SetClothCollisionSpheres(FClothInstance* Instance, const TAr
 		return false;
 	}
 
+	Record->UserCollision = Collision;
 	Instance->Collision = Collision;
 	return true;
 }
@@ -989,12 +1133,12 @@ bool FNvClothScene::SetClothCollisionSpheres(FClothInstance* Instance, const TAr
 bool FNvClothScene::SetClothCollisionCapsules(FClothInstance* Instance, const TArray<FClothCollisionCapsule>& Capsules)
 {
 	FNvClothInstanceRecord* Record = FindInstanceRecord(Instance);
-	if (!Record || !Record->Cloth || !ValidateCapsules(Capsules, static_cast<uint32>(Instance->Collision.Spheres.size())))
+	if (!Record || !Record->Cloth || !ValidateCapsules(Capsules, static_cast<uint32>(Record->UserCollision.Spheres.size())))
 	{
 		return false;
 	}
 
-	FClothCollisionDesc Collision = Instance->Collision;
+	FClothCollisionDesc Collision = Record->UserCollision;
 	Collision.Capsules = Capsules;
 
 	if (!ApplyClothCollision(*Record, Collision))
@@ -1002,6 +1146,7 @@ bool FNvClothScene::SetClothCollisionCapsules(FClothInstance* Instance, const TA
 		return false;
 	}
 
+	Record->UserCollision = Collision;
 	Instance->Collision = Collision;
 	return true;
 }
@@ -1014,8 +1159,47 @@ bool FNvClothScene::SetClothCollision(FClothInstance* Instance, const FClothColl
 		return false;
 	}
 
+	Record->UserCollision = Collision;
 	Instance->Collision = Collision;
 	return true;
+}
+
+bool FNvClothScene::SetClothWorldMatrix(FClothInstance* Instance, const FMatrix& WorldMatrix)
+{
+	FNvClothInstanceRecord* Record = FindInstanceRecord(Instance);
+	if (!Record)
+	{
+		return false;
+	}
+
+	Record->ClothWorldMatrix = WorldMatrix;
+	Record->bUseRegisteredShapeCollision = true;
+	return true;
+}
+
+void FNvClothScene::RegisterShapeCollider(UShapeComponent* ShapeComponent)
+{
+	if (!ShapeComponent)
+	{
+		return;
+	}
+
+	if (std::find(ShapeColliders.begin(), ShapeColliders.end(), ShapeComponent) == ShapeColliders.end())
+	{
+		ShapeColliders.push_back(ShapeComponent);
+	}
+}
+
+void FNvClothScene::UnregisterShapeCollider(UShapeComponent* ShapeComponent)
+{
+	if (!ShapeComponent)
+	{
+		return;
+	}
+
+	ShapeColliders.erase(
+		std::remove(ShapeColliders.begin(), ShapeColliders.end(), ShapeComponent),
+		ShapeColliders.end());
 }
 
 void FNvClothScene::SimulateCloth(float DeltaTime)
@@ -1027,6 +1211,21 @@ void FNvClothScene::SimulateCloth(float DeltaTime)
 
 	DeltaTime = std::min(DeltaTime, 1.0f / 30.0f);
 	const auto StartTime = std::chrono::high_resolution_clock::now();
+
+	for (std::unique_ptr<FNvClothInstanceRecord>& Record : Instances)
+	{
+		if (!Record || !Record->Cloth || !Record->bUseRegisteredShapeCollision)
+		{
+			continue;
+		}
+
+		FClothCollisionDesc Collision;
+		if (BuildCollisionFromRegisteredShapes(*Record, Collision))
+		{
+			ApplyClothCollision(*Record, Collision);
+			Record->Instance.Collision = Collision;
+		}
+	}
 
 	Stats.NumSolverChunks = 0;
 	if (Solver->beginSimulation(DeltaTime))
@@ -1395,5 +1594,41 @@ bool FNvClothScene::ApplyClothCollision(FNvClothInstanceRecord& Record, const FC
 	}
 
 	Record.Cloth->clearInterpolation();
+	return true;
+}
+
+bool FNvClothScene::BuildCollisionFromRegisteredShapes(FNvClothInstanceRecord& Record, FClothCollisionDesc& OutCollision) const
+{
+	OutCollision = Record.UserCollision;
+	if (!Record.Cloth)
+	{
+		return false;
+	}
+
+	FBoundingBox ClothBounds = BuildClothWorldBounds(Record);
+	if (!HasBoundsPoints(ClothBounds))
+	{
+		return true;
+	}
+
+	ClothBounds = ExpandBounds(ClothBounds, 25.0f);
+	const FMatrix ClothWorldInverse = Record.ClothWorldMatrix.GetInverse();
+	const float RadiusScale = GetWorldToClothRadiusScale(Record.ClothWorldMatrix);
+
+	for (UShapeComponent* Shape : ShapeColliders)
+	{
+		if (!Shape || !Shape->IsCollisionEnabled())
+		{
+			continue;
+		}
+
+		if (!BoundsIntersect(ClothBounds, Shape->GetWorldBoundingBox()))
+		{
+			continue;
+		}
+
+		AppendShapeColliderToClothCollision(Shape, ClothWorldInverse, RadiusScale, OutCollision);
+	}
+
 	return true;
 }

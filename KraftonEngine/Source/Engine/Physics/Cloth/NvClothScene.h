@@ -41,6 +41,10 @@ public:
 	bool SetClothCollisionSpheres(FClothInstance* Instance, const TArray<FClothCollisionSphere>& Spheres) override;
 	bool SetClothCollisionCapsules(FClothInstance* Instance, const TArray<FClothCollisionCapsule>& Capsules) override;
 	bool SetClothCollision(FClothInstance* Instance, const FClothCollisionDesc& Collision) override;
+	bool SetClothWorldMatrix(FClothInstance* Instance, const FMatrix& WorldMatrix) override;
+
+	void RegisterShapeCollider(UShapeComponent* ShapeComponent) override;
+	void UnregisterShapeCollider(UShapeComponent* ShapeComponent) override;
 
 	void SimulateCloth(float DeltaTime) override;
 	bool GetClothParticlePositions(const FClothInstance* Instance, TArray<FVector>& OutPositions) const override;
@@ -61,12 +65,14 @@ private:
 	void ApplyClothSettings(FNvClothInstanceRecord& Record);
 	bool ApplyClothConstraints(FNvClothInstanceRecord& Record, const FClothConstraintDesc& Constraints);
 	bool ApplyClothCollision(FNvClothInstanceRecord& Record, const FClothCollisionDesc& Collision);
+	bool BuildCollisionFromRegisteredShapes(FNvClothInstanceRecord& Record, FClothCollisionDesc& OutCollision) const;
 
 	nv::cloth::Factory* Factory = nullptr;
 	nv::cloth::Solver* Solver = nullptr;
 
 	TArray<std::unique_ptr<FNvClothFabricRecord>> Fabrics;
 	TArray<std::unique_ptr<FNvClothInstanceRecord>> Instances;
+	TArray<UShapeComponent*> ShapeColliders;
 
 	uint64 NextFabricSerial = 1;
 	uint64 NextInstanceSerial = 1;
