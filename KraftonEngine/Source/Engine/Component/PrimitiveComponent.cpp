@@ -272,6 +272,12 @@ void UPrimitiveComponent::PostEditProperty(const char* PropertyName)
 	{
 		SetCenterOfMass(CenterOfMassOffset);
 	}
+	else if (strcmp(PropertyName, "LinearDamping") == 0 || strcmp(PropertyName, "Linear Damping") == 0
+		  || strcmp(PropertyName, "AngularDamping") == 0 || strcmp(PropertyName, "Angular Damping") == 0
+		  || strcmp(PropertyName, "bEnableGravity") == 0 || strcmp(PropertyName, "Enable Gravity") == 0)
+	{
+		NotifyPhysicsBodyDirty();
+	}
 }
 
 void UPrimitiveComponent::PostEditChangeProperty(const FPropertyChangedEvent& Event)

@@ -9,6 +9,8 @@
 
 class FWindowsWindow;
 class UStaticMeshComponent;
+class UStaticMeshCollisionDebugComponent;
+class UGizmoComponent;
 class UWorld;
 class AActor;
 
@@ -19,11 +21,19 @@ public:
 	void Release();
 
 	void ResetCameraToPreviewBounds();
+	void CreateGizmo();
 
 	void SetPreviewWorld(UWorld* InWorld) { PreviewWorld = InWorld; }
 	void SetPreviewActor(AActor* InActor) { PreviewActor = InActor; }
 	void SetPreviewMeshComponent(UStaticMeshComponent* InComp) { PreviewMeshComponent = InComp; }
+	void SetCollisionDebugComponent(UStaticMeshCollisionDebugComponent* InComp) { CollisionDebugComponent = InComp; }
 	void SetViewportRect(float X, float Y, float Width, float Height) { ViewportScreenRect = { X, Y, Width, Height }; }
+
+	void RefreshCollisionDebug();
+
+	UGizmoComponent* GetGizmo() const { return Gizmo; }
+	bool IsGizmoHolding() const;
+	void ApplyTransformSettingsToGizmo();
 
 	bool IsRenderable() const override { return bIsRenderable; }
 	bool IsMouseOverViewport() const override;
@@ -42,6 +52,7 @@ public:
 private:
 	void TickShortcuts();
 	void TickInput(float DeltaTime);
+	void TickInteraction(float DeltaTime);
 	void SyncCameraSmoothingTarget();
 	void ApplySmoothedCameraLocation(float DeltaTime);
 
@@ -53,6 +64,8 @@ private:
 	UWorld* PreviewWorld = nullptr;
 	AActor* PreviewActor = nullptr;
 	UStaticMeshComponent* PreviewMeshComponent = nullptr;
+	UStaticMeshCollisionDebugComponent* CollisionDebugComponent = nullptr;
+	UGizmoComponent* Gizmo = nullptr;
 
 	bool bIsRenderable = false;
 

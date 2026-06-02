@@ -17,6 +17,7 @@ namespace
 	constexpr const char* StaticMeshBodyName = "StaticMesh";
 	constexpr uint32 StaticMeshCollisionMagic = 0x434D534B; // KSMC
 	constexpr uint32 StaticMeshCollisionVersion = 2;
+	constexpr uint32 StaticMeshCollisionVersionLegacyMax = 3; // v3: CollisionShapes 블록 포함 (현재는 폐기)
 
 	FVector GetAxisVector(int32 Axis)
 	{
@@ -88,7 +89,7 @@ namespace
 		Ar << Magic;
 		Ar << Version;
 
-		if (Magic != StaticMeshCollisionMagic || Version > StaticMeshCollisionVersion)
+		if (Magic != StaticMeshCollisionMagic || Version > StaticMeshCollisionVersionLegacyMax)
 		{
 			return;
 		}
@@ -127,6 +128,37 @@ namespace
 		if (CollisionMode == EStaticMeshCollisionMode::Simple && (!BodyInstance || BodyInstance->AggregateGeom.IsEmpty()))
 		{
 			CollisionMode = EStaticMeshCollisionMode::None;
+		}
+
+		// v3 파일: AggregateGeom 이후에 CollisionShapes 블록이 있음 — 읽고 버림 (마이그레이션)
+		if (Version == 3 && Ar.RemainingBytes() >= sizeof(uint32))
+		{
+			uint32 Count = 0;
+			Ar << Count;
+			for (uint32 si = 0; si < Count && Ar.RemainingBytes() > 0; ++si)
+			{
+				uint8 ShapeType = 0;
+				Ar << ShapeType;
+				float cx, cy, cz, rx, ry, rz, rw;
+				Ar << cx << cy << cz << rx << ry << rz << rw;
+				switch (ShapeType)
+				{
+				case 0: // Box
+				{ float hx, hy, hz; Ar << hx << hy << hz; break; }
+				case 1: // Sphere
+				{ float r; Ar << r; break; }
+				case 2: // Capsule
+				{ float r, hh; Ar << r << hh; break; }
+				case 3: // Convex
+				{
+					uint32 vc = 0; Ar << vc;
+					for (uint32 vi = 0; vi < vc; ++vi)
+					{ float vx, vy, vz; Ar << vx << vy << vz; }
+					break;
+				}
+				default: break;
+				}
+			}
 		}
 	}
 }
@@ -456,4 +488,99 @@ bool UStaticMesh::HasTriangleMeshCollision() const
 		&& !StaticMeshAsset->Vertices.empty()
 		&& StaticMeshAsset->Indices.size() >= 3
 		&& StaticMeshAsset->Indices.size() % 3 == 0;
+}
+
+// ── Editor collision shape 생성 — AggregateGeom 직접 편집 ────────────────
+
+bool UStaticMesh::AddDefaultBoxCollisionFromBounds()
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty()) return false;
+	if (!StaticMeshAsset->bBoundsValid) StaticMeshAsset->CacheBounds();
+	if (!StaticMeshAsset->bBoundsValid) return false;
+
+	UBodySetup* Body = GetOrCreateBodySetup();
+	FKBoxElem E;
+	E.Center   = StaticMeshAsset->BoundsCenter;
+	E.Rotation = FQuat::Identity;
+	E.HalfX    = (std::max)(StaticMeshAsset->BoundsExtent.X, 0.001f);
+	E.HalfY    = (std::max)(StaticMeshAsset->BoundsExtent.Y, 0.001f);
+	E.HalfZ    = (std::max)(StaticMeshAsset->BoundsExtent.Z, 0.001f);
+	Body->AggregateGeom.BoxElems.push_back(E);
+	CollisionMode = EStaticMeshCollisionMode::Simple;
+	return true;
+}
+
+bool UStaticMesh::AddDefaultSphereCollisionFromBounds()
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty()) return false;
+	if (!StaticMeshAsset->bBoundsValid) StaticMeshAsset->CacheBounds();
+	if (!StaticMeshAsset->bBoundsValid) return false;
+
+	const FVector Center = StaticMeshAsset->BoundsCenter;
+	float RadiusSq = 0.0f;
+	for (const FNormalVertex& V : StaticMeshAsset->Vertices)
+	{
+		const FVector D = V.pos - Center;
+		RadiusSq = (std::max)(RadiusSq, D.X * D.X + D.Y * D.Y + D.Z * D.Z);
+	}
+
+	UBodySetup* Body = GetOrCreateBodySetup();
+	FKSphereElem E;
+	E.Center = Center;
+	E.Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
+	Body->AggregateGeom.SphereElems.push_back(E);
+	CollisionMode = EStaticMeshCollisionMode::Simple;
+	return true;
+}
+
+bool UStaticMesh::AddDefaultCapsuleCollisionFromBounds()
+{
+	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty()) return false;
+	if (!StaticMeshAsset->bBoundsValid) StaticMeshAsset->CacheBounds();
+	if (!StaticMeshAsset->bBoundsValid) return false;
+
+	const FVector Extent = StaticMeshAsset->BoundsExtent;
+	int32 Axis = 0;
+	if (Extent.Y > Extent.X && Extent.Y >= Extent.Z) Axis = 1;
+	else if (Extent.Z > Extent.X && Extent.Z > Extent.Y) Axis = 2;
+
+	const FVector Center     = StaticMeshAsset->BoundsCenter;
+	const FVector AxisVector = GetAxisVector(Axis);
+
+	float MinAxis = GetAxisValue(StaticMeshAsset->Vertices[0].pos, Axis);
+	float MaxAxis = MinAxis;
+	float RadiusSq = 0.0f;
+	for (const FNormalVertex& V : StaticMeshAsset->Vertices)
+	{
+		const float AV = GetAxisValue(V.pos, Axis);
+		MinAxis = (std::min)(MinAxis, AV);
+		MaxAxis = (std::max)(MaxAxis, AV);
+		const FVector AxialPoint = Center + AxisVector * (AV - GetAxisValue(Center, Axis));
+		const FVector Perp = V.pos - AxialPoint;
+		RadiusSq = (std::max)(RadiusSq, Perp.X * Perp.X + Perp.Y * Perp.Y + Perp.Z * Perp.Z);
+	}
+
+	const float Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
+
+	UBodySetup* Body = GetOrCreateBodySetup();
+	FKCapsuleElem E;
+	E.Center     = Center;
+	E.Rotation   = MakeRotationFromCapsuleXAxisToAxis(Axis);
+	E.Radius     = Radius;
+	E.HalfHeight = (std::max)((MaxAxis - MinAxis) * 0.5f, Radius);
+	Body->AggregateGeom.CapsuleElems.push_back(E);
+	CollisionMode = EStaticMeshCollisionMode::Simple;
+	return true;
+}
+
+void UStaticMesh::ClearCollisionShapes()
+{
+	if (UBodySetup* Body = GetBodySetup())
+	{
+		Body->AggregateGeom.BoxElems.clear();
+		Body->AggregateGeom.SphereElems.clear();
+		Body->AggregateGeom.CapsuleElems.clear();
+	}
+	if (CollisionMode == EStaticMeshCollisionMode::Simple)
+		CollisionMode = EStaticMeshCollisionMode::None;
 }

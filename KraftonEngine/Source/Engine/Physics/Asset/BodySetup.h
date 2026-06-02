@@ -6,6 +6,7 @@
 #include "Source/Engine/Physics/Asset/BodySetup.generated.h"
 
 // 이 바디가 충돌 시스템에서 어떻게 쓰이는지 (언리얼 ECollisionEnabled 대응)
+UENUM()
 enum class EBodyCollisionEnabled : uint8
 {
     NoCollision     = 0,   // 충돌 안 함
@@ -15,6 +16,7 @@ enum class EBodyCollisionEnabled : uint8
 };
 
 // 이 바디의 시뮬레이션 방식 (언리얼 EPhysicsType 대응)
+UENUM()
 enum class EBodyPhysicsType : uint8
 {
     Default   = 0,   // 시뮬레이션 켜지면 물리로 구동 (래그돌)

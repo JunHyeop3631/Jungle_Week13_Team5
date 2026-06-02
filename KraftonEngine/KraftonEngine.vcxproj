@@ -526,6 +526,7 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClCompile Include="Source\Engine\Component\Camera\SpringArmComponent.cpp" />
     <ClCompile Include="Source\Engine\Component\Debug\BoneDebugComponent.cpp" />
     <ClCompile Include="Source\Engine\Component\Debug\PhysicsShapeDebugComponent.cpp" />
+    <ClCompile Include="Source\Engine\Component\Debug\StaticMeshCollisionDebugComponent.cpp" />
     <ClCompile Include="Source\Engine\Component\Debug\GizmoComponent.cpp" />
     <ClCompile Include="Source\Engine\Component\Debug\TemporaryBoneAnimatorComponent.cpp" />
     <ClCompile Include="Source\Engine\Component\Input\ActionComponent.cpp" />
@@ -683,6 +684,7 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClCompile Include="Source\Engine\Render\Proxy\BillboardSceneProxy.cpp" />
     <ClCompile Include="Source\Engine\Render\Proxy\BoneDebugSceneProxy.cpp" />
     <ClCompile Include="Source\Engine\Render\Proxy\PhysicsShapeDebugSceneProxy.cpp" />
+    <ClCompile Include="Source\Engine\Render\Proxy\StaticMeshCollisionDebugSceneProxy.cpp" />
     <ClCompile Include="Source\Engine\Render\Proxy\CylindricalBillboardSceneProxy.cpp" />
     <ClCompile Include="Source\Engine\Render\Proxy\DecalSceneProxy.cpp" />
     <ClCompile Include="Source\Engine\Render\Proxy\GizmoSceneProxy.cpp" />
@@ -908,6 +910,7 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClInclude Include="Source\Engine\Component\Camera\SpringArmComponent.h" />
     <ClInclude Include="Source\Engine\Component\Debug\BoneDebugComponent.h" />
     <ClInclude Include="Source\Engine\Component\Debug\PhysicsShapeDebugComponent.h" />
+    <ClInclude Include="Source\Engine\Component\Debug\StaticMeshCollisionDebugComponent.h" />
     <ClInclude Include="Source\Engine\Component\Debug\GizmoComponent.h" />
     <ClInclude Include="Source\Engine\Component\Debug\TemporaryBoneAnimatorComponent.h" />
     <ClInclude Include="Source\Engine\Component\Input\ActionComponent.h" />
@@ -1113,6 +1116,8 @@ xcopy /Y "$(ProjectDir)ThirdParty\fbx\lib\x64\release\libfbxsdk.dll" "$(OutDir)"
     <ClInclude Include="Source\Engine\Render\Proxy\BillboardSceneProxy.h" />
     <ClInclude Include="Source\Engine\Render\Proxy\BoneDebugSceneProxy.h" />
     <ClInclude Include="Source\Engine\Render\Proxy\PhysicsShapeDebugSceneProxy.h" />
+    <ClInclude Include="Source\Engine\Render\Proxy\ShapeDebugGeometryUtils.h" />
+    <ClInclude Include="Source\Engine\Render\Proxy\StaticMeshCollisionDebugSceneProxy.h" />
     <ClInclude Include="Source\Engine\Render\Proxy\CylindricalBillboardSceneProxy.h" />
     <ClInclude Include="Source\Engine\Render\Proxy\DecalSceneProxy.h" />
     <ClInclude Include="Source\Engine\Render\Proxy\DirtyFlag.h" />

@@ -1,8 +1,13 @@
 #include "StaticMeshEditorViewportClient.h"
 
+#include "Component/Debug/GizmoComponent.h"
+#include "GameFramework/World.h"
+#include "Component/Debug/StaticMeshCollisionDebugComponent.h"
 #include "Component/Primitive/StaticMeshComponent.h"
 #include "Input/InputSystem.h"
 #include "Math/MathUtils.h"
+#include "Object/Object.h"
+#include "Collision/Ray/RayUtils.h"
 #include "Render/Types/MinimalViewInfo.h"
 #include "Settings/EditorSettings.h"
 #include "Slate/SlateApplication.h"
@@ -20,6 +25,40 @@ void FStaticMeshEditorViewportClient::Initialize(ID3D11Device* Device, uint32 Wi
 	bIsRenderable = true;
 }
 
+void FStaticMeshEditorViewportClient::RefreshCollisionDebug()
+{
+	if (CollisionDebugComponent)
+	{
+		CollisionDebugComponent->MarkRenderStateDirty();
+	}
+}
+
+void FStaticMeshEditorViewportClient::CreateGizmo()
+{
+	if (!PreviewWorld) return;
+	Gizmo = UObjectManager::Get().CreateObject<UGizmoComponent>();
+	Gizmo->SetScene(&PreviewWorld->GetScene());
+	Gizmo->CreateRenderState();
+	Gizmo->Deactivate();
+}
+
+bool FStaticMeshEditorViewportClient::IsGizmoHolding() const
+{
+	return Gizmo && Gizmo->IsHolding();
+}
+
+void FStaticMeshEditorViewportClient::ApplyTransformSettingsToGizmo()
+{
+	if (!Gizmo) return;
+	const FGizmoToolSettings& Settings = FEditorSettings::Get().MeshEditorViewportSettings.Gizmo;
+	const bool bForceLocalForScale = Gizmo->GetMode() == EGizmoMode::Scale;
+	Gizmo->SetWorldSpace(bForceLocalForScale ? false : Settings.CoordSystem == EEditorCoordSystem::World);
+	Gizmo->SetSnapSettings(
+		Settings.bEnableTranslationSnap, Settings.TranslationSnapSize,
+		Settings.bEnableRotationSnap,    Settings.RotationSnapSize,
+		Settings.bEnableScaleSnap,       Settings.ScaleSnapSize);
+}
+
 void FStaticMeshEditorViewportClient::Release()
 {
 	if (Viewport)
@@ -29,9 +68,16 @@ void FStaticMeshEditorViewportClient::Release()
 		Viewport = nullptr;
 	}
 
+	if (Gizmo)
+	{
+		UObjectManager::Get().DestroyObject(Gizmo);
+		Gizmo = nullptr;
+	}
+
 	PreviewWorld = nullptr;
 	PreviewActor = nullptr;
 	PreviewMeshComponent = nullptr;
+	CollisionDebugComponent = nullptr;
 	bIsRenderable = false;
 }
 
@@ -93,15 +139,24 @@ void FStaticMeshEditorViewportClient::Tick(float DeltaTime)
 	ApplySmoothedCameraLocation(DeltaTime);
 	TickShortcuts();
 	TickInput(DeltaTime);
+	TickInteraction(DeltaTime);
 }
 
 void FStaticMeshEditorViewportClient::TickShortcuts()
 {
 	if (!FSlateApplication::Get().DoesClientOwnKeyboardInput(this)) return;
 
-	if (InputSystem::Get().GetKeyDown('F'))
+	InputSystem& Input = InputSystem::Get();
+
+	if (Input.GetKeyDown('F'))
 	{
 		ResetCameraToPreviewBounds();
+	}
+
+	if (Input.GetKeyUp(VK_SPACE) && Gizmo && Gizmo->HasTarget())
+	{
+		Gizmo->SetNextMode();
+		ApplyTransformSettingsToGizmo();
 	}
 }
 
@@ -158,6 +213,51 @@ void FStaticMeshEditorViewportClient::TickInput(float DeltaTime)
 		{
 			TargetLocation += ViewTransform.ViewRotation.GetForwardVector() * (ScrollNotches * ControlSettings.ZoomSpeed * 0.015f);
 		}
+	}
+}
+
+void FStaticMeshEditorViewportClient::TickInteraction(float DeltaTime)
+{
+	if (!FSlateApplication::Get().DoesClientOwnMouseInput(this)) return;
+	if (!Gizmo || !PreviewWorld) return;
+
+	Gizmo->ApplyScreenSpaceScaling(ViewTransform.ViewLocation, ViewTransform.bIsOrtho, ViewTransform.OrthoZoom);
+	Gizmo->SetAxisMask(UGizmoComponent::ComputeAxisMask(RenderOptions.ViewportType, Gizmo->GetMode()));
+
+	const ImVec2 MousePos = ImGui::GetIO().MousePos;
+	const float LocalMouseX = MousePos.x - ViewportScreenRect.X;
+	const float LocalMouseY = MousePos.y - ViewportScreenRect.Y;
+	const float VPWidth  = Viewport ? static_cast<float>(Viewport->GetWidth())  : 1.0f;
+	const float VPHeight = Viewport ? static_cast<float>(Viewport->GetHeight()) : 1.0f;
+
+	FMinimalViewInfo POV;
+	GetCameraView(POV);
+	const FRay Ray = POV.DeprojectScreenToWorld(LocalMouseX, LocalMouseY, VPWidth, VPHeight);
+
+	FHitResult HitResult;
+	FRayUtils::RaycastComponent(Gizmo, Ray, HitResult);
+
+	InputSystem& Input = InputSystem::Get();
+	if (Input.GetKeyDown(VK_LBUTTON))
+	{
+		if (FRayUtils::RaycastComponent(Gizmo, Ray, HitResult))
+			Gizmo->SetPressedOnHandle(true);
+	}
+	else if (Input.GetLeftDragging())
+	{
+		if (Gizmo->IsPressedOnHandle() && !Gizmo->IsHolding())
+			Gizmo->SetHolding(true);
+		if (Gizmo->IsHolding())
+			Gizmo->UpdateDrag(Ray);
+	}
+	else if (Input.GetLeftDragEnd())
+	{
+		if (Gizmo->IsHolding())
+			Gizmo->DragEnd();
+	}
+	else if (Input.GetKeyUp(VK_LBUTTON))
+	{
+		Gizmo->SetPressedOnHandle(false);
 	}
 }
 

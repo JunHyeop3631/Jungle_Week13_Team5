@@ -171,6 +171,10 @@ public:
 	void SetCenterOfMass(const FVector& LocalOffset);
 	FVector GetCenterOfMass() const;
 
+	float GetLinearDamping()  const { return LinearDamping; }
+	float GetAngularDamping() const { return AngularDamping; }
+	bool  IsGravityEnabled()  const { return bEnableGravity; }
+
 	void SetGenerateOverlapEvents(bool bInGenerateOverlapEvents);
 	bool GetGenerateOverlapEvents() const { return bGenerateOverlapEvents; }
 
@@ -239,9 +243,15 @@ protected:
 
 	// 물리 파라미터 — RootComponent의 값만 백엔드에 적용 (compound shape 정책).
 	UPROPERTY(Edit, Save, Category="Physics", DisplayName="Mass (kg)")
-	float Mass = 1.0f;                          // kg
+	float Mass = 1.0f;
 	UPROPERTY(Edit, Save, Category="Physics", DisplayName="Center Of Mass Offset")
-	FVector CenterOfMassOffset = { 0, 0, 0 };   // RootComponent local 좌표계 offset
+	FVector CenterOfMassOffset = { 0, 0, 0 };
+	UPROPERTY(Edit, Save, Category="Physics", DisplayName="Linear Damping")
+	float LinearDamping = 0.01f;
+	UPROPERTY(Edit, Save, Category="Physics", DisplayName="Angular Damping")
+	float AngularDamping = 0.05f;
+	UPROPERTY(Edit, Save, Category="Physics", DisplayName="Enable Gravity")
+	bool bEnableGravity = true;
 	UPROPERTY(Edit, Save, Category="Collision", DisplayName="Collision Enabled", Enum=ECollisionEnabled)
 	ECollisionEnabled CollisionEnabled = ECollisionEnabled::NoCollision;
 	UPROPERTY(Edit, Save, Category="Collision", DisplayName="Object Type", Enum=ECollisionChannel)

@@ -1144,9 +1144,9 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 		OutDesc.BodyType = Comp->GetSimulatePhysics() ? EPhysicsBodyType::Dynamic : EPhysicsBodyType::Static;
 		OutDesc.WorldTransform = FTransform(Comp->GetWorldLocation(), Comp->GetWorldRotation(), FVector(1.0f, 1.0f, 1.0f));
 		OutDesc.Mass = std::max(0.001f, Comp->GetMass() > 0.0f ? Comp->GetMass() : BodySetup->Mass);
-		OutDesc.LinearDamping = BodySetup->LinearDamping;
-		OutDesc.AngularDamping = BodySetup->AngularDamping;
-		OutDesc.bUseGravity = BodySetup->bEnableGravity;
+		OutDesc.LinearDamping  = Comp->GetLinearDamping();
+		OutDesc.AngularDamping = Comp->GetAngularDamping();
+		OutDesc.bUseGravity    = Comp->IsGravityEnabled();
 		OutDesc.bEnableCCD = Comp->GetSimulatePhysics();
 
 		AppendStaticMeshBodySetupShapes(StaticMeshComp, *BodySetup, OutDesc);

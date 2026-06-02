@@ -64,6 +64,12 @@ public:
 	bool GenerateTriangleMeshCollision();
 	bool HasTriangleMeshCollision() const;
 
+	// ── Editor collision shape interface — AggregateGeom 직접 편집 ──────────
+	bool AddDefaultBoxCollisionFromBounds();
+	bool AddDefaultSphereCollisionFromBounds();
+	bool AddDefaultCapsuleCollisionFromBounds();
+	void ClearCollisionShapes();
+
 	//스태틱 메시 picking / Mesh Decal 최적화를 위한 BVH 트리 빌드 및 판정 호출 함수
 	void EnsureMeshTrianglePickingBVHBuilt() const;
 	bool RaycastMeshTrianglesWithBVHLocal(const FVector& LocalOrigin, const FVector& LocalDirection, FHitResult& OutHitResult) const;
