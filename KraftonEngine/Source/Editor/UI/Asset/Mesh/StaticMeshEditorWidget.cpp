@@ -179,6 +179,8 @@ void FStaticMeshEditorWidget::Tick(float DeltaTime)
 		{
 			if (Gizmo->GetTarget() == &ShapeGizmoTarget)
 			{
+				if (UStaticMesh* Mesh = Cast<UStaticMesh>(EditedObject))
+					FlushShapesToMesh(Mesh);
 				if (CollisionDebugComponent)
 					CollisionDebugComponent->MarkGeometryDirty();
 			}
