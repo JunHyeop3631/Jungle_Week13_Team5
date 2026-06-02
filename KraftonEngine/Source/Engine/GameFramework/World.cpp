@@ -317,7 +317,7 @@ void UWorld::InitWorld()
 	PhysicsScene->Initialize();
 
 	ClothScene = std::make_unique<FNvClothScene>();
-	if (!ClothScene->Initialize(EClothBackend::CPU))
+	if (!ClothScene->Initialize(EClothBackend::CUDA))
 	{
 		ClothScene.reset();
 	}

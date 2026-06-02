@@ -12,11 +12,20 @@
 #include "NvCloth/Solver.h"
 #include "NvClothExt/ClothFabricCooker.h"
 #include "NvClothExt/ClothMeshDesc.h"
+#include "Core/Logging/Log.h"
 #include "foundation/PxAllocatorCallback.h"
 #include "foundation/PxErrorCallback.h"
 #include "foundation/PxQuat.h"
 #include "foundation/PxVec3.h"
 #include "foundation/PxVec4.h"
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
 
 #include <algorithm>
 #include <chrono>
@@ -61,11 +70,131 @@ FNvClothAllocator GClothAllocator;
 FNvClothErrorCallback GClothErrorCallback;
 FNvClothAssertHandler GClothAssertHandler;
 bool GClothCallbacksInitialized = false;
+constexpr int CudaSuccess = 0;
 constexpr float ClothSphereCollisionMargin = 1.0f;
 constexpr float ClothCapsuleCollisionMargin = 1.0f;
 constexpr float ClothBoxCollisionMargin = 1.0f;
 constexpr float ClothTeleportDistanceThreshold = 500.0f;
 constexpr float ClothTeleportRotationDotThreshold = 0.5f;
+
+struct FNvClothCudaDriver
+{
+	using CUdevice = int;
+	using CUresult = int;
+	using CuInitFn = CUresult(WINAPI*)(unsigned int);
+	using CuDeviceGetCountFn = CUresult(WINAPI*)(int*);
+	using CuDeviceGetFn = CUresult(WINAPI*)(CUdevice*, int);
+	using CuCtxCreateFn = CUresult(WINAPI*)(CUcontext*, unsigned int, CUdevice);
+	using CuCtxDestroyFn = CUresult(WINAPI*)(CUcontext);
+	using CuCtxSetCurrentFn = CUresult(WINAPI*)(CUcontext);
+
+	HMODULE Module = nullptr;
+	CuInitFn CuInit = nullptr;
+	CuDeviceGetCountFn CuDeviceGetCount = nullptr;
+	CuDeviceGetFn CuDeviceGet = nullptr;
+	CuCtxCreateFn CuCtxCreate = nullptr;
+	CuCtxDestroyFn CuCtxDestroy = nullptr;
+	CuCtxSetCurrentFn CuCtxSetCurrent = nullptr;
+
+	bool Load()
+	{
+		Module = ::LoadLibraryA("nvcuda.dll");
+		if (!Module)
+		{
+			return false;
+		}
+
+		CuInit = reinterpret_cast<CuInitFn>(::GetProcAddress(Module, "cuInit"));
+		CuDeviceGetCount = reinterpret_cast<CuDeviceGetCountFn>(::GetProcAddress(Module, "cuDeviceGetCount"));
+		CuDeviceGet = reinterpret_cast<CuDeviceGetFn>(::GetProcAddress(Module, "cuDeviceGet"));
+		CuCtxCreate = reinterpret_cast<CuCtxCreateFn>(::GetProcAddress(Module, "cuCtxCreate_v2"));
+		if (!CuCtxCreate)
+		{
+			CuCtxCreate = reinterpret_cast<CuCtxCreateFn>(::GetProcAddress(Module, "cuCtxCreate"));
+		}
+		CuCtxDestroy = reinterpret_cast<CuCtxDestroyFn>(::GetProcAddress(Module, "cuCtxDestroy_v2"));
+		if (!CuCtxDestroy)
+		{
+			CuCtxDestroy = reinterpret_cast<CuCtxDestroyFn>(::GetProcAddress(Module, "cuCtxDestroy"));
+		}
+		CuCtxSetCurrent = reinterpret_cast<CuCtxSetCurrentFn>(::GetProcAddress(Module, "cuCtxSetCurrent"));
+
+		if (!CuInit || !CuDeviceGetCount || !CuDeviceGet || !CuCtxCreate || !CuCtxDestroy || !CuCtxSetCurrent)
+		{
+			Unload();
+			return false;
+		}
+
+		return true;
+	}
+
+	void Unload()
+	{
+		CuInit = nullptr;
+		CuDeviceGetCount = nullptr;
+		CuDeviceGet = nullptr;
+		CuCtxCreate = nullptr;
+		CuCtxDestroy = nullptr;
+		CuCtxSetCurrent = nullptr;
+		if (Module)
+		{
+			::FreeLibrary(Module);
+			Module = nullptr;
+		}
+	}
+};
+
+nv::cloth::Factory* TryCreateCudaFactory(CUcontext Context)
+{
+#if defined(_MSC_VER)
+	__try
+	{
+		return NvClothCreateFactoryCUDA(Context);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return nullptr;
+	}
+#else
+	return NvClothCreateFactoryCUDA(Context);
+#endif
+}
+
+nv::cloth::Solver* TryCreateSolver(nv::cloth::Factory* InFactory)
+{
+#if defined(_MSC_VER)
+	__try
+	{
+		return InFactory ? InFactory->createSolver() : nullptr;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return nullptr;
+	}
+#else
+	return InFactory ? InFactory->createSolver() : nullptr;
+#endif
+}
+
+void TryDestroyFactory(nv::cloth::Factory* InFactory)
+{
+	if (!InFactory)
+	{
+		return;
+	}
+
+#if defined(_MSC_VER)
+	__try
+	{
+		NvClothDestroyFactory(InFactory);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+	}
+#else
+	NvClothDestroyFactory(InFactory);
+#endif
+}
 
 physx::PxVec3 ToPxVec3(const FVector& Value)
 {
@@ -810,7 +939,55 @@ bool FNvClothScene::Initialize(EClothBackend Backend)
 		GClothCallbacksInitialized = true;
 	}
 
-	if (Backend != EClothBackend::CPU)
+	if (Backend == EClothBackend::CUDA)
+	{
+		FNvClothCudaDriver Driver;
+		if (Driver.Load())
+		{
+			int DeviceCount = 0;
+			FNvClothCudaDriver::CUdevice Device = 0;
+			CUcontext CreatedContext = nullptr;
+			if (Driver.CuInit(0) == CudaSuccess
+				&& Driver.CuDeviceGetCount(&DeviceCount) == CudaSuccess
+				&& DeviceCount > 0
+				&& Driver.CuDeviceGet(&Device, 0) == CudaSuccess)
+			{
+				Driver.CuCtxCreate(&CreatedContext, 0, Device);
+			}
+
+			if (CreatedContext && Driver.CuCtxSetCurrent(CreatedContext) == CudaSuccess)
+			{
+				Factory = TryCreateCudaFactory(CreatedContext);
+				if (Factory)
+				{
+					Solver = TryCreateSolver(Factory);
+					if (Solver)
+					{
+						CudaDriverModule = Driver.Module;
+						CudaContext = CreatedContext;
+						Driver.Module = nullptr;
+						Stats = FClothStats();
+						UE_LOG("[NvCloth] CUDA backend initialized.");
+						return true;
+					}
+
+					TryDestroyFactory(Factory);
+					Factory = nullptr;
+				}
+			}
+
+			if (CreatedContext)
+			{
+				Driver.CuCtxSetCurrent(nullptr);
+				Driver.CuCtxDestroy(CreatedContext);
+			}
+
+			Driver.Unload();
+		}
+
+		UE_LOG("[NvCloth] CUDA backend unavailable; falling back to CPU.");
+	}
+	else if (Backend != EClothBackend::CPU)
 	{
 		return false;
 	}
@@ -821,15 +998,16 @@ bool FNvClothScene::Initialize(EClothBackend Backend)
 		return false;
 	}
 
-	Solver = Factory->createSolver();
+	Solver = TryCreateSolver(Factory);
 	if (!Solver)
 	{
-		NvClothDestroyFactory(Factory);
+		TryDestroyFactory(Factory);
 		Factory = nullptr;
 		return false;
 	}
 
 	Stats = FClothStats();
+	UE_LOG("[NvCloth] CPU backend initialized.");
 	return true;
 }
 
@@ -868,8 +1046,41 @@ void FNvClothScene::Shutdown()
 
 	if (Factory)
 	{
-		NvClothDestroyFactory(Factory);
+		TryDestroyFactory(Factory);
 		Factory = nullptr;
+	}
+
+	if (CudaContext)
+	{
+		HMODULE Module = static_cast<HMODULE>(CudaDriverModule);
+		if (Module)
+		{
+			using CuCtxDestroyFn = int(WINAPI*)(CUcontext);
+			using CuCtxSetCurrentFn = int(WINAPI*)(CUcontext);
+			CuCtxSetCurrentFn CuCtxSetCurrent = reinterpret_cast<CuCtxSetCurrentFn>(::GetProcAddress(Module, "cuCtxSetCurrent"));
+			CuCtxDestroyFn CuCtxDestroy = reinterpret_cast<CuCtxDestroyFn>(::GetProcAddress(Module, "cuCtxDestroy_v2"));
+			if (!CuCtxDestroy)
+			{
+				CuCtxDestroy = reinterpret_cast<CuCtxDestroyFn>(::GetProcAddress(Module, "cuCtxDestroy"));
+			}
+
+			if (CuCtxSetCurrent)
+			{
+				CuCtxSetCurrent(nullptr);
+			}
+
+			if (CuCtxDestroy)
+			{
+				CuCtxDestroy(static_cast<CUcontext>(CudaContext));
+			}
+		}
+		CudaContext = nullptr;
+	}
+
+	if (CudaDriverModule)
+	{
+		::FreeLibrary(static_cast<HMODULE>(CudaDriverModule));
+		CudaDriverModule = nullptr;
 	}
 
 	Stats = FClothStats();

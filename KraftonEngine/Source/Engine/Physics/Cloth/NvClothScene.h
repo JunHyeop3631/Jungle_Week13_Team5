@@ -69,6 +69,8 @@ private:
 
 	nv::cloth::Factory* Factory = nullptr;
 	nv::cloth::Solver* Solver = nullptr;
+	void* CudaDriverModule = nullptr;
+	void* CudaContext = nullptr;
 
 	TArray<std::unique_ptr<FNvClothFabricRecord>> Fabrics;
 	TArray<std::unique_ptr<FNvClothInstanceRecord>> Instances;
