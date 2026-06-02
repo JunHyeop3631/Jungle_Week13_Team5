@@ -408,6 +408,11 @@ FMatrix USkeletalMeshComponent::GetSkeletalClothWorldMatrix() const
     return SkeletalClothBinding.ClothLocalTransform.ToMatrix() * GetWorldMatrix();
 }
 
+FMatrix USkeletalMeshComponent::GetSkeletalClothLocalMatrix() const
+{
+    return SkeletalClothBinding.ClothLocalTransform.ToMatrix();
+}
+
 bool USkeletalMeshComponent::BindSkeletalCloth(
     IClothScene& ClothScene,
     FClothInstance* ClothInstance,
@@ -665,7 +670,15 @@ bool USkeletalMeshComponent::TickSkeletalCloth(float DeltaTime)
 
 bool USkeletalMeshComponent::GetSkeletalClothRenderData(FClothRenderData& OutRenderData) const
 {
-    if (!bSkeletalClothBound || CachedSkeletalClothRenderData.Vertices.empty())
+    if (!bSkeletalClothBound || !SkeletalClothSceneOwner || !SkeletalClothInstance || !SkeletalClothInstance->bValid)
+    {
+        OutRenderData.Reset();
+        return false;
+    }
+
+    SkeletalClothSceneOwner->GetClothRenderData(SkeletalClothInstance, CachedSkeletalClothRenderData);
+
+    if (CachedSkeletalClothRenderData.Vertices.empty())
     {
         OutRenderData.Reset();
         return false;

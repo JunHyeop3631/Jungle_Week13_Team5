@@ -1,6 +1,8 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 #include "ShapeComponent.h"
+#include "GameFramework/World.h"
 #include "Object/Reflection/ObjectFactory.h"
+#include "Physics/Cloth/IClothScene.h"
 #include "Serialization/Archive.h"
 #include "Render/Proxy/ShapeSceneProxy.h"
 
@@ -11,6 +13,38 @@ HIDE_FROM_COMPONENT_LIST(UShapeComponent)
 UShapeComponent::UShapeComponent()
 {
 	bCastShadow = false;
+}
+
+void UShapeComponent::BeginPlay()
+{
+	UPrimitiveComponent::BeginPlay();
+
+	if (Owner)
+	{
+		if (UWorld* World = Owner->GetWorld())
+		{
+			if (IClothScene* Scene = World->GetClothScene())
+			{
+				Scene->RegisterShapeCollider(this);
+			}
+		}
+	}
+}
+
+void UShapeComponent::EndPlay()
+{
+	if (Owner)
+	{
+		if (UWorld* World = Owner->GetWorld())
+		{
+			if (IClothScene* Scene = World->GetClothScene())
+			{
+				Scene->UnregisterShapeCollider(this);
+			}
+		}
+	}
+
+	UPrimitiveComponent::EndPlay();
 }
 
 FPrimitiveSceneProxy* UShapeComponent::CreateSceneProxy()

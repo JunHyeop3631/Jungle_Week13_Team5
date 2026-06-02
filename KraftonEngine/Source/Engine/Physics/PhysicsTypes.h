@@ -190,8 +190,8 @@ struct FPhysicsDebugLine
 
 struct FVehicle4WInput
 {
-	bool bAccelerate = false;
-	bool bBrake = false;
+	bool bMoveForward = false;
+	bool bMoveBackward = false;
 	bool bSteerLeft = false;
 	bool bSteerRight = false;
 	bool bHandbrake = false;

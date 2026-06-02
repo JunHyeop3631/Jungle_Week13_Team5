@@ -342,13 +342,65 @@ namespace
 		return Vehicle ? static_cast<const FPhysXVehicle4WData*>(Vehicle->VehicleHandle.NativePtr) : nullptr;
 	}
 
-	void ApplyVehicleInputToRawData(const FVehicle4WInput& Input, PxVehicleDrive4WRawInputData& OutRawInput)
+	void ApplyVehicleInputToRawData(
+		FVehicle4WInstance* Instance,
+		FPhysXVehicle4WData* Data,
+		PxRigidDynamic* Actor, 
+		PxVehicleDrive4WRawInputData& OutRawInput)
 	{
-		OutRawInput.setDigitalAccel(Input.bAccelerate);
-		OutRawInput.setDigitalBrake(Input.bBrake);
+		if (!Instance || !Data || !Data->Vehicle || !Actor)
+			return;
+
+		PxTransform ChassisTransform = Actor->getGlobalPose();
+
+		PxVec3 ForwardDir = ChassisTransform.q.rotate(PxVec3(1.0f, 0.0f, 0.0f));
+		float ForwardSpeed = Actor->getLinearVelocity().dot(ForwardDir);
+
+		const float StopThreshold = 1.0f;
+		const FVehicle4WInput& Input = Instance->LastInput;
+
 		OutRawInput.setDigitalSteerLeft(Input.bSteerLeft);
 		OutRawInput.setDigitalSteerRight(Input.bSteerRight);
 		OutRawInput.setDigitalHandbrake(Input.bHandbrake);
+
+		if (Input.bMoveBackward) // 사용자가 후진 키(S)를 누름
+		{
+			if (ForwardSpeed > StopThreshold)
+			{
+				// 아직 앞으로 달리는 중 -> 브레이크를 밟아 감속
+				OutRawInput.setDigitalAccel(false);
+				OutRawInput.setDigitalBrake(true);
+			}
+			else
+			{
+				// 거의 멈췄거나 이미 후진 중 -> 후진 기어를 넣고 후진 가속
+				Data->Vehicle->mDriveDynData.setTargetGear(PxVehicleGearsData::eREVERSE);
+				OutRawInput.setDigitalAccel(true);
+				OutRawInput.setDigitalBrake(false);
+			}
+		}
+		else if (Input.bMoveForward) // 사용자가 전진 키(W)를 누름
+		{
+			if (ForwardSpeed < -StopThreshold)
+			{
+				// 뒤로 가고 있는 중 -> 브레이크를 밟아 감속
+				OutRawInput.setDigitalAccel(false);
+				OutRawInput.setDigitalBrake(true);
+			}
+			else
+			{
+				// 거의 멈췄거나 전진 중 -> 1단 기어를 넣고 전진 가속
+				Data->Vehicle->mDriveDynData.setTargetGear(PxVehicleGearsData::eFIRST);
+				OutRawInput.setDigitalAccel(true);
+				OutRawInput.setDigitalBrake(false);
+			}
+		}
+		else
+		{
+			// 아무것도 누르지 않음 (감속 페달 모두 오프)
+			OutRawInput.setDigitalAccel(false);
+			OutRawInput.setDigitalBrake(false);
+		}
 	}
 
 	void UpdateCachedVehicleWheelTransforms(FVehicle4WInstance* Instance)
@@ -955,12 +1007,15 @@ void FPhysXRuntime::Simulate(float DeltaTime)
 		for (FVehicle4WInstance* VehicleInstance : Vehicles)
 		{
 			FPhysXVehicle4WData* Data = GetVehicleData(VehicleInstance);
-			if (!VehicleInstance || !Data || !Data->Vehicle || !Data->SuspensionBatchQuery || !Data->FrictionPairs)
+			PxRigidDynamic* Actor = GetPxDynamic(VehicleInstance->ChassisBody);
+
+			if (!VehicleInstance || !Data || !Data->Vehicle || !Data->SuspensionBatchQuery || !Data->FrictionPairs || !Actor)
 			{
 				continue;
 			}
 
-			ApplyVehicleInputToRawData(VehicleInstance->LastInput, Data->RawInput);
+			ApplyVehicleInputToRawData(VehicleInstance, Data, Actor, Data->RawInput);
+
 			PxVehicleDrive4WSmoothDigitalRawInputsAndSetAnalogInputs(
 				Data->KeySmoothingData,
 				Data->SteerVsForwardSpeedTable,
@@ -969,14 +1024,11 @@ void FPhysXRuntime::Simulate(float DeltaTime)
 				false,
 				*Data->Vehicle);
 
-			if (PxRigidDynamic* Actor = GetPxDynamic(VehicleInstance->ChassisBody))
+			if (VehicleInstance->LastInput.bMoveForward || VehicleInstance->LastInput.bMoveBackward ||
+				VehicleInstance->LastInput.bSteerLeft || VehicleInstance->LastInput.bSteerRight ||
+				VehicleInstance->LastInput.bHandbrake)
 			{
-				if (VehicleInstance->LastInput.bAccelerate || VehicleInstance->LastInput.bBrake ||
-					VehicleInstance->LastInput.bSteerLeft || VehicleInstance->LastInput.bSteerRight ||
-					VehicleInstance->LastInput.bHandbrake)
-				{
-					Actor->wakeUp();
-				}
+				Actor->wakeUp();
 			}
 
 			PxVehicleWheels* VehicleArray[1] = { Data->Vehicle };

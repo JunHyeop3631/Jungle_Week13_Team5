@@ -40,7 +40,7 @@ struct FSkeletalClothBindingDesc
     bool bUsePhysicsAssetCollision = true;
     bool bUpdatePinnedParticles = true;
     bool bUpdateMotionConstraints = true;
-    bool bAutoSimulate = true;
+    bool bAutoSimulate = false;
     bool bResetPreviousPinnedParticlesEveryFrame = false;
 
     float MotionConstraintStiffness = 0.8f;
@@ -126,6 +126,7 @@ public:
     bool BuildSkeletalClothPinnedParticles(TArray<FClothPinnedParticle>& OutPins, FClothConstraintDesc* OutConstraints = nullptr) const;
     bool BuildSkeletalClothCollision(FClothCollisionDesc& OutCollision) const;
     bool GetSkeletalClothRenderData(FClothRenderData& OutRenderData) const;
+    FMatrix GetSkeletalClothLocalMatrix() const;
     const TArray<FVector>& GetSkeletalClothParticlePositions() const { return CachedSkeletalClothParticlePositions; }
     bool GetSkeletalClothStats(FClothStats& OutStats) const;
     bool ExtractSkeletalClothDebugLines(TArray<FPhysicsDebugLine>& OutLines, const FClothDebugDrawOptions& Options) const;
@@ -212,8 +213,8 @@ protected:
     FSkeletalClothBindingDesc SkeletalClothBinding;
     IClothScene* SkeletalClothSceneOwner = nullptr;
     FClothInstance* SkeletalClothInstance = nullptr;
-    FClothRenderData CachedSkeletalClothRenderData;
-    TArray<FVector> CachedSkeletalClothParticlePositions;
+    mutable FClothRenderData CachedSkeletalClothRenderData;
+    mutable TArray<FVector> CachedSkeletalClothParticlePositions;
     bool bSkeletalClothBound = false;
     bool bResetSkeletalClothPinsNextTick = false;
 

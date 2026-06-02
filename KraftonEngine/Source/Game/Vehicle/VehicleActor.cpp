@@ -1,4 +1,4 @@
-#include "VehicleActor.h"
+﻿#include "VehicleActor.h"
 #include "Component/Primitive/StaticMeshComponent.h"
 #include "GameFramework/World.h"
 #include "Input/InputSystem.h"
@@ -95,13 +95,13 @@ void AVehicleActor::InitDefaultComponents()
 FVehicle4WInput AVehicleActor::BuildVehicleInput() const
 {
 	FVehicle4WInput Input;
-	Input.bAccelerate = bAutoAccelerate;
+	Input.bMoveForward = bAutoAccelerate;
 
 	if (bUseKeyboardInput)
 	{
 		const InputSystem& In = InputSystem::Get();
-		Input.bAccelerate = Input.bAccelerate || In.GetKey('W') || In.GetKey(VK_UP);
-		Input.bBrake = In.GetKey('S') || In.GetKey(VK_DOWN);
+		Input.bMoveForward = Input.bMoveForward || In.GetKey('W') || In.GetKey(VK_UP);
+		Input.bMoveBackward = In.GetKey('S') || In.GetKey(VK_DOWN);
 		Input.bSteerLeft = In.GetKey('A') || In.GetKey(VK_LEFT);
 		Input.bSteerRight = In.GetKey('D') || In.GetKey(VK_RIGHT);
 		Input.bHandbrake = In.GetKey(VK_SPACE);
