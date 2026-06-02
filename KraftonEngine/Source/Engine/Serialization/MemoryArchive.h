@@ -27,6 +27,9 @@ public:
 	}
 
 	const TArray<uint8>& GetBuffer() const { return Buffer; }
+	bool SupportsPosition() const override { return true; }
+	size_t Tell() const override { return bIsSaving ? Buffer.size() : Offset; }
+	size_t TotalSize() const override { return Buffer.size(); }
 
 	void Serialize(void* Data, size_t Num) override
 	{

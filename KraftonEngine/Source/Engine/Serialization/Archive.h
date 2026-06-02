@@ -29,6 +29,16 @@ public:
 	virtual bool UsesCustomObjectReferenceSerialization() const { return false; }
 	virtual bool IsGarbageCollecting() const { return false; }
 	virtual void SerializeObjectReference(UObject*& Object);
+	virtual bool SupportsPosition() const { return false; }
+	virtual size_t Tell() const { return 0; }
+	virtual size_t TotalSize() const { return 0; }
+	size_t RemainingBytes() const
+	{
+		if (!SupportsPosition()) return static_cast<size_t>(-1);
+		const size_t Position = Tell();
+		const size_t Size = TotalSize();
+		return Position <= Size ? Size - Position : 0;
+	}
 
 	virtual void BeginObject() {}
 	virtual void EndObject() {}

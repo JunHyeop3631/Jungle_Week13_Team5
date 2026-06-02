@@ -15,6 +15,8 @@ namespace
 {
 	constexpr float StaticMeshCollisionPi = 3.14159265358979323846f;
 	constexpr const char* StaticMeshBodyName = "StaticMesh";
+	constexpr uint32 StaticMeshCollisionMagic = 0x434D534B; // KSMC
+	constexpr uint32 StaticMeshCollisionVersion = 1;
 
 	FVector GetAxisVector(int32 Axis)
 	{
@@ -56,6 +58,54 @@ namespace
 		Body->PhysicsType = EBodyPhysicsType::Kinematic;
 		Body->CollisionEnabled = EBodyCollisionEnabled::QueryAndPhysics;
 	}
+
+	void SerializeStaticMeshCollision(FArchive& Ar, UBodySetup*& BodyInstance)
+	{
+		if (Ar.IsSaving())
+		{
+			uint32 Magic = StaticMeshCollisionMagic;
+			uint32 Version = StaticMeshCollisionVersion;
+			bool bHasBodySetup = BodyInstance != nullptr && !BodyInstance->AggregateGeom.IsEmpty();
+			Ar << Magic;
+			Ar << Version;
+			Ar << bHasBodySetup;
+			if (bHasBodySetup)
+			{
+				BodyInstance->Serialize(Ar);
+			}
+			return;
+		}
+
+		if (!Ar.IsLoading() || Ar.RemainingBytes() < sizeof(uint32) * 2 + sizeof(bool))
+		{
+			return;
+		}
+
+		uint32 Magic = 0;
+		uint32 Version = 0;
+		bool bHasBodySetup = false;
+		Ar << Magic;
+		Ar << Version;
+		Ar << bHasBodySetup;
+
+		if (Magic != StaticMeshCollisionMagic || Version > StaticMeshCollisionVersion)
+		{
+			return;
+		}
+
+		delete BodyInstance;
+		BodyInstance = nullptr;
+
+		if (bHasBodySetup)
+		{
+			BodyInstance = new UBodySetup();
+			BodyInstance->Serialize(Ar);
+			if (BodyInstance->BoneName.empty())
+			{
+				BodyInstance->BoneName = StaticMeshBodyName;
+			}
+		}
+	}
 }
 
 UStaticMesh::~UStaticMesh()
@@ -86,6 +136,10 @@ void UStaticMesh::Serialize(FArchive& Ar)
 
 	// 2. 머티리얼 데이터 직렬화 (필수!)
 	Ar << StaticMaterials;
+
+	// 2.5. 스태틱 메시 단순 콜리전 데이터.
+	// 구버전 asset에는 이 블록이 없으므로 loading 시 남은 바이트가 없으면 건너뜁니다.
+	SerializeStaticMeshCollision(Ar, BodyInstance);
 
 	// 3. 로딩 시 Section → MaterialIndex 매핑 캐싱 (매 프레임 문자열 비교 방지)
 	if (Ar.IsLoading())
