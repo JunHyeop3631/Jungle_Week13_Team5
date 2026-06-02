@@ -405,13 +405,19 @@ void UWorld::EndPlay()
 		return;
 	}
 
-	PersistentLevel->EndPlay();
-
-	// 물리 시스템 정리 — 액터/컴포넌트가 아직 살아있는 동안 해제
+	// 물리 시스템 정리 — 액터/컴포넌트가 아직 살아있는 동안, 그리고 컴포넌트 EndPlay/소멸자보다
+	// "먼저" 해제한다. ragdoll 바디는 FPhysXRuntime 와 USkeletalMeshComponent 가 같은
+	// FBodyInstance* 를 이중으로 들고 있어, Shutdown 이 단일 소유자로서 먼저 전부 해제(actor release
+	// + delete)하고 추적 목록을 비운다. 이후 컴포넌트 정리 경로(소멸자→DestroyPhysicsAssetBodies)는
+	// dangling 포인터로 재진입하더라도 DestroyRigidBody/Joint/Aggregate 의 freed-safe 멤버십 가드가
+	// no-op 으로 흡수한다. (과거: EndPlay 후 Shutdown 순서라 ragdoll 소멸자가 이미 해제된 actor 를
+	// 재release → PIE 중단 시 crash.)
 	if (PhysicsScene)
 	{
 		PhysicsScene->Shutdown();
 	}
+
+	PersistentLevel->EndPlay();
 
 	// Clear spatial partition while actors/components are still alive.
 	// Otherwise Octree teardown can dereference stale primitive pointers during shutdown.

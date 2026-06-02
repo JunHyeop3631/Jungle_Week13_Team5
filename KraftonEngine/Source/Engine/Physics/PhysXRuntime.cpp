@@ -1144,7 +1144,15 @@ void FPhysXRuntime::DestroyRigidBody(FBodyInstance* Body)
 		return;
 	}
 
-	Bodies.erase(std::remove(Bodies.begin(), Bodies.end(), Body), Bodies.end());
+	// freed-safe 멤버십 가드: 이미 파기되어 추적 목록에 없는 바디면(예: Shutdown 이 먼저 전부
+	// 해제한 뒤 컴포넌트 소멸자가 dangling FBodyInstance* 로 재호출하는 경우) deref 전에 안전하게
+	// 빠진다. std::find 는 포인터 "주소" 비교만 하므로 freed 메모리를 deref 하지 않는다.
+	auto BodyIt = std::find(Bodies.begin(), Bodies.end(), Body);
+	if (BodyIt == Bodies.end())
+	{
+		return;
+	}
+	Bodies.erase(BodyIt);
 
 	if (PxRigidActor* Actor = PhysXHelpers::GetPxActor(Body))
 	{
@@ -1191,7 +1199,14 @@ void FPhysXRuntime::DestroyAggregate(const FPhysicsAggregateHandle& Handle)
 		return;
 	}
 
-	Aggregates.erase(std::remove(Aggregates.begin(), Aggregates.end(), Aggregate), Aggregates.end());
+	// freed-safe 멤버십 가드: 추적 목록에 없는 aggregate(이미 Shutdown 이 release)면 재release 하지
+	// 않는다. 컴포넌트는 PhysicsAggregate 핸들의 stale NativePtr 복사본을 들고 있을 수 있다.
+	auto AggIt = std::find(Aggregates.begin(), Aggregates.end(), Aggregate);
+	if (AggIt == Aggregates.end())
+	{
+		return;
+	}
+	Aggregates.erase(AggIt);
 
 	// 내부 actor 는 DestroyRigidBody 로 이미 release 되어 비어 있어야 한다.
 	// (남은 actor 가 있으면 release 시 PhysX 가 씬으로 재삽입하므로 호출 순서를 지킨다.)
@@ -1340,7 +1355,14 @@ void FPhysXRuntime::DestroyJoint(FConstraintInstance* Joint)
 		return;
 	}
 
-	Joints.erase(std::remove(Joints.begin(), Joints.end(), Joint), Joints.end());
+	// freed-safe 멤버십 가드: 추적 목록에 없는 조인트(이미 Shutdown 이 해제)면 dangling
+	// FConstraintInstance* deref 전에 안전하게 빠진다. (주소 비교만 수행)
+	auto JointIt = std::find(Joints.begin(), Joints.end(), Joint);
+	if (JointIt == Joints.end())
+	{
+		return;
+	}
+	Joints.erase(JointIt);
 
 	if (PxJoint* PxJointPtr = static_cast<PxJoint*>(Joint->JointHandle.NativePtr))
 	{
