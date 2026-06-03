@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "MovementComponent.h"
 #include "Core/Types/CollisionTypes.h"   // FHitResult
