@@ -213,7 +213,7 @@ physx::PxVec4 ToPxParticle(const FClothParticle& Particle)
 	return physx::PxVec4(Particle.Position.X, Particle.Position.Y, Particle.Position.Z, Particle.InvMass);
 }
 
-float GetClothTeleportDistanceThreshold(float DeltaTime)
+float GetClothMaxTranslationStep(float DeltaTime)
 {
 	if (std::isfinite(DeltaTime) && DeltaTime > 1.0e-6f)
 	{
@@ -221,6 +221,21 @@ float GetClothTeleportDistanceThreshold(float DeltaTime)
 	}
 
 	return ClothTeleportDistanceThreshold;
+}
+
+FVector ClampClothTranslationStep(const FVector& CurrentLocation, const FVector& TargetLocation, float DeltaTime)
+{
+	const FVector DeltaLocation = TargetLocation - CurrentLocation;
+	const float MaxStep = GetClothMaxTranslationStep(DeltaTime);
+	const float MaxStepSquared = MaxStep * MaxStep;
+	const float DeltaLengthSquared = DeltaLocation.LengthSquared();
+	if (DeltaLengthSquared <= MaxStepSquared)
+	{
+		return TargetLocation;
+	}
+
+	const float DeltaLength = std::sqrt(DeltaLengthSquared);
+	return DeltaLength > 1.0e-6f ? CurrentLocation + DeltaLocation * (MaxStep / DeltaLength) : CurrentLocation;
 }
 
 void TeleportClothWithoutInertia(nv::cloth::Cloth& Cloth, const FVector& Location, const FQuat& Rotation)
@@ -586,7 +601,7 @@ struct FNvClothInstanceRecord
 	FClothInstance Instance;
 	FClothCollisionDesc UserCollision;
 	FMatrix ClothWorldMatrix = FMatrix::Identity;
-	FVector LastClothWorldLocation = FVector::ZeroVector;
+	FVector LastClothInertiaLocation = FVector::ZeroVector;
 	FQuat LastClothWorldRotation = FQuat::Identity;
 	bool bHasClothWorldTransform = false;
 	bool bUseRegisteredShapeCollision = false;
@@ -1517,34 +1532,35 @@ bool FNvClothScene::SetClothWorldMatrix(FClothInstance* Instance, const FMatrix&
 			TeleportClothWithoutInertia(*Record->Cloth, NewLocation, NewRotation);
 			Record->bResetParticleHistoryBeforeSim = true;
 			Record->bHasClothWorldTransform = true;
+			Record->LastClothInertiaLocation = NewLocation;
 		}
 		else
 		{
-			const FVector DeltaLocation = NewLocation - Record->LastClothWorldLocation;
 			const float RotationDot = std::abs(
 				NewRotation.X * Record->LastClothWorldRotation.X
 				+ NewRotation.Y * Record->LastClothWorldRotation.Y
 				+ NewRotation.Z * Record->LastClothWorldRotation.Z
 				+ NewRotation.W * Record->LastClothWorldRotation.W);
-			const float EffectiveTeleportDistanceThreshold = GetClothTeleportDistanceThreshold(DeltaTime);
-			const bool bLargeTeleport = DeltaLocation.LengthSquared() > EffectiveTeleportDistanceThreshold * EffectiveTeleportDistanceThreshold
-				|| RotationDot < ClothTeleportRotationDotThreshold;
+			const bool bLargeRotation = RotationDot < ClothTeleportRotationDotThreshold;
 
-			if (bLargeTeleport)
+			if (bLargeRotation)
 			{
-				TeleportClothWithoutInertia(*Record->Cloth, NewLocation, NewRotation);
+				const FVector ClampedLocation = ClampClothTranslationStep(Record->LastClothInertiaLocation, NewLocation, DeltaTime);
+				TeleportClothWithoutInertia(*Record->Cloth, ClampedLocation, NewRotation);
 				Record->bResetParticleHistoryBeforeSim = true;
+				Record->LastClothInertiaLocation = ClampedLocation;
 			}
 			else
 			{
-				Record->Cloth->setTranslation(ToPxVec3(NewLocation));
+				const FVector ClampedLocation = ClampClothTranslationStep(Record->LastClothInertiaLocation, NewLocation, DeltaTime);
+				Record->Cloth->setTranslation(ToPxVec3(ClampedLocation));
 				Record->Cloth->setRotation(ToPxQuat(NewRotation));
+				Record->LastClothInertiaLocation = ClampedLocation;
 			}
 		}
 	}
 
 	Record->ClothWorldMatrix = WorldMatrix;
-	Record->LastClothWorldLocation = NewLocation;
 	Record->LastClothWorldRotation = NewRotation;
 	Record->bUseRegisteredShapeCollision = true;
 	return true;
