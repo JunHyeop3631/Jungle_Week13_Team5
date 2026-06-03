@@ -105,6 +105,7 @@ void UClothComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActor
 			if (IClothScene* Scene = World->GetClothScene())
 			{
 				Scene->SetClothWorldMatrix(ClothInstance, GetWorldMatrix(), DeltaTime);
+				UpdatePinnedParticles(false);
 			}
 		}
 	}
@@ -229,6 +230,40 @@ bool UClothComponent::ApplyClothSettings()
 	return Scene->SetClothSettings(ClothInstance, BuildClothSettings());
 }
 
+bool UClothComponent::UpdatePinnedParticles(bool bResetPreviousParticles)
+{
+	UWorld* World = GetWorld();
+	IClothScene* Scene = World ? World->GetClothScene() : nullptr;
+	if (!Scene || !ClothInstance || PinMode == EClothPinMode::None)
+	{
+		return false;
+	}
+
+	const FClothGridDesc Desc = BuildGridDesc();
+	const FVector AxisX = Desc.AxisX.Normalized();
+	const FVector AxisY = Desc.AxisY.Normalized();
+
+	TArray<FClothPinnedParticle> Pins;
+	Pins.reserve(Desc.NumColumns * Desc.NumRows);
+	for (uint32 Row = 0; Row < Desc.NumRows; ++Row)
+	{
+		for (uint32 Column = 0; Column < Desc.NumColumns; ++Column)
+		{
+			if (!IsClothGridParticlePinned(Desc.PinMode, Row, Column, Desc.NumRows, Desc.NumColumns))
+			{
+				continue;
+			}
+
+			FClothPinnedParticle Pin;
+			Pin.ParticleIndex = Row * Desc.NumColumns + Column;
+			Pin.Position = Desc.Origin + AxisX * (Column * Desc.Spacing) + AxisY * (Row * Desc.Spacing);
+			Pins.push_back(Pin);
+		}
+	}
+
+	return !Pins.empty() && Scene->SetPinnedParticlePositions(ClothInstance, Pins, bResetPreviousParticles);
+}
+
 bool UClothComponent::RecreateCloth()
 {
 	DestroyCloth();
@@ -252,6 +287,7 @@ bool UClothComponent::RecreateCloth()
 	CachedMeshData.Vertices.clear();
 	CachedMeshData.Indices.clear();
 	Scene->SetClothWorldMatrix(ClothInstance, GetWorldMatrix());
+	UpdatePinnedParticles(true);
 	ApplyClothSettings();
 	MarkWorldBoundsDirty();
 	MarkProxyDirty(EDirtyFlag::Mesh);

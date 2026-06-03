@@ -30,6 +30,47 @@ enum class EClothPinMode : uint8
 	AllCorners,
 };
 
+inline bool IsClothGridParticlePinned(EClothPinMode PinMode, uint32 Row, uint32 Column, uint32 NumRows, uint32 NumColumns)
+{
+	const bool bTop = Row == 0;
+	const bool bBottom = Row + 1 == NumRows;
+	const bool bLeft = Column == 0;
+	const bool bRight = Column + 1 == NumColumns;
+
+	switch (PinMode)
+	{
+	case EClothPinMode::TopRow:
+		return bTop;
+	case EClothPinMode::BottomRow:
+		return bBottom;
+	case EClothPinMode::LeftRow:
+		return bLeft;
+	case EClothPinMode::RightRow:
+		return bRight;
+	case EClothPinMode::TopLeft:
+		return bTop && bLeft;
+	case EClothPinMode::TopRight:
+		return bTop && bRight;
+	case EClothPinMode::BottomLeft:
+		return bBottom && bLeft;
+	case EClothPinMode::BottomRight:
+		return bBottom && bRight;
+	case EClothPinMode::TopCorners:
+		return bTop && (bLeft || bRight);
+	case EClothPinMode::BottomCorners:
+		return bBottom && (bLeft || bRight);
+	case EClothPinMode::LeftCorners:
+		return bLeft && (bTop || bBottom);
+	case EClothPinMode::RightCorners:
+		return bRight && (bTop || bBottom);
+	case EClothPinMode::AllCorners:
+		return (bTop || bBottom) && (bLeft || bRight);
+	case EClothPinMode::None:
+	default:
+		return false;
+	}
+}
+
 struct FClothFabricHandle
 {
 	void* NativePtr = nullptr;

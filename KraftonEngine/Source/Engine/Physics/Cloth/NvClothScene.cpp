@@ -72,7 +72,7 @@ FNvClothAssertHandler GClothAssertHandler;
 bool GClothCallbacksInitialized = false;
 constexpr int CudaSuccess = 0;
 constexpr float ClothSphereCollisionMargin = 1.0f;
-constexpr float ClothCapsuleCollisionMargin = 1.0f;
+constexpr float ClothCapsuleCollisionMargin = 0.1f;
 constexpr float ClothBoxCollisionMargin = 1.0f;
 constexpr float ClothTeleportDistanceThreshold = 5.0f;
 constexpr float ClothTeleportReferenceDeltaTime = 1.0f / 60.0f;
@@ -477,8 +477,6 @@ void AddClothDebugCapsule(
 	AddClothDebugLine(OutLines, SphereA.Center - AxisB * SphereA.Radius, SphereB.Center - AxisB * SphereB.Radius, Color);
 }
 
-bool IsGridParticlePinned(EClothPinMode PinMode, uint32 Row, uint32 Column, uint32 NumRows, uint32 NumColumns);
-
 bool BuildGridDescriptions(const FClothGridDesc& Desc, FClothFabricDesc& OutFabricDesc, FClothInstanceDesc& OutInstanceDesc)
 {
 	if (Desc.NumColumns < 2 || Desc.NumRows < 2 || Desc.Spacing <= 0.0f)
@@ -509,7 +507,7 @@ bool BuildGridDescriptions(const FClothGridDesc& Desc, FClothFabricDesc& OutFabr
 			const float U = Desc.NumColumns > 1 ? static_cast<float>(Column) / static_cast<float>(Desc.NumColumns - 1) : 0.0f;
 			const float V = Desc.NumRows > 1 ? static_cast<float>(Row) / static_cast<float>(Desc.NumRows - 1) : 0.0f;
 			const FVector Position = Desc.Origin + AxisX * (Column * Desc.Spacing) + AxisY * (Row * Desc.Spacing);
-			const bool bPinned = IsGridParticlePinned(Desc.PinMode, Row, Column, Desc.NumRows, Desc.NumColumns);
+			const bool bPinned = IsClothGridParticlePinned(Desc.PinMode, Row, Column, Desc.NumRows, Desc.NumColumns);
 
 			FClothParticle Particle;
 			Particle.Position = Position;
@@ -542,47 +540,6 @@ bool BuildGridDescriptions(const FClothGridDesc& Desc, FClothFabricDesc& OutFabr
 	}
 
 	return true;
-}
-
-bool IsGridParticlePinned(EClothPinMode PinMode, uint32 Row, uint32 Column, uint32 NumRows, uint32 NumColumns)
-{
-	const bool bTop = Row == 0;
-	const bool bBottom = Row + 1 == NumRows;
-	const bool bLeft = Column == 0;
-	const bool bRight = Column + 1 == NumColumns;
-
-	switch (PinMode)
-	{
-	case EClothPinMode::TopRow:
-		return bTop;
-	case EClothPinMode::BottomRow:
-		return bBottom;
-	case EClothPinMode::LeftRow:
-		return bLeft;
-	case EClothPinMode::RightRow:
-		return bRight;
-	case EClothPinMode::TopLeft:
-		return bTop && bLeft;
-	case EClothPinMode::TopRight:
-		return bTop && bRight;
-	case EClothPinMode::BottomLeft:
-		return bBottom && bLeft;
-	case EClothPinMode::BottomRight:
-		return bBottom && bRight;
-	case EClothPinMode::TopCorners:
-		return bTop && (bLeft || bRight);
-	case EClothPinMode::BottomCorners:
-		return bBottom && (bLeft || bRight);
-	case EClothPinMode::LeftCorners:
-		return bLeft && (bTop || bBottom);
-	case EClothPinMode::RightCorners:
-		return bRight && (bTop || bBottom);
-	case EClothPinMode::AllCorners:
-		return (bTop || bBottom) && (bLeft || bRight);
-	case EClothPinMode::None:
-	default:
-		return false;
-	}
 }
 }
 

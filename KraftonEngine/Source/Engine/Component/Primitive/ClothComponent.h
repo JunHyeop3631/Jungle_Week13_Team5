@@ -50,6 +50,7 @@ private:
 	FClothGridDesc BuildGridDesc() const;
 	FClothSettings BuildClothSettings() const;
 	bool ApplyClothSettings();
+	bool UpdatePinnedParticles(bool bResetPreviousParticles);
 	void BuildPreviewRenderData() const;
 	void UpdateCachedMeshDataFromRenderData(const FClothRenderData& RenderData) const;
 	void MarkClothRenderDataDirty();
