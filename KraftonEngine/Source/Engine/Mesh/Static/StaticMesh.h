@@ -63,6 +63,7 @@ public:
 	bool GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeType);
 	bool GenerateTriangleMeshCollision();
 	bool HasTriangleMeshCollision() const;
+	const TArray<uint8>& GetCookedTriangleMeshCollisionData() const { return CookedTriangleMeshCollisionData; }
 
 	// ── Editor collision shape interface — AggregateGeom 직접 편집 ──────────
 	bool AddDefaultBoxCollisionFromBounds();
@@ -92,4 +93,5 @@ private:
 
 	UBodySetup* BodyInstance = nullptr;
 	EStaticMeshCollisionMode CollisionMode = EStaticMeshCollisionMode::None;
+	TArray<uint8> CookedTriangleMeshCollisionData;
 };
