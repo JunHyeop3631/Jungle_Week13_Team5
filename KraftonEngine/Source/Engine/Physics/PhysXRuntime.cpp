@@ -1205,6 +1205,10 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 	OutDesc.Mass = Comp->GetMass();
 	OutDesc.bUseGravity = true;
 	OutDesc.bEnableCCD = Comp->GetPhysicsBodyMode() == EPhysicsBodyMode::Dynamic;
+	OutDesc.LinearDamping  = Comp->GetLinearDamping();
+	OutDesc.AngularDamping = Comp->GetAngularDamping();
+	OutDesc.bUseGravity = Comp->IsGravityEnabled();
+	OutDesc.bEnableCCD = Comp->GetSimulatePhysics();
 	OutDesc.Shapes.push_back(ShapeDesc);
 	return true;
 }
@@ -1429,18 +1433,14 @@ FBodyInstance* FPhysXRuntime::CreateRigidBody(const FPhysicsBodyDesc& Desc)
 			Dynamic->setRigidBodyFlag(PxRigidBodyFlag::eENABLE_CCD, Desc.bEnableCCD);
 			Dynamic->setLinearDamping(Desc.LinearDamping);
 			Dynamic->setAngularDamping(Desc.AngularDamping);
-			// 깊이침투(depenetration) 분리 속도 상한. 미설정 시 PhysX 기본값은 사실상 무제한이라,
-			// 래그돌 진입 순간 인접 바디/바닥과의 겹침이 한 스텝에 폭발적으로 풀리며 액터가 솟아오른다.
-			// 월드 단위는 미터(TolerancesScale.length=1, gravity=-9.81)이므로 1 m/s 로 클램프해
-			// 튐을 막는다(5cm 겹침이 ~3프레임에 해소). 값은 솟구침/끼임 사이에서 튜닝 가능.
-			Dynamic->setMaxDepenetrationVelocity(1.0f);
 
-			// 래그돌 바디(본 연결, BoneIndex>=0)는 조인트가 많아 PhysX 기본 솔버 반복(4/1)으로는
-			// 조인트가 충분히 안 풀려 떨리거나 안 가라앉는다. 반복을 올려 조인트 만족도를 높인다
-			// (안정성↑, 지터↓). 래그돌 바디 수는 적어 비용 부담 작다. (월드 바디는 기본값 유지)
+			// 래그돌 바디(본 연결, BoneIndex>=0)만 솔버 반복 수와 depenetration 속도 상한 적용.
+			// setMaxDepenetrationVelocity 를 모든 바디에 걸면 일반 rigid body 충돌 시
+			// 겹침 해소 속도가 1 m/s 로 캡핑되어 가벼운 물체가 날아가지 않고 밀리기만 한다.
 			if (Desc.BoneIndex >= 0)
 			{
 				Dynamic->setSolverIterationCounts(16, 4);
+				Dynamic->setMaxDepenetrationVelocity(1.0f);
 			}
 		}
 		Actor = Dynamic;
@@ -1470,7 +1470,7 @@ FBodyInstance* FPhysXRuntime::CreateRigidBody(const FPhysicsBodyDesc& Desc)
 
 	if (PxRigidDynamic* Dynamic = Actor->is<PxRigidDynamic>())
 	{
-		PxRigidBodyExt::updateMassAndInertia(*Dynamic, Desc.Mass);
+		PxRigidBodyExt::setMassAndUpdateInertia(*Dynamic, Desc.Mass);
 		if (!Desc.bStartAwake)
 		{
 			Dynamic->putToSleep();
@@ -1651,7 +1651,19 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape_AssumesLocked(FBodyInstance* Body
 		GeometryPtr = &Geometry.any();
 	}
 
-	PxShape* Shape = PxRigidActorExt::createExclusiveShape(*Actor, *GeometryPtr, *DefaultMaterial);
+	PxMaterial* ShapeMaterial = Physics->createMaterial(
+		Desc.Material.StaticFriction,
+		Desc.Material.DynamicFriction,
+		Desc.Material.Restitution);
+	if (!ShapeMaterial)
+	{
+		ShapeMaterial = DefaultMaterial;
+	}
+	PxShape* Shape = PxRigidActorExt::createExclusiveShape(*Actor, *GeometryPtr, *ShapeMaterial);
+	if (ShapeMaterial != DefaultMaterial)
+	{
+		ShapeMaterial->release();
+	}
 	if (!Shape)
 	{
 		if (CookedTriangleMesh)
@@ -2204,7 +2216,7 @@ void FPhysXRuntime::SetMass(UPrimitiveComponent* Comp, float Mass)
 	if (Scene && Dynamic)
 	{
 		PHYSX_SCENE_WRITE_LOCK(Scene);
-		PxRigidBodyExt::updateMassAndInertia(*Dynamic, (std::max)(0.001f, Mass));
+		PxRigidBodyExt::setMassAndUpdateInertia(*Dynamic, (std::max)(0.001f, Mass));
 	}
 }
 

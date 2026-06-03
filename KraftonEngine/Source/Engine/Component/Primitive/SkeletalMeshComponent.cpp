@@ -842,7 +842,7 @@ bool USkeletalMeshComponent::InstantiatePhysicsAssetBodies(IPhysicsScene& Scene,
         BodyDesc.Mass = std::max(0.001f, BodySetup->Mass);
         BodyDesc.LinearDamping = BodySetup->LinearDamping;
         BodyDesc.AngularDamping = BodySetup->AngularDamping;
-        BodyDesc.bUseGravity = true;
+        BodyDesc.bUseGravity = BodySetup->bEnableGravity;
         BodyDesc.bEnableCCD = true;
         BodyDesc.bStartAwake = true;
         BodyDesc.Aggregate = PhysicsAggregate;   // 무효 핸들이면 CreateRigidBody 가 씬 직접 추가로 폴백
