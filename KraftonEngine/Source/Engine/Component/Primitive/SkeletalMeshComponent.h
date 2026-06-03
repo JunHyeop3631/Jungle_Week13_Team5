@@ -238,6 +238,12 @@ protected:
     // Passive ragdoll on/off. CreateRagdoll 이 true 로 켜고, 이후 TickComponent 가 ApplyPhysicsToBones 경로로 갈린다.
     bool bSimulatingPhysics = false;
 
+    // 래그돌 진입 시 루트 캡슐(형제 콜라이더)의 충돌/시뮬을 꺼 캡슐↔래그돌 바디 간섭을 원천 차단한다.
+    // 종료 시 복원하기 위해 진입 전 상태를 저장.
+    bool bRagdollRootCollisionDisabled = false;
+    ECollisionEnabled RagdollSavedRootCollision = ECollisionEnabled::NoCollision;
+    bool RagdollSavedRootSimulate = false;
+
     // PhysicsAssetPath 에서 로드한 per-instance physics asset. 컴포넌트가 소유(직접 delete). 직렬화 안 함.
     UPhysicsAsset* PhysicsAssetOverride = nullptr;
 };

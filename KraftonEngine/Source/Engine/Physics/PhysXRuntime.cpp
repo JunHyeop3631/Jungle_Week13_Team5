@@ -1401,6 +1401,14 @@ FBodyInstance* FPhysXRuntime::CreateRigidBody(const FPhysicsBodyDesc& Desc)
 			// 월드 단위는 미터(TolerancesScale.length=1, gravity=-9.81)이므로 1 m/s 로 클램프해
 			// 튐을 막는다(5cm 겹침이 ~3프레임에 해소). 값은 솟구침/끼임 사이에서 튜닝 가능.
 			Dynamic->setMaxDepenetrationVelocity(1.0f);
+
+			// 래그돌 바디(본 연결, BoneIndex>=0)는 조인트가 많아 PhysX 기본 솔버 반복(4/1)으로는
+			// 조인트가 충분히 안 풀려 떨리거나 안 가라앉는다. 반복을 올려 조인트 만족도를 높인다
+			// (안정성↑, 지터↓). 래그돌 바디 수는 적어 비용 부담 작다. (월드 바디는 기본값 유지)
+			if (Desc.BoneIndex >= 0)
+			{
+				Dynamic->setSolverIterationCounts(16, 4);
+			}
 		}
 		Actor = Dynamic;
 	}
@@ -2567,7 +2575,11 @@ void FPhysXRuntime::SetRagdollBodyFilter(FBodyInstance* Body, uint32 GroupId, ui
 	Sim.word0 = RAGDOLL_FILTER_TAG | (static_cast<PxU32>(GroupId) & ~RAGDOLL_FILTER_TAG);
 	Sim.word1 = (1u << BodyIndex);
 	Sim.word2 = static_cast<PxU32>(IgnoreMask);
-	Sim.word3 = 0;
+	// word3 = owner actor UUID 보존 — same-actor 필터 셰이더가 캡슐 등 형제 콜라이더 ↔ 래그돌 바디
+	// 충돌을 SUPPRESS 하려면 이 값이 필요하다. 0 으로 지우면(기존 버그) self-collision ON 인 래그돌에서
+	// 캡슐이 래그돌 바디와 충돌해 정렬이 깨진다. 래그돌-래그돌 자기충돌은 word0 그룹으로 별도 처리되므로 무영향.
+	Sim.word3 = (Body->OwnerComponent && Body->OwnerComponent->GetOwner())
+		? Body->OwnerComponent->GetOwner()->GetUUID() : 0;
 
 	PHYSX_SCENE_WRITE_LOCK(Scene);
 	for (const FPhysicsShapeHandle& Handle : Body->ShapeHandles)

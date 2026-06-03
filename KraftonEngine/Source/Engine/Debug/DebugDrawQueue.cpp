@@ -1,9 +1,18 @@
-#include "Debug/DebugDrawQueue.h"
+﻿#include "Debug/DebugDrawQueue.h"
 #include <cmath>
 
 void FDebugDrawQueue::AddLine(const FVector& Start, const FVector& End,
 	const FColor& Color, float Duration)
 {
+	// 무한 누적 방지 — prune(World::Tick)가 못 따라가는 상황(고빈도 per-tick 디버그 드로우 등)에서
+	// Items 가 수억 개까지 자라 재할당이 수십 GB 를 요구하다 멈추던(프리즈/OOM) 문제. 상한 도달 시
+	// 오래된 절반을 한 번의 range-erase 로 비워 amortize(줄마다 front-erase O(n) 회피).
+	constexpr int32 kMaxItems = 262144; // 256K 라인 — 정상 디버그 시각화엔 충분, 폭주만 차단.
+	if (Items.size() >= static_cast<size_t>(kMaxItems))
+	{
+		Items.erase(Items.begin(), Items.begin() + (kMaxItems / 2));
+	}
+
 	FDebugDrawItem Item;
 	Item.Start = Start;
 	Item.End = End;

@@ -59,6 +59,22 @@ public:
 	UPROPERTY(Edit, Save, Category="AttackHitWindow", DisplayName="Knockback Duration", Min=0.0f, Max=2.0f, Speed=0.01f)
 	float KnockbackDuration = 0.25f;
 
+	// 히트 대상의 owner 가 skeletal(+PhysicsAsset)이면 즉시 래그돌 전환 + 발사 임펄스. 기본 off → 기존 공격 무변경.
+	UPROPERTY(Edit, Save, Category="AttackHitWindow|Ragdoll", DisplayName="Enable Ragdoll On Hit")
+	bool bEnableRagdollOnHit = false;
+
+	// 발사 방향 결정(넉백 모드 재사용). 위치기반 = AwayFromAttacker.
+	UPROPERTY(Edit, Save, Category="AttackHitWindow|Ragdoll", DisplayName="Ragdoll Launch Mode", Enum=EAttackKnockbackMode)
+	EAttackKnockbackMode RagdollLaunchMode = EAttackKnockbackMode::AwayFromAttacker;
+
+	// 수평 발사 속도(m/s, 엔진 m 규약). 기본 5.0 ≈ 약 3m 비행(중력 -9.81 / 래그돌 마찰 감안, 튜닝값).
+	UPROPERTY(Edit, Save, Category="AttackHitWindow|Ragdoll", DisplayName="Ragdoll Launch Speed", Min=0.0f, Max=50.0f, Speed=0.1f)
+	float RagdollLaunchSpeed = 5.0f;
+
+	// 살짝 띄우는 수직 속도(m/s).
+	UPROPERTY(Edit, Save, Category="AttackHitWindow|Ragdoll", DisplayName="Ragdoll Up Bias", Min=0.0f, Max=30.0f, Speed=0.1f)
+	float RagdollUpBias = 2.5f;
+
 	UPROPERTY(Edit, Save, Category="AttackHitWindow", DisplayName="Draw Debug Hit Window")
 	bool bDrawDebugHitWindow = true;
 
@@ -81,7 +97,7 @@ public:
 	bool bAutoAddActionComponent = true;
 
 	UPROPERTY(Edit, Save, Category="AttackHitWindow", DisplayName="Require Target Actor Tag")
-	bool bRequireTargetActorTag = true;
+	bool bRequireTargetActorTag = false;
 
 	UPROPERTY(Edit, Save, Category="AttackHitWindow", DisplayName="Target Actor Tag")
 	FString TargetActorTag = "HitTarget";

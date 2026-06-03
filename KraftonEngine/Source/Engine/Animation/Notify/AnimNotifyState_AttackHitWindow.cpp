@@ -6,6 +6,8 @@
 #include "Component/Particle/ParticleSystemComponent.h"
 #include "Component/Script/LuaScriptComponent.h"
 #include "Core/Types/CollisionTypes.h"
+#include "Physics/IPhysicsScene.h"
+#include "Physics/BodyInstance.h"
 #include "Core/Types/EngineTypes.h"
 #include "Debug/DrawDebugHelpers.h"
 #include "Core/Logging/Log.h"
@@ -108,6 +110,46 @@ namespace
 		Action->Knockback(Dir, Distance, Duration);
 	}
 
+	// 히트 대상의 owner 가 skeletal(+PhysicsAsset) 이면 즉시 래그돌 전환 + 발사 임펄스.
+	// bone/태그/전용 함수 없이 "피충돌이 skeletal 이면 SetSimulatingPhysics + impulse" 범용 처리.
+	void ApplyRagdollLaunch(AActor* Attacker, AActor* Target,
+		EAttackKnockbackMode Mode, float LaunchSpeed, float UpBias)
+	{
+		if (!Target)
+		{
+			return;
+		}
+
+		USkeletalMeshComponent* Mesh = Target->GetComponentByClass<USkeletalMeshComponent>();
+		if (!Mesh || !Mesh->HasPhysicsAsset() || Mesh->IsSimulatingPhysics())
+		{
+			return; // 메시/PhysicsAsset 없음 or 이미 래그돌 → skip (PhysicsAsset 은 사용자가 직접 부여)
+		}
+
+		UWorld* World = Mesh->GetWorld();
+		IPhysicsScene* Scene = World ? World->GetPhysicsScene() : nullptr;
+		if (!Scene)
+		{
+			return;
+		}
+
+		Mesh->SetSimulatingPhysics(true); // 바디 자동 인스턴스화 + Dynamic 전환
+
+		// [임펄스 임시 비활성화] 발사가 너무 강해 잠시 끔 — 래그돌은 그대로 진입하되 발사 속도만 안 준다.
+		// (EnterRagdollState 의 진입 관성 RagdollEntryLinearVelocity 만 남아 그 자리에서 쓰러짐)
+		// 세기 튜닝은 노티파이 Detail 의 'Ragdoll Launch Speed'/'Ragdoll Up Bias' 권장. 재활성화 시 아래 해제.
+		(void)Attacker; (void)Mode; (void)LaunchSpeed; (void)UpBias;
+		//const FVector Launch = ResolveKnockbackDirection(Attacker, Target, Mode) * LaunchSpeed
+		//	+ FVector::UpVector * UpBias;
+		//for (FBodyInstance* Body : Mesh->GetPhysicsBodies())
+		//{
+		//	if (Body && Body->bValid)
+		//	{
+		//		Scene->SetBodyLinearVelocity(Body, Launch); // Dynamic 만 적용됨
+		//	}
+		//}
+	}
+
 	UParticleSystemComponent* FindTrailParticleComponent(USkeletalMeshComponent* MeshComp, const FString& TrailActorTag)
 	{
 		if (!MeshComp)
@@ -191,10 +233,10 @@ void UAnimNotifyState_AttackHitWindow::NotifyTick(USkeletalMeshComponent* MeshCo
 
 	TSet<AActor*>& HitActors = HitActorsByMesh[MeshComp];
 	const FVector Center = GetHitCenter(MeshComp, Owner, BoneName, LocalOffset);
-	if (bDrawDebugHitWindow)
-	{
-		DrawDebugSphere(World, Center, Radius, DebugDrawSegments, FColor(255, 220, 0), DebugDrawDuration);
-	}
+	//if (bDrawDebugHitWindow)
+	//{
+	//	DrawDebugSphere(World, Center, Radius, DebugDrawSegments, FColor(255, 220, 0), DebugDrawDuration);
+	//}
 
 	bool bSawTargetCandidate = false;
 
@@ -256,10 +298,14 @@ void UAnimNotifyState_AttackHitWindow::NotifyTick(USkeletalMeshComponent* MeshCo
 		{
 			ApplyKnockback(Owner, Candidate, KnockbackMode, KnockbackDistance, KnockbackDuration, bAutoAddActionComponent);
 		}
-		if (bDrawDebugHitWindow)
+		if (bEnableRagdollOnHit)
 		{
-			DrawDebugSphere(World, Center, Radius, DebugDrawSegments, FColor(255, 40, 40), DebugDrawDuration);
+			ApplyRagdollLaunch(Owner, Candidate, RagdollLaunchMode, RagdollLaunchSpeed, RagdollUpBias);
 		}
+		//if (bDrawDebugHitWindow)
+		//{
+		//	DrawDebugSphere(World, Center, Radius, DebugDrawSegments, FColor(255, 40, 40), DebugDrawDuration);
+		//}
 
 		if (bLogHits)
 		{

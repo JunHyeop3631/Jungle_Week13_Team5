@@ -1098,39 +1098,46 @@ bool USkeletalMeshComponent::EnterRagdollState()
 
             PhysicsSceneOwner->SetBodyTransform(Body, TargetBodyWorld, /*bTeleport*/ true);
 
-            FTransform BodyWorldAfterSync;
-            if (PhysicsSceneOwner->GetBodyTransform(Body, BodyWorldAfterSync))
+            // [로그 스팸 방지] 래그돌 진입 시 바디마다 찍던 pose-sync 진단 로그 — 기본 off.
+            // 대량 바디 PhysicsAsset 이면 진입 한 번에 수십 줄이 콘솔/파일로 쏟아져, 무한 콘솔 버퍼와
+            // 줄당 fflush 와 맞물려 메모리 폭증/프리즈를 키웠다. 디버깅 필요 시 true 로.
+            static constexpr bool bLogRagdollSyncPose = false;
+            if (bLogRagdollSyncPose)
             {
-                FTransform BoneWorldAfterSync = BodyWorldAfterSync;
-                if (BoneIndex < static_cast<int32>(BodyToBoneOffsets.size()))
+                FTransform BodyWorldAfterSync;
+                if (PhysicsSceneOwner->GetBodyTransform(Body, BodyWorldAfterSync))
                 {
-                    BoneWorldAfterSync = FTransform(BodyToBoneOffsets[BoneIndex] * BodyWorldAfterSync.ToMatrix());
-                }
+                    FTransform BoneWorldAfterSync = BodyWorldAfterSync;
+                    if (BoneIndex < static_cast<int32>(BodyToBoneOffsets.size()))
+                    {
+                        BoneWorldAfterSync = FTransform(BodyToBoneOffsets[BoneIndex] * BodyWorldAfterSync.ToMatrix());
+                    }
 
-                const FVector DeltaLocation = BoneWorldAfterSync.Location - BoneWorldTransform.Location;
-                const float RotationAbsDot = QuatAbsDot(BoneWorldAfterSync.Rotation.GetNormalized(), BoneWorldTransform.Rotation.GetNormalized());
-                UE_LOG(
-                    "Ragdoll sync pose: Bone=%s Index=%d BoneLoc=(%.4f, %.4f, %.4f) BodyLoc=(%.4f, %.4f, %.4f) OffsetBoneLoc=(%.4f, %.4f, %.4f) DeltaLoc=(%.6f, %.6f, %.6f) DeltaLen=%.6f RotAbsDot=%.6f",
-                    Body->BoneName.c_str(),
-                    BoneIndex,
-                    BoneWorldTransform.Location.X,
-                    BoneWorldTransform.Location.Y,
-                    BoneWorldTransform.Location.Z,
-                    BodyWorldAfterSync.Location.X,
-                    BodyWorldAfterSync.Location.Y,
-                    BodyWorldAfterSync.Location.Z,
-                    BoneWorldAfterSync.Location.X,
-                    BoneWorldAfterSync.Location.Y,
-                    BoneWorldAfterSync.Location.Z,
-                    DeltaLocation.X,
-                    DeltaLocation.Y,
-                    DeltaLocation.Z,
-                    DeltaLocation.Length(),
-                    RotationAbsDot);
-            }
-            else
-            {
-                UE_LOG("Ragdoll sync pose: GetBodyTransform failed after SetBodyTransform. Bone=%s Index=%d", Body->BoneName.c_str(), BoneIndex);
+                    const FVector DeltaLocation = BoneWorldAfterSync.Location - BoneWorldTransform.Location;
+                    const float RotationAbsDot = QuatAbsDot(BoneWorldAfterSync.Rotation.GetNormalized(), BoneWorldTransform.Rotation.GetNormalized());
+                    UE_LOG(
+                        "Ragdoll sync pose: Bone=%s Index=%d BoneLoc=(%.4f, %.4f, %.4f) BodyLoc=(%.4f, %.4f, %.4f) OffsetBoneLoc=(%.4f, %.4f, %.4f) DeltaLoc=(%.6f, %.6f, %.6f) DeltaLen=%.6f RotAbsDot=%.6f",
+                        Body->BoneName.c_str(),
+                        BoneIndex,
+                        BoneWorldTransform.Location.X,
+                        BoneWorldTransform.Location.Y,
+                        BoneWorldTransform.Location.Z,
+                        BodyWorldAfterSync.Location.X,
+                        BodyWorldAfterSync.Location.Y,
+                        BodyWorldAfterSync.Location.Z,
+                        BoneWorldAfterSync.Location.X,
+                        BoneWorldAfterSync.Location.Y,
+                        BoneWorldAfterSync.Location.Z,
+                        DeltaLocation.X,
+                        DeltaLocation.Y,
+                        DeltaLocation.Z,
+                        DeltaLocation.Length(),
+                        RotationAbsDot);
+                }
+                else
+                {
+                    UE_LOG("Ragdoll sync pose: GetBodyTransform failed after SetBodyTransform. Bone=%s Index=%d", Body->BoneName.c_str(), BoneIndex);
+                }
             }
         }
 
@@ -1259,25 +1266,20 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
         {
             bSimulatingPhysics = true;
 
-            // 캡슐(루트 dynamic 바디)을 "현재 씬 위치로 맞춘 뒤" 같은 진입 관성을 줘 메시 래그돌과
-            // 함께 날아가게 한다. movement 는 SetWorldLocation(씬 트랜스폼만 갱신)으로 캡슐을 옮겨와,
-            // 캡슐의 물리 바디는 옛 정착 위치(스폰/착지 지점)에 머물러 있다. 이 teleport 없이 관성으로
-            // 깨우면 물리 write-back 이 캡슐을 그 옛 위치로 되돌려 "처음 위치로 점프" 한다.
-            // (A) 수정으로 캡슐 collision 이 켜진 채라 dynamic 바디가 살아 있고, same-actor 필터가
-            // 캡슐 ↔ 래그돌 충돌을 막으므로 둘이 같은 속도로 가도 서로 튕기지 않는다. 캡슐이 dynamic
-            // 바디가 아니면 두 호출 모두 내부에서 no-op 이라 안전.
+            // 루트 캡슐(형제 콜라이더)의 충돌/시뮬을 끈다 — same-actor 필터에 의존하지 않고, 캡슐이
+            // 래그돌 바디와 충돌해 정렬을 망가뜨리는 것을 원천 차단(캡슐과 메시는 같은 액터). 진입 전
+            // 상태를 저장해 종료 시 복원. (SetCollisionEnabled(NoCollision) 이 캡슐 물리 바디를 등록 해제.)
             if (AActor* OwnerActor = GetOwner())
             {
                 if (UPrimitiveComponent* RootPrim = Cast<UPrimitiveComponent>(OwnerActor->GetRootComponent()))
                 {
-                    if (RootPrim != this)
+                    if (RootPrim != this && !bRagdollRootCollisionDisabled)
                     {
-                        const FTransform CapsuleWorld(
-                            RootPrim->GetWorldLocation(),
-                            RootPrim->GetWorldRotation(),
-                            RootPrim->GetWorldScale());
-                        PhysicsSceneOwner->SetComponentWorldTransform(RootPrim, CapsuleWorld, /*bTeleport*/ true);
-                        PhysicsSceneOwner->SetLinearVelocity(RootPrim, RagdollEntryLinearVelocity);
+                        RagdollSavedRootCollision = RootPrim->GetCollisionEnabled();
+                        RagdollSavedRootSimulate  = RootPrim->GetSimulatePhysics();
+                        RootPrim->SetSimulatePhysics(false);
+                        RootPrim->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+                        bRagdollRootCollisionDisabled = true;
                     }
                 }
             }
@@ -1304,6 +1306,23 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
         bSimulatingPhysics = false;
         // 진입 시 정지한 movement 복원 (dangling 안전).
         RestoreOwnerMovementAfterRagdoll();
+
+        // 진입 시 끈 루트 캡슐 충돌/시뮬 복원 (owner 에서 재해석 — dangling 안전).
+        if (bRagdollRootCollisionDisabled)
+        {
+            if (AActor* OwnerActor = GetOwner())
+            {
+                if (UPrimitiveComponent* RootPrim = Cast<UPrimitiveComponent>(OwnerActor->GetRootComponent()))
+                {
+                    if (RootPrim != this)
+                    {
+                        RootPrim->SetCollisionEnabled(RagdollSavedRootCollision);
+                        RootPrim->SetSimulatePhysics(RagdollSavedRootSimulate);
+                    }
+                }
+            }
+            bRagdollRootCollisionDisabled = false;
+        }
     }
 }
 

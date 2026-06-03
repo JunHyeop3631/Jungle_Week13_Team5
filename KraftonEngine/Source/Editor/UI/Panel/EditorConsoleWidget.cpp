@@ -164,6 +164,17 @@ namespace
 
 void FConsoleLogOutputDevice::Write(const char* Msg)
 {
+	// 무한 누적 방지 — 고빈도 로깅이 콘솔 버퍼를 무제한으로 키워 memory 폭증 +
+	// 콘솔 렌더 시 크래시를 유발하던 문제(줄마다 _strdup 힙 복사본 영구 적재).
+	// 상한 도달 시 오래된 절반을 한 번에 비워, 줄마다 front-erase(O(n)) 대신 amortize 한다.
+	constexpr int32 kMaxMessages = 8192;
+	if (Messages.Size >= kMaxMessages)
+	{
+		const int32 RemoveCount = kMaxMessages / 2;
+		for (int32 i = 0; i < RemoveCount; ++i) free(Messages[i]);
+		Messages.erase(Messages.begin(), Messages.begin() + RemoveCount);
+	}
+
 	Messages.push_back(_strdup(Msg));
 	if (AutoScroll) ScrollToBottom = true;
 }
