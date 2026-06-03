@@ -80,6 +80,27 @@ private:
 	UPROPERTY(Edit, Save, Category="Cloth", DisplayName="Damping")
 	float Damping = 0.1f;
 
+	UPROPERTY(Edit, Save, Category="Cloth|Solver", DisplayName="Solver Frequency", Min=1.0f, Max=1000.0f, Speed=1.0f)
+	float SolverFrequency = 120.0f;
+
+	UPROPERTY(Edit, Save, Category="Cloth|Solver", DisplayName="Stiffness Frequency", Min=1.0f, Max=1000.0f, Speed=1.0f)
+	float StiffnessFrequency = 60.0f;
+
+	UPROPERTY(Edit, Save, Category="Cloth|Solver", DisplayName="Continuous Collision")
+	bool bContinuousCollision = false;
+
+	UPROPERTY(Edit, Save, Category="Cloth|Constraint", DisplayName="Phase Stiffness", Min=0.0f, Max=1.0f, Speed=0.01f)
+	float PhaseStiffness = 1.0f;
+
+	UPROPERTY(Edit, Save, Category="Cloth|Constraint", DisplayName="Tether Scale", Min=0.0f, Max=10.0f, Speed=0.01f)
+	float TetherScale = 1.0f;
+
+	UPROPERTY(Edit, Save, Category="Cloth|Constraint", DisplayName="Tether Stiffness", Min=0.0f, Max=1.0f, Speed=0.01f)
+	float TetherStiffness = 1.0f;
+
+	UPROPERTY(Edit, Save, Category="Cloth|Collision", DisplayName="Friction", Min=0.0f, Max=1.0f, Speed=0.01f)
+	float Friction = 0.0f;
+
 	UPROPERTY(Edit, Save, Category="Cloth|Wind", DisplayName="Wind Velocity")
 	FVector WindVelocity = FVector::ZeroVector;
 

@@ -121,6 +121,13 @@ void UClothComponent::PostEditProperty(const char* PropertyName)
 	{
 		if (std::strcmp(PropertyName, "Gravity") == 0
 			|| std::strcmp(PropertyName, "Damping") == 0
+			|| std::strcmp(PropertyName, "SolverFrequency") == 0
+			|| std::strcmp(PropertyName, "StiffnessFrequency") == 0
+			|| std::strcmp(PropertyName, "bContinuousCollision") == 0
+			|| std::strcmp(PropertyName, "PhaseStiffness") == 0
+			|| std::strcmp(PropertyName, "TetherScale") == 0
+			|| std::strcmp(PropertyName, "TetherStiffness") == 0
+			|| std::strcmp(PropertyName, "Friction") == 0
 			|| std::strcmp(PropertyName, "WindVelocity") == 0
 			|| std::strcmp(PropertyName, "WindDragCoefficient") == 0
 			|| std::strcmp(PropertyName, "WindLiftCoefficient") == 0)
@@ -159,6 +166,13 @@ FClothSettings UClothComponent::BuildClothSettings() const
 	FClothSettings Settings;
 	Settings.Gravity = Gravity;
 	Settings.Damping = (std::max)(Damping, 0.0f);
+	Settings.SolverFrequency = (std::max)(SolverFrequency, 1.0f);
+	Settings.StiffnessFrequency = (std::max)(StiffnessFrequency, 1.0f);
+	Settings.bContinuousCollision = bContinuousCollision;
+	Settings.PhaseStiffness = (std::min)((std::max)(PhaseStiffness, 0.0f), 1.0f);
+	Settings.TetherScale = (std::max)(TetherScale, 0.0f);
+	Settings.TetherStiffness = (std::min)((std::max)(TetherStiffness, 0.0f), 1.0f);
+	Settings.Friction = (std::min)((std::max)(Friction, 0.0f), 1.0f);
 	Settings.WindVelocity = ClampVectorLength(WindVelocity, 50.0f);
 	Settings.DragCoefficient = (std::min)((std::max)(WindDragCoefficient, 0.0f), 0.05f);
 	Settings.LiftCoefficient = (std::min)((std::max)(WindLiftCoefficient, 0.0f), 0.02f);
