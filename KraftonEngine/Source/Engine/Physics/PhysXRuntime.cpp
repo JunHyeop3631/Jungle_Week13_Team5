@@ -629,7 +629,11 @@ namespace
 				continue;
 			}
 
-			Instance->WheelWorldTransforms[WheelIndex] = ToFTransform(ActorPose * Shapes[ShapeIndex]->getLocalPose());
+			const PxWheelQueryResult& Query = Data->WheelQueryResults[WheelIndex];
+			const PxTransform WheelLocalPose = IsUsableDirection(Query.localPose.p)
+				? Query.localPose
+				: Shapes[ShapeIndex]->getLocalPose();
+			Instance->WheelWorldTransforms[WheelIndex] = ToFTransform(ActorPose * WheelLocalPose);
 		}
 	}
 
