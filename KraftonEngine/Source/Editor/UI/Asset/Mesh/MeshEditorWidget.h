@@ -180,7 +180,7 @@ private:
 	void SavePhysicsAsset();
 
 	// Physics 통계 오버레이 (바디/프리미티브/컨스트레인트/충돌쌍 개수)
-	void DrawPhysicsStatsOverlay(ImDrawList* DL, ImVec2 VPMin) const;
+	void DrawPhysicsStatsOverlay(ImDrawList* DL, ImVec2 VPMin, ImVec2 VPSize) const;
 
 	// 뷰포트 클릭 레이 피킹 (바디 셰이프 우선, 없으면 컨스트레인트)
 	void PickPhysicsAtScreen(float LocalX, float LocalY, float VpW, float VpH);

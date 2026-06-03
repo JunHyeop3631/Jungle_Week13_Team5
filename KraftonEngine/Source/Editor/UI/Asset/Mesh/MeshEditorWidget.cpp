@@ -617,7 +617,7 @@ void FMeshEditorWidget::RenderViewportPanel(ImVec2 Size)
 		{
 			ImDrawList* OverlayDL = ImGui::GetWindowDrawList();
 			DrawPhysicsShapeOverlays(OverlayDL, ViewportPos, Size);
-			DrawPhysicsStatsOverlay(OverlayDL, ViewportPos);
+			DrawPhysicsStatsOverlay(OverlayDL, ViewportPos, Size);
 		}
 	}
 	else

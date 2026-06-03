@@ -1590,8 +1590,10 @@ void FMeshEditorWidget::RenderPhysicsTransportBar(float Width)
 	}
 
 	ImGui::SameLine();
-	ImGui::SetNextItemWidth(140.f);
-	ImGui::SliderFloat("Speed", &SimSpeed, 0.05f, 2.0f, "x%.2f");
+	ImGui::TextDisabled("Speed");
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(120.f);
+	ImGui::SliderFloat("##SimSpeed", &SimSpeed, 0.05f, 2.0f, "x%.2f");
 
 	ImGui::EndChild();
 }
@@ -1967,7 +1969,7 @@ void FMeshEditorWidget::PickPhysicsAtScreen(float LocalX, float LocalY, float Vp
 // ─────────────────────────────────────────────────────────────────────────────
 // Physics 통계 오버레이 (언리얼 PhAT 좌상단 통계 대응)
 // ─────────────────────────────────────────────────────────────────────────────
-void FMeshEditorWidget::DrawPhysicsStatsOverlay(ImDrawList* DL, ImVec2 VPMin) const
+void FMeshEditorWidget::DrawPhysicsStatsOverlay(ImDrawList* DL, ImVec2 VPMin, ImVec2 VPSize) const
 {
     UPhysicsAsset* PA = PhysicsTabState.PhysicsAsset;
     if (!PA || !DL) return;
@@ -1998,15 +2000,25 @@ void FMeshEditorWidget::DrawPhysicsStatsOverlay(ImDrawList* DL, ImVec2 VPMin) co
 
     const ImU32 Col    = IM_COL32(235, 235, 235, 255);
     const ImU32 Shadow = IM_COL32(0, 0, 0, 200);
-    const float X = VPMin.x + 8.f;
-    float Y = VPMin.y + 34.f;   // 상단 툴바(28px) 아래
+    const float LineH  = ImGui::GetTextLineHeight() + 2.f;
     const char* Lines[] = { Line0, Line1, Line2, Line3 };
+    const int32 NumLines = 4;
+
+    // 뷰포트 좌하단에 stats 표시 — transport bar와 겹치지 않도록 viewport clip rect 내부에 그린다.
+    DL->PushClipRect(VPMin, ImVec2(VPMin.x + VPSize.x, VPMin.y + VPSize.y), true);
+
+    const float X = VPMin.x + 8.f;
+    float Y = VPMin.y + VPSize.y - NumLines * LineH - 4.f;
+    if (Y < VPMin.y + 4.f) Y = VPMin.y + 4.f;
+
     for (const char* L : Lines)
     {
         DL->AddText(ImVec2(X + 1.f, Y + 1.f), Shadow, L);
         DL->AddText(ImVec2(X, Y), Col, L);
-        Y += ImGui::GetTextLineHeight() + 2.f;
+        Y += LineH;
     }
+
+    DL->PopClipRect();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
