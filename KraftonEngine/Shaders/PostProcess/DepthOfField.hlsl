@@ -9,7 +9,7 @@ cbuffer DofCB : register(b2)
 {
     float FocusDistance;
     float FocalLength;
-    float Aperture;
+    float FStop;
     float MaxBlurSize;
 
     float NearZ;
@@ -18,6 +18,7 @@ cbuffer DofCB : register(b2)
 }
 
 static const int SAMPLE_COUNT = 16;
+static const float SENSOR_WIDTH_MM = 36.0f;
 
 static const float2 DiskSamples[SAMPLE_COUNT] =
 {
@@ -46,22 +47,23 @@ float LinearizeDepthMeter(float DeviceDepth)
     return (N * F) / max(DeviceDepth * (F - N) + N, 0.0001f);
 }
 
-float ComputeSignedCoC(float Depth)
+float ComputeSignedCoC(float Depth, float ScreenWidth)
 {
-    const float z = max(Depth * 10.0f, 0.001f);
-    const float zf = max(FocusDistance * 10.0f, 0.001f);
+    const float z = max(Depth * 1000.0f, 0.001f);
+    const float zf = max(FocusDistance * 1000.0f, 0.001f);
     const float f = FocalLength;
-    const float ApertureDiameter = f / max(Aperture, 0.001f);
+    const float ApertureDiameter = f / max(FStop, 0.001f);
 
-    const float CoC = (ApertureDiameter * f * (z - zf)) / max(z * (zf - f), 0.001f);
-    return clamp(CoC, -1.0f, 1.0f);
+    const float CoCMm = (ApertureDiameter * f * (z - zf)) / max(z * (zf - f), 0.001f);
+    const float CoCPixels = CoCMm / SENSOR_WIDTH_MM * ScreenWidth;
+    return clamp(CoCPixels / max(MaxBlurSize, 0.001f), -1.0f, 1.0f);
 }
 
 float SignedCoCAtUV(float2 UV, uint DepthWidth, uint DepthHeight)
 {
     int2 Coord = int2(saturate(UV) * float2(DepthWidth - 1, DepthHeight - 1));
     float DeviceDepth = SceneDepthTexture.Load(int3(Coord, 0)).r;
-    return ComputeSignedCoC(LinearizeDepthMeter(DeviceDepth));
+    return ComputeSignedCoC(LinearizeDepthMeter(DeviceDepth), (float)DepthWidth);
 }
 
 float4 BuildDofLayer(float2 UV, bool bNearLayer)
@@ -168,11 +170,10 @@ float4 PS(PS_Input_UV Input) : SV_TARGET
     float DeviceDepth = SceneDepthTexture.Load(int3(Coord, 0)).r;
     float Depth = LinearizeDepthMeter(DeviceDepth);
 
-    float SignedCoC = ComputeSignedCoC(Depth);
-    float BlurRadius = abs(SignedCoC) * MaxBlurSize;
-
     uint Width, Height;
     SceneColorTexture.GetDimensions(Width, Height);
+    float SignedCoC = ComputeSignedCoC(Depth, (float)Width);
+    float BlurRadius = abs(SignedCoC) * MaxBlurSize;
     float2 TexelSize = 1.0f / float2(Width, Height);
 
     float3 SceneColor = SceneColorTexture.SampleLevel(LinearClampSampler, Input.uv, 0).rgb;

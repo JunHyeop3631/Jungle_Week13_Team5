@@ -75,7 +75,7 @@ void FDepthOfFieldPass::Execute(const FPassContext& Ctx)
 	FDepthOfFieldConstants DofData = {};
 	DofData.FocusDistance = Frame.CameraDepthOfField.FocusDistance;
 	DofData.FocalLength = Frame.CameraDepthOfField.FocalLength;
-	DofData.Aperture = Frame.CameraDepthOfField.Aperture;
+	DofData.FStop = Frame.CameraDepthOfField.FStop;
 	DofData.MaxBlurSize = Frame.CameraDepthOfField.MaxBlurSize;
 	DofData.NearZ = Frame.NearClip;
 	DofData.FarZ = Frame.FarClip;

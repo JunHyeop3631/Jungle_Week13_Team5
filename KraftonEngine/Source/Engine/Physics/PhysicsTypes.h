@@ -111,6 +111,8 @@ struct FPhysicsShapeDesc
 	TArray<FVector> ConvexVertices;
 	TArray<FVector> TriangleMeshVertices;
 	TArray<uint32> TriangleMeshIndices;
+	TArray<uint8> CookedTriangleMeshData;
+	FVector TriangleMeshScale = FVector(1.0f, 1.0f, 1.0f);
 
 	bool bSimulationShape = true;
 	bool bTriggerShape = false;

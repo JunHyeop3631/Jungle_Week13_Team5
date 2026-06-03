@@ -11,6 +11,7 @@
 #include "Render/Proxy/BoneDebugSceneProxy.h"
 #include "Render/Proxy/PhysicsShapeDebugSceneProxy.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
+#include "Render/Proxy/ClothSceneProxy.h"
 #include "Render/Proxy/ParticleSystemSceneProxy.h"
 #include "Render/Scene/FScene.h"
 #include "Render/Types/RenderConstants.h"
@@ -644,6 +645,15 @@ void FDrawCommandBuilder::BuildCommandForSection(FScene& Scene, const FPrimitive
 			ApplyMaterialRenderState(Cmd.RenderState, Mat, BaseRenderState);
 	}
 
+	if (Proxy.HasProxyFlag(EPrimitiveProxyFlags::Cloth))
+	{
+		const FClothSceneProxy& ClothProxy = static_cast<const FClothSceneProxy&>(Proxy);
+		if (ClothProxy.IsTwoSided() && Cmd.RenderState.Rasterizer != ERasterizerState::WireFrame)
+		{
+			Cmd.RenderState.Rasterizer = ERasterizerState::SolidNoCull;
+		}
+	}
+
 	Cmd.BuildSortKey();
 }
 
@@ -841,8 +851,9 @@ void FDrawCommandBuilder::BuildPostProcessCommands(const FFrameContext& Frame, c
 
 	const FDrawCommandRenderState FogRS = PassRenderStateTable->ToDrawCommandState(ERenderPass::Fog, ViewMode);
 	const FDrawCommandRenderState PPRS = PassRenderStateTable->ToDrawCommandState(ERenderPass::PostProcess, ViewMode);
+	const FDrawCommandRenderState OutlineRS = PassRenderStateTable->ToDrawCommandState(ERenderPass::Outline, ViewMode);
 
-	// HeightFog (UserBits=0 → Outline보다 먼저)
+	// HeightFog (UserBits=0)
 	if (Frame.RenderOptions.ShowFlags.bFog && CollectScene && CollectScene->GetEnvironment().HasFog())
 	{
 		FShader* FogShader = FShaderManager::Get().GetOrCreate(EShaderPath::HeightFog);
@@ -866,7 +877,7 @@ void FDrawCommandBuilder::BuildPostProcessCommands(const FFrameContext& Frame, c
 		}
 	}
 
-	// Outline (UserBits=1 → HeightFog 뒤)
+	// Outline overlay runs after DepthOfField so editor selection remains crisp.
 	if (bHasSelectionMaskCommands)
 	{
 		FShader* PPShader = FShaderManager::Get().GetOrCreate(EShaderPath::Outline);
@@ -878,13 +889,13 @@ void FDrawCommandBuilder::BuildPostProcessCommands(const FFrameContext& Frame, c
 			OutlineCB.Update(Ctx, &ppConstants, sizeof(ppConstants));
 
 			FDrawCommand& Cmd = DrawCommandList.AddCommand();
-			Cmd.InitFullscreenTriangle(PPShader, ERenderPass::PostProcess, PPRS);
+			Cmd.InitFullscreenTriangle(PPShader, ERenderPass::Outline, OutlineRS);
 			Cmd.Bindings.PerShaderCB[0] = &OutlineCB;
 			Cmd.BuildSortKey(1);
 		}
 	}
 
-	// SceneDepth (UserBits=2 → Outline 뒤)
+	// SceneDepth (UserBits=2)
 	if (CollectViewMode == EViewMode::SceneDepth)
 	{
 		FShader* DepthShader = FShaderManager::Get().GetOrCreate(EShaderPath::SceneDepth);

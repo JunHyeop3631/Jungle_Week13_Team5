@@ -197,10 +197,12 @@ namespace
 		}
 
 		const FVector Scale = Comp->GetWorldScale();
+		ShapeDesc.TriangleMeshScale = Scale;
+		ShapeDesc.CookedTriangleMeshData = StaticMesh->GetCookedTriangleMeshCollisionData();
 		ShapeDesc.TriangleMeshVertices.reserve(MeshAsset->Vertices.size());
 		for (const FNormalVertex& Vertex : MeshAsset->Vertices)
 		{
-			ShapeDesc.TriangleMeshVertices.push_back(FVector(Vertex.pos.X * Scale.X, Vertex.pos.Y * Scale.Y, Vertex.pos.Z * Scale.Z));
+			ShapeDesc.TriangleMeshVertices.push_back(Vertex.pos);
 		}
 		ShapeDesc.TriangleMeshIndices = MeshAsset->Indices;
 
@@ -210,7 +212,20 @@ namespace
 
 	PxTriangleMesh* CookTriangleMesh(PxFoundation* Foundation, PxPhysics* Physics, const FPhysicsShapeDesc& Desc)
 	{
-		if (!Foundation || !Physics || Desc.TriangleMeshVertices.empty() || Desc.TriangleMeshIndices.size() < 3 || Desc.TriangleMeshIndices.size() % 3 != 0)
+		if (!Foundation || !Physics)
+		{
+			return nullptr;
+		}
+
+		if (!Desc.CookedTriangleMeshData.empty())
+		{
+			PxDefaultMemoryInputData InputData(
+				const_cast<uint8*>(Desc.CookedTriangleMeshData.data()),
+				static_cast<PxU32>(Desc.CookedTriangleMeshData.size()));
+			return Physics->createTriangleMesh(InputData);
+		}
+
+		if (Desc.TriangleMeshVertices.empty() || Desc.TriangleMeshIndices.size() < 3 || Desc.TriangleMeshIndices.size() % 3 != 0)
 		{
 			return nullptr;
 		}
@@ -629,7 +644,11 @@ namespace
 				continue;
 			}
 
-			Instance->WheelWorldTransforms[WheelIndex] = ToFTransform(ActorPose * Shapes[ShapeIndex]->getLocalPose());
+			const PxWheelQueryResult& Query = Data->WheelQueryResults[WheelIndex];
+			const PxTransform WheelLocalPose = IsUsableDirection(Query.localPose.p)
+				? Query.localPose
+				: Shapes[ShapeIndex]->getLocalPose();
+			Instance->WheelWorldTransforms[WheelIndex] = ToFTransform(ActorPose * WheelLocalPose);
 		}
 	}
 
@@ -1592,7 +1611,21 @@ FPhysicsShapeHandle FPhysXRuntime::CreateShape_AssumesLocked(FBodyInstance* Body
 			return {};
 		}
 
-		TriangleMeshGeometry = PxTriangleMeshGeometry(CookedTriangleMesh);
+		auto SanitizeScale = [](float Value)
+		{
+			if (std::abs(Value) >= 0.001f)
+			{
+				return Value;
+			}
+			return Value < 0.0f ? -0.001f : 0.001f;
+		};
+		const PxMeshScale MeshScale(
+			PxVec3(
+				SanitizeScale(Desc.TriangleMeshScale.X),
+				SanitizeScale(Desc.TriangleMeshScale.Y),
+				SanitizeScale(Desc.TriangleMeshScale.Z)),
+			PxQuat(PxIdentity));
+		TriangleMeshGeometry = PxTriangleMeshGeometry(CookedTriangleMesh, MeshScale);
 		GeometryPtr = &TriangleMeshGeometry;
 	}
 	else

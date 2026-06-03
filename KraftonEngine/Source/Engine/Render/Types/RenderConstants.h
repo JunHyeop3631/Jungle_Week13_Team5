@@ -308,7 +308,7 @@ struct FDepthOfFieldConstants
 {
 	float FocusDistance;
 	float FocalLength;
-	float Aperture;
+	float FStop;
 	float MaxBlurSize;
 
 	float NearZ;

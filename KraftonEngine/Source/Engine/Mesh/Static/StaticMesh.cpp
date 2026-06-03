@@ -7,17 +7,20 @@
 #include "Engine/Profiling/Stats/MemoryStats.h"
 #include "Mesh/MeshSimplifier.h"
 #include "Physics/Asset/BodySetup.h"
+#include "Physics/PhysXCore.h"
 
+#include <PxPhysicsAPI.h>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace
 {
 	constexpr float StaticMeshCollisionPi = 3.14159265358979323846f;
 	constexpr const char* StaticMeshBodyName = "StaticMesh";
 	constexpr uint32 StaticMeshCollisionMagic = 0x434D534B; // KSMC
-	constexpr uint32 StaticMeshCollisionVersion = 2;
-	constexpr uint32 StaticMeshCollisionVersionLegacyMax = 3; // v3: CollisionShapes 블록 포함 (현재는 폐기)
+	constexpr uint32 StaticMeshCollisionVersion = 4;
+	constexpr uint32 StaticMeshCollisionVersionLegacyMax = 4; // v3: CollisionShapes 블록 포함 (현재는 폐기)
 
 	FVector GetAxisVector(int32 Axis)
 	{
@@ -60,14 +63,68 @@ namespace
 		Body->CollisionEnabled = EBodyCollisionEnabled::QueryAndPhysics;
 	}
 
-	void SerializeStaticMeshCollision(FArchive& Ar, UBodySetup*& BodyInstance, EStaticMeshCollisionMode& CollisionMode)
+	bool BuildCookedTriangleMeshCollisionData(const FStaticMesh* MeshAsset, TArray<uint8>& OutCookedData)
+	{
+		OutCookedData.clear();
+		if (!MeshAsset || MeshAsset->Vertices.empty() || MeshAsset->Indices.size() < 3 || MeshAsset->Indices.size() % 3 != 0)
+		{
+			return false;
+		}
+
+		FPhysXCoreHandles Core = AcquireSharedPhysXCore();
+		if (!Core.Foundation || !Core.Physics)
+		{
+			ReleaseSharedPhysXCore();
+			return false;
+		}
+
+		physx::PxTriangleMeshDesc MeshDesc;
+		MeshDesc.points.count = static_cast<physx::PxU32>(MeshAsset->Vertices.size());
+		MeshDesc.points.stride = sizeof(FNormalVertex);
+		MeshDesc.points.data = &MeshAsset->Vertices[0].pos;
+		MeshDesc.triangles.count = static_cast<physx::PxU32>(MeshAsset->Indices.size() / 3);
+		MeshDesc.triangles.stride = sizeof(uint32) * 3;
+		MeshDesc.triangles.data = MeshAsset->Indices.data();
+
+		physx::PxCookingParams Params(Core.Physics->getTolerancesScale());
+		Params.meshPreprocessParams |= physx::PxMeshPreprocessingFlag::eWELD_VERTICES;
+		Params.meshWeldTolerance = 0.001f;
+
+		physx::PxCooking* Cooking = PxCreateCooking(PX_PHYSICS_VERSION, *Core.Foundation, Params);
+		if (!Cooking)
+		{
+			ReleaseSharedPhysXCore();
+			return false;
+		}
+
+		physx::PxDefaultMemoryOutputStream CookedData;
+		const bool bCooked = Cooking->cookTriangleMesh(MeshDesc, CookedData);
+		Cooking->release();
+		ReleaseSharedPhysXCore();
+		if (!bCooked || CookedData.getSize() == 0)
+		{
+			return false;
+		}
+
+		OutCookedData.resize(CookedData.getSize());
+		std::memcpy(OutCookedData.data(), CookedData.getData(), CookedData.getSize());
+		return true;
+	}
+
+	void SerializeStaticMeshCollision(FArchive& Ar, UBodySetup*& BodyInstance, EStaticMeshCollisionMode& CollisionMode, TArray<uint8>& CookedTriangleMeshCollisionData, const FStaticMesh* StaticMeshAsset)
 	{
 		if (Ar.IsSaving())
 		{
+			if (CollisionMode == EStaticMeshCollisionMode::TriangleMesh && CookedTriangleMeshCollisionData.empty())
+			{
+				BuildCookedTriangleMeshCollisionData(StaticMeshAsset, CookedTriangleMeshCollisionData);
+			}
+
 			uint32 Magic = StaticMeshCollisionMagic;
 			uint32 Version = StaticMeshCollisionVersion;
 			uint8 Mode = static_cast<uint8>(CollisionMode);
 			bool bHasBodySetup = BodyInstance != nullptr && !BodyInstance->AggregateGeom.IsEmpty();
+			bool bHasCookedTriangleMesh = CollisionMode == EStaticMeshCollisionMode::TriangleMesh && !CookedTriangleMeshCollisionData.empty();
 			Ar << Magic;
 			Ar << Version;
 			Ar << Mode;
@@ -75,6 +132,11 @@ namespace
 			if (bHasBodySetup)
 			{
 				BodyInstance->Serialize(Ar);
+			}
+			Ar << bHasCookedTriangleMesh;
+			if (bHasCookedTriangleMesh)
+			{
+				Ar << CookedTriangleMeshCollisionData;
 			}
 			return;
 		}
@@ -125,9 +187,24 @@ namespace
 			}
 		}
 
+		CookedTriangleMeshCollisionData.clear();
+		if (Version >= 4)
+		{
+			bool bHasCookedTriangleMesh = false;
+			Ar << bHasCookedTriangleMesh;
+			if (bHasCookedTriangleMesh)
+			{
+				Ar << CookedTriangleMeshCollisionData;
+			}
+		}
+
 		if (CollisionMode == EStaticMeshCollisionMode::Simple && (!BodyInstance || BodyInstance->AggregateGeom.IsEmpty()))
 		{
 			CollisionMode = EStaticMeshCollisionMode::None;
+		}
+		if (CollisionMode != EStaticMeshCollisionMode::TriangleMesh)
+		{
+			CookedTriangleMeshCollisionData.clear();
 		}
 
 		// v3 파일: AggregateGeom 이후에 CollisionShapes 블록이 있음 — 읽고 버림 (마이그레이션)
@@ -194,7 +271,7 @@ void UStaticMesh::Serialize(FArchive& Ar)
 
 	// 2.5. 스태틱 메시 단순 콜리전 데이터.
 	// 구버전 asset에는 이 블록이 없으므로 loading 시 남은 바이트가 없으면 건너뜁니다.
-	SerializeStaticMeshCollision(Ar, BodyInstance, CollisionMode);
+	SerializeStaticMeshCollision(Ar, BodyInstance, CollisionMode, CookedTriangleMeshCollisionData, StaticMeshAsset);
 
 	// 3. 로딩 시 Section → MaterialIndex 매핑 캐싱 (매 프레임 문자열 비교 방지)
 	if (Ar.IsLoading())
@@ -379,6 +456,10 @@ void UStaticMesh::ClearBodySetup()
 void UStaticMesh::SetCollisionMode(EStaticMeshCollisionMode InMode)
 {
 	CollisionMode = InMode;
+	if (CollisionMode != EStaticMeshCollisionMode::TriangleMesh)
+	{
+		CookedTriangleMeshCollisionData.clear();
+	}
 }
 
 bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeType)
@@ -415,6 +496,7 @@ bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeT
 		Box.HalfZ = (std::max)(Extent.Z, 0.001f);
 		Body->AggregateGeom.BoxElems.push_back(Box);
 		CollisionMode = EStaticMeshCollisionMode::Simple;
+		CookedTriangleMeshCollisionData.clear();
 		return true;
 	}
 	case EStaticMeshSimpleCollisionShape::Sphere:
@@ -431,6 +513,7 @@ bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeT
 		Sphere.Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
 		Body->AggregateGeom.SphereElems.push_back(Sphere);
 		CollisionMode = EStaticMeshCollisionMode::Simple;
+		CookedTriangleMeshCollisionData.clear();
 		return true;
 	}
 	case EStaticMeshSimpleCollisionShape::Capsule:
@@ -463,6 +546,7 @@ bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeT
 		Capsule.HalfHeight = HalfAxisLength;
 		Body->AggregateGeom.CapsuleElems.push_back(Capsule);
 		CollisionMode = EStaticMeshCollisionMode::Simple;
+		CookedTriangleMeshCollisionData.clear();
 		return true;
 	}
 	default:
@@ -473,6 +557,11 @@ bool UStaticMesh::GenerateSimpleCollision(EStaticMeshSimpleCollisionShape ShapeT
 bool UStaticMesh::GenerateTriangleMeshCollision()
 {
 	if (!StaticMeshAsset || StaticMeshAsset->Vertices.empty() || StaticMeshAsset->Indices.size() < 3 || StaticMeshAsset->Indices.size() % 3 != 0)
+	{
+		return false;
+	}
+
+	if (!BuildCookedTriangleMeshCollisionData(StaticMeshAsset, CookedTriangleMeshCollisionData))
 	{
 		return false;
 	}
@@ -507,6 +596,7 @@ bool UStaticMesh::AddDefaultBoxCollisionFromBounds()
 	E.HalfZ    = (std::max)(StaticMeshAsset->BoundsExtent.Z, 0.001f);
 	Body->AggregateGeom.BoxElems.push_back(E);
 	CollisionMode = EStaticMeshCollisionMode::Simple;
+	CookedTriangleMeshCollisionData.clear();
 	return true;
 }
 
@@ -530,6 +620,7 @@ bool UStaticMesh::AddDefaultSphereCollisionFromBounds()
 	E.Radius = (std::max)(std::sqrt(RadiusSq), 0.001f);
 	Body->AggregateGeom.SphereElems.push_back(E);
 	CollisionMode = EStaticMeshCollisionMode::Simple;
+	CookedTriangleMeshCollisionData.clear();
 	return true;
 }
 
@@ -570,6 +661,7 @@ bool UStaticMesh::AddDefaultCapsuleCollisionFromBounds()
 	E.HalfHeight = (std::max)((MaxAxis - MinAxis) * 0.5f, Radius);
 	Body->AggregateGeom.CapsuleElems.push_back(E);
 	CollisionMode = EStaticMeshCollisionMode::Simple;
+	CookedTriangleMeshCollisionData.clear();
 	return true;
 }
 

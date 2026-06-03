@@ -1,6 +1,5 @@
 #include "Render/Proxy/ClothSceneProxy.h"
 
-#include "Component/MeshComponent.h"
 #include "Component/Primitive/ClothComponent.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialManager.h"
@@ -18,7 +17,7 @@ struct FClothDefaultMaterialConstants
 };
 }
 
-FClothSceneProxy::FClothSceneProxy(UMeshComponent* InComponent)
+FClothSceneProxy::FClothSceneProxy(UClothComponent* InComponent)
 	: FPrimitiveSceneProxy(InComponent)
 {
 	ProxyFlags |= EPrimitiveProxyFlags::PerViewportUpdate;
@@ -51,7 +50,7 @@ void FClothSceneProxy::UpdateMesh()
 
 void FClothSceneProxy::UpdateMaterial()
 {
-	UMeshComponent* Component = GetMeshComponent();
+	UClothComponent* Component = GetClothComponent();
 	const bool bNewTwoSided = Component && Component->ShouldRenderClothTwoSided();
 	if (bCurrentTwoSided != bNewTwoSided)
 	{
@@ -65,7 +64,7 @@ void FClothSceneProxy::UpdateMaterial()
 
 void FClothSceneProxy::UpdatePerViewport(const FFrameContext& /*Frame*/)
 {
-	UMeshComponent* Component = GetMeshComponent();
+	UClothComponent* Component = GetClothComponent();
 	if (!Component || !bVisible)
 	{
 		Vertices.clear();
@@ -138,11 +137,6 @@ bool FClothSceneProxy::PrepareDrawBuffer(ID3D11Device* Device, ID3D11DeviceConte
 	return OutBuffer.VB != nullptr && OutBuffer.IB != nullptr;
 }
 
-UMeshComponent* FClothSceneProxy::GetMeshComponent() const
-{
-	return static_cast<UMeshComponent*>(GetOwner());
-}
-
 UClothComponent* FClothSceneProxy::GetClothComponent() const
 {
 	return Cast<UClothComponent>(GetOwner());
@@ -174,7 +168,7 @@ void FClothSceneProxy::UpdateDefaultMaterialConstants()
 		return;
 	}
 
-	UMeshComponent* Component = GetMeshComponent();
+	UClothComponent* Component = GetClothComponent();
 	FClothDefaultMaterialConstants& Constants =
 		DefaultMaterial->BindPerShaderCB<FClothDefaultMaterialConstants>(&DefaultMaterialCB, ECBSlot::PerShader0);
 	Constants.SectionColor = Component ? Component->GetClothRenderColor() : FVector4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -189,16 +183,15 @@ void FClothSceneProxy::RebuildSectionDraws()
 		return;
 	}
 
-	UMeshComponent* Component = GetMeshComponent();
-	UMaterialInterface* ClothMaterial = Component ? Component->GetClothMaterial(0) : nullptr;
-	if (ClothMaterial)
+	UClothComponent* Component = GetClothComponent();
+	UMaterialInterface* SectionMaterial = Component ? Component->GetMaterial() : nullptr;
+	if (!SectionMaterial)
 	{
-		SectionDraws.push_back({ ClothMaterial, 0, IndexCount });
-		return;
+		SectionMaterial = DefaultMaterial;
 	}
 
-	if (DefaultMaterial)
+	if (SectionMaterial)
 	{
-		SectionDraws.push_back({ DefaultMaterial, 0, IndexCount });
+		SectionDraws.push_back({ SectionMaterial, 0, IndexCount });
 	}
 }
