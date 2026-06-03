@@ -165,6 +165,12 @@ function PrimitiveComponent:SetSimulatePhysics(enabled) end
 ---@return boolean
 function PrimitiveComponent:GetSimulatePhysics() end
 
+---@param mode integer
+function PrimitiveComponent:SetPhysicsBodyMode(mode) end
+
+---@return integer
+function PrimitiveComponent:GetPhysicsBodyMode() end
+
 ---@param force Vector
 function PrimitiveComponent:AddForce(force) end
 

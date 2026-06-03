@@ -79,6 +79,20 @@ namespace
 			|| BodySetup.CollisionEnabled == EBodyCollisionEnabled::QueryAndPhysics;
 	}
 
+	EPhysicsBodyType ToPhysicsBodyType(EPhysicsBodyMode Mode)
+	{
+		switch (Mode)
+		{
+		case EPhysicsBodyMode::Dynamic:
+			return EPhysicsBodyType::Dynamic;
+		case EPhysicsBodyMode::Kinematic:
+			return EPhysicsBodyType::Kinematic;
+		case EPhysicsBodyMode::Static:
+		default:
+			return EPhysicsBodyType::Static;
+		}
+	}
+
 	void ApplyBodyMaterial(const UBodySetup& BodySetup, FPhysicsShapeDesc& ShapeDesc)
 	{
 		ShapeDesc.Material.StaticFriction = BodySetup.Friction;
@@ -1133,7 +1147,7 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 		UStaticMesh* StaticMesh = StaticMeshComp->GetStaticMesh();
 		if (StaticMesh && StaticMesh->GetCollisionMode() == EStaticMeshCollisionMode::TriangleMesh)
 		{
-			if (Comp->GetSimulatePhysics())
+			if (Comp->GetPhysicsBodyMode() != EPhysicsBodyMode::Static)
 			{
 				UE_LOG("[PhysXRuntime] Triangle mesh collision is supported only for static static-mesh components");
 				return false;
@@ -1160,13 +1174,13 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 		OutDesc = FPhysicsBodyDesc();
 		OutDesc.OwnerComponent = Comp;
 		OutDesc.BodyName = BodySetup->BoneName.empty() ? FString("StaticMesh") : BodySetup->BoneName;
-		OutDesc.BodyType = Comp->GetSimulatePhysics() ? EPhysicsBodyType::Dynamic : EPhysicsBodyType::Static;
+		OutDesc.BodyType = ToPhysicsBodyType(Comp->GetPhysicsBodyMode());
 		OutDesc.WorldTransform = FTransform(Comp->GetWorldLocation(), Comp->GetWorldRotation(), FVector(1.0f, 1.0f, 1.0f));
 		OutDesc.Mass = std::max(0.001f, Comp->GetMass() > 0.0f ? Comp->GetMass() : BodySetup->Mass);
 		OutDesc.LinearDamping  = Comp->GetLinearDamping();
 		OutDesc.AngularDamping = Comp->GetAngularDamping();
 		OutDesc.bUseGravity    = Comp->IsGravityEnabled();
-		OutDesc.bEnableCCD = Comp->GetSimulatePhysics();
+		OutDesc.bEnableCCD = Comp->GetPhysicsBodyMode() == EPhysicsBodyMode::Dynamic;
 
 		AppendStaticMeshBodySetupShapes(StaticMeshComp, *BodySetup, OutDesc);
 		return !OutDesc.Shapes.empty();
@@ -1186,11 +1200,11 @@ bool FPhysXRuntime::BuildBodyDescFromComponent(UPrimitiveComponent* Comp, FPhysi
 	OutDesc = FPhysicsBodyDesc();
 	OutDesc.OwnerComponent = Comp;
 	OutDesc.BodyName = "PrimitiveComponent";
-	OutDesc.BodyType = Comp->GetSimulatePhysics() ? EPhysicsBodyType::Dynamic : EPhysicsBodyType::Static;
+	OutDesc.BodyType = ToPhysicsBodyType(Comp->GetPhysicsBodyMode());
 	OutDesc.WorldTransform = FTransform(Comp->GetWorldLocation(), Comp->GetWorldRotation(), FVector(1.0f, 1.0f, 1.0f));
 	OutDesc.Mass = Comp->GetMass();
 	OutDesc.bUseGravity = true;
-	OutDesc.bEnableCCD = Comp->GetSimulatePhysics();
+	OutDesc.bEnableCCD = Comp->GetPhysicsBodyMode() == EPhysicsBodyMode::Dynamic;
 	OutDesc.Shapes.push_back(ShapeDesc);
 	return true;
 }

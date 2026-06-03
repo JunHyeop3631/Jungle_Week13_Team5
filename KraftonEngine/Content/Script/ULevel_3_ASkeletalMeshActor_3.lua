@@ -51,12 +51,9 @@ function BeginPlay()
     end
     beamActive = false
 
-    -- 캡슐(루트)을 kinematic/static 상태로 유지 — CharacterMovement 가 같은 캡슐을 직접 이동하므로
-    -- dynamic physics 를 켜면 PhysX sync 와 movement 가 transform 소유권을 두고 충돌한다.
+    -- 캡슐(루트)은 C++ Character 기본값에서 Kinematic physics proxy 로 설정된다.
+    -- 여기서는 포인터만 보관하고 physics mode 를 덮어쓰지 않는다.
     capsule = obj:GetRootPrimitiveComponent()
-    if capsule ~= nil then
-        capsule:SetSimulatePhysics(false)
-    end
 end
 
 function EndPlay()

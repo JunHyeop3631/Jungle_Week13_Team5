@@ -1009,6 +1009,19 @@ void FLuaScriptManager::RegisterActorBindings(sol::state& Lua)
 		sol::base_classes, sol::bases<USceneComponent>(),
 		"SetSimulatePhysics", &UPrimitiveComponent::SetSimulatePhysics,
 		"GetSimulatePhysics", &UPrimitiveComponent::GetSimulatePhysics,
+		"SetPhysicsBodyMode", [](UPrimitiveComponent& Component, int32 Mode)
+	{
+		if (Mode < 0) Mode = 0;
+		if (Mode >= static_cast<int32>(EPhysicsBodyMode::COUNT))
+		{
+			Mode = static_cast<int32>(EPhysicsBodyMode::Static);
+		}
+		Component.SetPhysicsBodyMode(static_cast<EPhysicsBodyMode>(Mode));
+	},
+		"GetPhysicsBodyMode", [](UPrimitiveComponent& Component)
+	{
+		return static_cast<int32>(Component.GetPhysicsBodyMode());
+	},
 		"AddForce", &UPrimitiveComponent::AddForce,
 		"AddForceAtLocation", &UPrimitiveComponent::AddForceAtLocation,
 		"AddTorque", &UPrimitiveComponent::AddTorque,
@@ -1023,6 +1036,8 @@ void FLuaScriptManager::RegisterActorBindings(sol::state& Lua)
 	FLuaDocRegistry::Get().Type("PrimitiveComponent", "SceneComponent")
 		.Method("---@param enabled boolean\nfunction PrimitiveComponent:SetSimulatePhysics(enabled) end")
 		.Method("---@return boolean\nfunction PrimitiveComponent:GetSimulatePhysics() end")
+		.Method("---@param mode integer\nfunction PrimitiveComponent:SetPhysicsBodyMode(mode) end")
+		.Method("---@return integer\nfunction PrimitiveComponent:GetPhysicsBodyMode() end")
 		.Method("---@param force Vector\nfunction PrimitiveComponent:AddForce(force) end")
 		.Method("---@param force Vector\n---@param location Vector\nfunction PrimitiveComponent:AddForceAtLocation(force, location) end")
 		.Method("---@param torque Vector\nfunction PrimitiveComponent:AddTorque(torque) end")

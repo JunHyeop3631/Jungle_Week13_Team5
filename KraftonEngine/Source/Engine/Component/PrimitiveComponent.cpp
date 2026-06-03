@@ -123,8 +123,15 @@ void UPrimitiveComponent::NotifyPhysicsBodyDirty()
 
 void UPrimitiveComponent::SetSimulatePhysics(bool bInSimulate)
 {
-	if (bSimulatePhysics == bInSimulate) return;
+	SetPhysicsBodyMode(bInSimulate ? EPhysicsBodyMode::Dynamic : EPhysicsBodyMode::Static);
 	bSimulatePhysics = bInSimulate;
+}
+
+void UPrimitiveComponent::SetPhysicsBodyMode(EPhysicsBodyMode InMode)
+{
+	if (PhysicsBodyMode == InMode) return;
+	PhysicsBodyMode = InMode;
+	bSimulatePhysics = PhysicsBodyMode == EPhysicsBodyMode::Dynamic;
 	NotifyPhysicsBodyDirty();
 }
 
@@ -247,8 +254,9 @@ void UPrimitiveComponent::PostEditProperty(const char* PropertyName)
 			}
 		}
 	}
-	else if (strcmp(PropertyName, "bSimulatePhysics") == 0 || strcmp(PropertyName, "Simulate Physics") == 0)
+	else if (strcmp(PropertyName, "PhysicsBodyMode") == 0 || strcmp(PropertyName, "Physics Body Mode") == 0)
 	{
+		bSimulatePhysics = PhysicsBodyMode == EPhysicsBodyMode::Dynamic;
 		NotifyPhysicsBodyDirty();
 	}
 	else if (strcmp(PropertyName, "bGenerateOverlapEvents") == 0 || strcmp(PropertyName, "Generate Overlap Events") == 0)

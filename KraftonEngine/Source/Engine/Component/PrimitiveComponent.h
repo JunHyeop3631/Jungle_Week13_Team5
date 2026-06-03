@@ -152,7 +152,9 @@ public:
 	// --- Overlap / Hit ---
 
 	void SetSimulatePhysics(bool bInSimulate);
-	bool GetSimulatePhysics() const { return bSimulatePhysics; }
+	bool GetSimulatePhysics() const { return PhysicsBodyMode == EPhysicsBodyMode::Dynamic; }
+	void SetPhysicsBodyMode(EPhysicsBodyMode InMode);
+	EPhysicsBodyMode GetPhysicsBodyMode() const { return PhysicsBodyMode; }
 
 	// --- Physics Force/Velocity API ---
 	void AddForce(const FVector& Force);
@@ -236,8 +238,11 @@ protected:
 	bool bCastShadowAsTwoSided = false;
 	UPROPERTY(Edit, Save, Category="Rendering", DisplayName="Translucent Sort Priority")
 	int32 TranslucentSortPriority = 0;
-	UPROPERTY(Edit, Save, Category="Collision", DisplayName="Simulate Physics")
+	// Deprecated compatibility cache. Old scenes may still contain bSimulatePhysics, but this member is no
+	// longer serialized/read as a property; PhysicsBodyMode is the source of truth.
 	bool bSimulatePhysics = false;
+	UPROPERTY(Edit, Save, Category="Physics", DisplayName="Physics Body Mode", Enum=EPhysicsBodyMode)
+	EPhysicsBodyMode PhysicsBodyMode = EPhysicsBodyMode::Static;
 	UPROPERTY(Edit, Save, Category="Collision", DisplayName="Generate Overlap Events")
 	bool bGenerateOverlapEvents = false;
 
