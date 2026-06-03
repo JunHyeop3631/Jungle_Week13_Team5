@@ -34,6 +34,7 @@ namespace Key
 	constexpr const char* bFXAA = "bFXAA";
 	constexpr const char* bBloom = "bBloom";
 	constexpr const char* bDepthOfField = "bDepthOfField";
+	constexpr const char* bVisualizeDepthOfField = "bVisualizeDepthOfField";
 	constexpr const char* bGammaCorrection = "bGammaCorrection";
 	constexpr const char* bViewLightCulling = "bViewLightCulling";
 	constexpr const char* bVisualize25DCulling = "bVisualize25DCulling";
@@ -170,6 +171,7 @@ json::JSON SaveRenderOptions(const FViewportRenderOptions& Opts)
 	Obj[Key::bFXAA] = Opts.ShowFlags.bFXAA;
 	Obj[Key::bBloom] = Opts.ShowFlags.bBloom;
 	Obj[Key::bDepthOfField] = Opts.ShowFlags.bDepthOfField;
+	Obj[Key::bVisualizeDepthOfField] = Opts.ShowFlags.bVisualizeDepthOfField;
 	Obj[Key::bGammaCorrection] = Opts.ShowFlags.bGammaCorrection;
 	Obj[Key::bViewLightCulling] = Opts.ShowFlags.bViewLightCulling;
 	Obj[Key::bVisualize25DCulling] = Opts.ShowFlags.bVisualize25DCulling;
@@ -229,6 +231,8 @@ void LoadRenderOptions(json::JSON Obj, FViewportRenderOptions& Opts)
 		Opts.ShowFlags.bBloom = Obj[Key::bBloom].ToBool();
 	if (Obj.hasKey(Key::bDepthOfField))
 		Opts.ShowFlags.bDepthOfField = Obj[Key::bDepthOfField].ToBool();
+	if (Obj.hasKey(Key::bVisualizeDepthOfField))
+		Opts.ShowFlags.bVisualizeDepthOfField = Obj[Key::bVisualizeDepthOfField].ToBool();
 	if (Obj.hasKey(Key::bGammaCorrection))
 		Opts.ShowFlags.bGammaCorrection = Obj[Key::bGammaCorrection].ToBool();
 	if (Obj.hasKey(Key::bViewLightCulling))

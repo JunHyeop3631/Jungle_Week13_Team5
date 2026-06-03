@@ -58,6 +58,7 @@ struct FShowFlags
 	bool bFXAA = false;
 	bool bBloom = false;
 	bool bDepthOfField = false;
+	bool bVisualizeDepthOfField = false;
 	bool bGammaCorrection = true;
 	bool bViewLightCulling = false;
 	bool bVisualize25DCulling = false;

@@ -31,7 +31,11 @@ FDepthOfFieldPass::FDepthOfFieldPass()
 bool FDepthOfFieldPass::BeginPass(const FPassContext& Ctx)
 {
 	const FFrameContext& Frame = Ctx.Frame;
-	return Frame.RenderOptions.ShowFlags.bDepthOfField
+	const bool bDofEnabled = Frame.RenderOptions.ShowFlags.bDepthOfField;
+	const bool bVisualizeDof = Frame.RenderOptions.ShowFlags.bVisualizeDepthOfField;
+	const bool bNeedsDofLayers = bDofEnabled && !bVisualizeDof;
+
+	return (bDofEnabled || bVisualizeDof)
 		&& Frame.CameraDepthOfField.bEnabled
 		&& Frame.SceneColorCopyTexture
 		&& Frame.SceneColorCopySRV
@@ -39,12 +43,13 @@ bool FDepthOfFieldPass::BeginPass(const FPassContext& Ctx)
 		&& Frame.DepthTexture
 		&& Frame.DepthCopyTexture
 		&& Frame.DepthCopySRV
-		&& Frame.DofFarRTV
-		&& Frame.DofFarSRV
-		&& Frame.DofNearRTV
-		&& Frame.DofNearSRV
-		&& Frame.DofWidth > 0.0f
-		&& Frame.DofHeight > 0.0f;
+		&& (!bNeedsDofLayers
+			|| (Frame.DofFarRTV
+				&& Frame.DofFarSRV
+				&& Frame.DofNearRTV
+				&& Frame.DofNearSRV
+				&& Frame.DofWidth > 0.0f
+				&& Frame.DofHeight > 0.0f));
 }
 
 void FDepthOfFieldPass::Execute(const FPassContext& Ctx)
@@ -62,7 +67,10 @@ void FDepthOfFieldPass::Execute(const FPassContext& Ctx)
 		FShaderKey(EShaderPath::DepthOfField, nullptr, "VS", "PS_NearLayer"));
 	FShader* CompositeShader = FShaderManager::Get().GetOrCreate(
 		FShaderKey(EShaderPath::DepthOfField, nullptr, "VS", "PS_Composite"));
-	if (!FarLayerShader || !NearLayerShader || !CompositeShader)
+	FShader* VisualizeShader = FShaderManager::Get().GetOrCreate(
+		FShaderKey(EShaderPath::DepthOfField, nullptr, "VS", "PS_Visualize"));
+	const bool bVisualizeDof = Frame.RenderOptions.ShowFlags.bVisualizeDepthOfField;
+	if (!VisualizeShader || (!bVisualizeDof && (!FarLayerShader || !NearLayerShader || !CompositeShader)))
 	{
 		return;
 	}
@@ -106,6 +114,26 @@ void FDepthOfFieldPass::Execute(const FPassContext& Ctx)
 	DC->OMSetRenderTargets(0, nullptr, nullptr);
 	DC->CopyResource(Frame.DepthCopyTexture, Frame.DepthTexture);
 	DC->CopyResource(Frame.SceneColorCopyTexture, Frame.ViewportRenderTexture);
+
+	if (bVisualizeDof)
+	{
+		DC->RSSetViewports(1, &SceneViewport);
+		DC->OMSetRenderTargets(1, &Ctx.Cache.RTV, Ctx.Cache.DSV);
+		DC->PSSetShaderResources(ESystemTexSlot::SceneColor, 1, &Frame.SceneColorCopySRV);
+		DC->PSSetShaderResources(ESystemTexSlot::SceneDepth, 1, &Frame.DepthCopySRV);
+		VisualizeShader->Bind(DC);
+		DrawFullscreenTriangle(DC);
+
+		DC->PSSetShaderResources(ESystemTexSlot::SceneColor, 1, &NullSRV);
+		DC->PSSetShaderResources(ESystemTexSlot::SceneDepth, 1, &NullSRV);
+		DC->PSSetShaderResources(0, ARRAYSIZE(NullSystemSRVs), NullSystemSRVs);
+		ID3D11Buffer* NullCB = nullptr;
+		DC->VSSetConstantBuffers(ECBSlot::PerShader0, 1, &NullCB);
+		DC->PSSetConstantBuffers(ECBSlot::PerShader0, 1, &NullCB);
+
+		Ctx.Cache.bForceAll = true;
+		return;
+	}
 
 	// Far layer: half-res blurred background into Bloom A.
 	DC->RSSetViewports(1, &DofViewport);
