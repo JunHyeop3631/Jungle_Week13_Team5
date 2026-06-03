@@ -42,6 +42,7 @@ void FShaderManager::Initialize(ID3D11Device* InDevice)
 	GetOrCreate(FShaderKey(EShaderPath::DepthOfField, nullptr, "VS", "PS_FarLayer"), StartupError);
 	GetOrCreate(FShaderKey(EShaderPath::DepthOfField, nullptr, "VS", "PS_NearLayer"), StartupError);
 	GetOrCreate(FShaderKey(EShaderPath::DepthOfField, nullptr, "VS", "PS_Composite"), StartupError);
+	GetOrCreate(FShaderKey(EShaderPath::DepthOfField, nullptr, "VS", "PS_Visualize"), StartupError);
 	GetOrCreate(EShaderPath::FXAA, StartupError);
 	GetOrCreate(EShaderPath::Font, StartupError);
 	GetOrCreate(EShaderPath::OverlayFont, StartupError);

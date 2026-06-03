@@ -164,6 +164,31 @@ float4 PS_Composite(PS_Input_UV Input) : SV_TARGET
     return float4(Color, Scene.a);
 }
 
+float4 PS_Visualize(PS_Input_UV Input) : SV_TARGET
+{
+    int2 Coord = int2(Input.position.xy);
+    float DeviceDepth = SceneDepthTexture.Load(int3(Coord, 0)).r;
+    float Depth = LinearizeDepthMeter(DeviceDepth);
+
+    uint Width, Height;
+    SceneColorTexture.GetDimensions(Width, Height);
+    float SignedCoC = ComputeSignedCoC(Depth, (float)Width);
+    float BlurAmount = saturate(abs(SignedCoC));
+    float FocusAmount = 1.0f - smoothstep(0.025f, 0.125f, abs(SignedCoC));
+
+    float3 SceneColor = SceneColorTexture.SampleLevel(LinearClampSampler, Input.uv, 0).rgb;
+    float3 BaseColor = SceneColor * 0.2f;
+    float3 NearColor = float3(1.0f, 0.12f, 0.04f);
+    float3 FarColor = float3(0.08f, 0.35f, 1.0f);
+    float3 FocusColor = float3(0.1f, 0.95f, 0.25f);
+
+    float3 RangeColor = (SignedCoC < 0.0f) ? NearColor : FarColor;
+    float3 Color = lerp(BaseColor, RangeColor, BlurAmount);
+    Color = lerp(Color, FocusColor, FocusAmount * 0.85f);
+
+    return float4(Color, 1.0f);
+}
+
 float4 PS(PS_Input_UV Input) : SV_TARGET
 {
     int2 Coord = int2(Input.position.xy);
