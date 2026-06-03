@@ -252,7 +252,7 @@ void FRenderCollector::FilterVisibleProxies(const FFrameContext& Frame, FScene& 
 		if (Proxy->HasProxyFlag(EPrimitiveProxyFlags::Cloth))
 		{
 			const FClothSceneProxy* ClothProxy = static_cast<const FClothSceneProxy*>(Proxy);
-			UMeshComponent* ClothComponent = ClothProxy ? ClothProxy->GetMeshComponent() : nullptr;
+			UClothComponent* ClothComponent = ClothProxy ? ClothProxy->GetClothComponent() : nullptr;
 			if (ClothComponent)
 			{
 				FClothStats ClothStats;

@@ -176,11 +176,6 @@ USkeletalMesh* USkinnedMeshComponent::GetSkeletalMesh() const
 // Bounds 섹션: SkeletalMesh culling은 asset local bounds가 아니라 실제 CPU-skinned vertices를 기준으로 한다.
 void USkinnedMeshComponent::UpdateWorldAABB() const
 {
-	if (IsMeshClothEnabled() && UpdateMeshClothWorldAABB())
-	{
-		return;
-	}
-
 	// 아직 skinning 결과가 없으면 primitive 기본 bounds로 fallback해 빈 mesh/로드 실패 경로를 안전하게 둔다.
 	if (SkinnedVertices.empty())
 	{

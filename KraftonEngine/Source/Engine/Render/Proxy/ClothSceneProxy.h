@@ -5,12 +5,11 @@
 #include "Render/Types/VertexTypes.h"
 
 class UClothComponent;
-class UMeshComponent;
 
 class FClothSceneProxy : public FPrimitiveSceneProxy
 {
 public:
-	explicit FClothSceneProxy(UMeshComponent* InComponent);
+	explicit FClothSceneProxy(UClothComponent* InComponent);
 	~FClothSceneProxy() override;
 
 	void UpdateMesh() override;
@@ -20,7 +19,6 @@ public:
 	bool PrepareDrawBuffer(ID3D11Device* Device, ID3D11DeviceContext* Context,
 		FDrawCommandBuffer& OutBuffer) const override;
 
-	UMeshComponent* GetMeshComponent() const;
 	UClothComponent* GetClothComponent() const;
 
 private:

@@ -57,7 +57,6 @@ public:
 	void SetMaterial(int32 ElementIndex, UMaterialInterface* InMaterial);
 	UMaterialInterface* GetMaterial(int32 ElementIndex) const;
 	const TArray<UMaterialInterface*>& GetOverrideMaterials() const { return OverrideMaterials; }
-	UMaterialInterface* GetClothMaterial(int32 ElementIndex) const override { return GetMaterial(ElementIndex); }
 
 	void PostDuplicate() override;
 

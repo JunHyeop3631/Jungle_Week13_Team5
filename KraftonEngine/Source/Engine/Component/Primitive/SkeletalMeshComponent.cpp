@@ -26,7 +26,6 @@
 #include "Physics/Asset/PhysicsConstraintSetup.h"
 #include "Physics/Cloth/IClothScene.h"
 #include "Physics/IPhysicsScene.h"
-#include "Render/Proxy/ClothSceneProxy.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
 #include "Render/Scene/FScene.h"
 #include "Serialization/Archive.h"
@@ -151,20 +150,11 @@ USkeletalMeshComponent::~USkeletalMeshComponent()
 
 FPrimitiveSceneProxy* USkeletalMeshComponent::CreateSceneProxy()
 {
-    if (IsMeshClothEnabled())
-    {
-        return new FClothSceneProxy(this);
-    }
     return new FSkeletalMeshSceneProxy(this);
 }
 
 void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InMesh)
 {
-    if (IsMeshClothEnabled())
-    {
-        DestroyMeshCloth();
-    }
-
     ClearSkeletalClothBinding();
     DestroyPhysicsAssetBodies();
     Super::SetSkeletalMesh(InMesh);
@@ -172,10 +162,6 @@ void USkeletalMeshComponent::SetSkeletalMesh(USkeletalMesh* InMesh)
     // 새 SkeletalMesh 기준으로 AnimInstance 를 재인스턴스화한다.
     InitializeAnimation();
 
-    if (IsMeshClothEnabled() && bComponentHasBegunPlay)
-    {
-        RecreateMeshCloth();
-    }
 }
 
 void USkeletalMeshComponent::PlayAnimation(UAnimSequenceBase* NewAnimToPlay, bool bLooping)

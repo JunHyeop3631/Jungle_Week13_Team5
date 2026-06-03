@@ -10,7 +10,6 @@
 #include "Engine/Runtime/Engine.h"
 #include "Render/Shader/ShaderManager.h"
 #include "Texture/Texture2D.h"
-#include "Render/Proxy/ClothSceneProxy.h"
 #include "Render/Proxy/StaticMeshSceneProxy.h"
 #include "Render/Proxy/PrimitiveSceneProxy.h"
 #include "Serialization/Archive.h"
@@ -125,20 +124,11 @@ void SMDbgWireCapsule(const FDbgLineSink& Emit, const FVector& C, const FQuat& R
 
 FPrimitiveSceneProxy* UStaticMeshComponent::CreateSceneProxy()
 {
-	if (IsMeshClothEnabled())
-	{
-		return new FClothSceneProxy(this);
-	}
 	return new FStaticMeshSceneProxy(this);
 }
 
 void UStaticMeshComponent::SetStaticMesh(UStaticMesh* InMesh)
 {
-	if (IsMeshClothEnabled())
-	{
-		DestroyMeshCloth();
-	}
-
 	StaticMesh = InMesh;
 	if (InMesh)
 	{
@@ -167,11 +157,6 @@ void UStaticMeshComponent::SetStaticMesh(UStaticMesh* InMesh)
 		MaterialSlots.clear();
 	}
 	CacheLocalBounds();
-
-	if (IsMeshClothEnabled() && bComponentHasBegunPlay)
-	{
-		RecreateMeshCloth();
-	}
 
 	MarkRenderStateDirty();
 	MarkWorldBoundsDirty();
@@ -291,11 +276,6 @@ FMeshDataView UStaticMeshComponent::GetMeshDataView() const
 
 void UStaticMeshComponent::UpdateWorldAABB() const
 {
-	if (IsMeshClothEnabled() && UpdateMeshClothWorldAABB())
-	{
-		return;
-	}
-
 	if (!bHasValidBounds)
 	{
 		UPrimitiveComponent::UpdateWorldAABB();
