@@ -11,6 +11,7 @@
 #include "Render/Proxy/BoneDebugSceneProxy.h"
 #include "Render/Proxy/PhysicsShapeDebugSceneProxy.h"
 #include "Render/Proxy/SkeletalMeshSceneProxy.h"
+#include "Render/Proxy/ClothSceneProxy.h"
 #include "Render/Proxy/ParticleSystemSceneProxy.h"
 #include "Render/Scene/FScene.h"
 #include "Render/Types/RenderConstants.h"
@@ -642,6 +643,15 @@ void FDrawCommandBuilder::BuildCommandForSection(FScene& Scene, const FPrimitive
 		// 섹션별 Material의 RenderPass가 현재 Pass와 일치할 때만 렌더 상태 오버라이드
 		if (Pass == Mat->GetRenderPass())
 			ApplyMaterialRenderState(Cmd.RenderState, Mat, BaseRenderState);
+	}
+
+	if (Proxy.HasProxyFlag(EPrimitiveProxyFlags::Cloth))
+	{
+		const FClothSceneProxy& ClothProxy = static_cast<const FClothSceneProxy&>(Proxy);
+		if (ClothProxy.IsTwoSided() && Cmd.RenderState.Rasterizer != ERasterizerState::WireFrame)
+		{
+			Cmd.RenderState.Rasterizer = ERasterizerState::SolidNoCull;
+		}
 	}
 
 	Cmd.BuildSortKey();

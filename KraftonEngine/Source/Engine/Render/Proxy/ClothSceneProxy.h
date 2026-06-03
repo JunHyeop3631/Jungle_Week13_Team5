@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Render/Proxy/PrimitiveSceneProxy.h"
 #include "Render/Resource/Buffer.h"
@@ -20,6 +20,7 @@ public:
 		FDrawCommandBuffer& OutBuffer) const override;
 
 	UClothComponent* GetClothComponent() const;
+	bool IsTwoSided() const { return bCurrentTwoSided; }
 
 private:
 	void RecreateDefaultMaterial();

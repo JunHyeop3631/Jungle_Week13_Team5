@@ -183,8 +183,15 @@ void FClothSceneProxy::RebuildSectionDraws()
 		return;
 	}
 
-	if (DefaultMaterial)
+	UClothComponent* Component = GetClothComponent();
+	UMaterialInterface* SectionMaterial = Component ? Component->GetMaterial() : nullptr;
+	if (!SectionMaterial)
 	{
-		SectionDraws.push_back({ DefaultMaterial, 0, IndexCount });
+		SectionMaterial = DefaultMaterial;
+	}
+
+	if (SectionMaterial)
+	{
+		SectionDraws.push_back({ SectionMaterial, 0, IndexCount });
 	}
 }

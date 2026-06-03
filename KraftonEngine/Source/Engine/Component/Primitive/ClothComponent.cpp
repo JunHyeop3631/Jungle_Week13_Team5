@@ -1,6 +1,8 @@
 ﻿#include "Component/Primitive/ClothComponent.h"
 
 #include "GameFramework/World.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialManager.h"
 #include "Physics/Cloth/IClothScene.h"
 #include "Render/Proxy/ClothSceneProxy.h"
 
@@ -78,6 +80,19 @@ void UClothComponent::EndPlay()
 	UMeshComponent::EndPlay();
 }
 
+void UClothComponent::PostDuplicate()
+{
+	UMeshComponent::PostDuplicate();
+
+	if (!MaterialSlot.empty() && MaterialSlot != "None")
+	{
+		if (UMaterial* LoadedMaterial = FMaterialManager::Get().GetOrCreateMaterial(MaterialSlot))
+		{
+			SetMaterial(LoadedMaterial);
+		}
+	}
+}
+
 void UClothComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction& ThisTickFunction)
 {
 	UMeshComponent::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -116,6 +131,19 @@ void UClothComponent::PostEditProperty(const char* PropertyName)
 		return;
 	}
 
+	if (std::strcmp(PropertyName, "MaterialSlot") == 0 || std::strcmp(PropertyName, "Material") == 0)
+	{
+		if (MaterialSlot.empty() || MaterialSlot == "None")
+		{
+			SetMaterial(nullptr);
+		}
+		else if (UMaterial* LoadedMaterial = FMaterialManager::Get().GetOrCreateMaterial(MaterialSlot))
+		{
+			SetMaterial(LoadedMaterial);
+		}
+		return;
+	}
+
 	MarkClothRenderDataDirty();
 	if (bComponentHasBegunPlay && bSimulateCloth)
 	{
@@ -144,6 +172,13 @@ void UClothComponent::PostEditProperty(const char* PropertyName)
 FPrimitiveSceneProxy* UClothComponent::CreateSceneProxy()
 {
 	return new FClothSceneProxy(this);
+}
+
+void UClothComponent::SetMaterial(UMaterialInterface* InMaterial)
+{
+	Material = InMaterial;
+	MaterialSlot = Material ? Material->GetAssetPathFileName() : "None";
+	MarkProxyDirty(EDirtyFlag::Material);
 }
 
 FClothGridDesc UClothComponent::BuildGridDesc() const
