@@ -242,7 +242,7 @@ protected:
     // 종료 시 복원하기 위해 진입 전 상태를 저장.
     bool bRagdollRootCollisionDisabled = false;
     ECollisionEnabled RagdollSavedRootCollision = ECollisionEnabled::NoCollision;
-    bool RagdollSavedRootSimulate = false;
+    EPhysicsBodyMode RagdollSavedRootBodyMode = EPhysicsBodyMode::Static;
 
     // PhysicsAssetPath 에서 로드한 per-instance physics asset. 컴포넌트가 소유(직접 delete). 직렬화 안 함.
     UPhysicsAsset* PhysicsAssetOverride = nullptr;

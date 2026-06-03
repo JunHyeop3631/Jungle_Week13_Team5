@@ -1262,8 +1262,8 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
                     if (RootPrim != this && !bRagdollRootCollisionDisabled)
                     {
                         RagdollSavedRootCollision = RootPrim->GetCollisionEnabled();
-                        RagdollSavedRootSimulate  = RootPrim->GetSimulatePhysics();
-                        RootPrim->SetSimulatePhysics(false);
+                        RagdollSavedRootBodyMode  = RootPrim->GetPhysicsBodyMode();
+                        RootPrim->SetPhysicsBodyMode(EPhysicsBodyMode::Static);
                         RootPrim->SetCollisionEnabled(ECollisionEnabled::NoCollision);
                         bRagdollRootCollisionDisabled = true;
                     }
@@ -1303,7 +1303,7 @@ void USkeletalMeshComponent::SetSimulatingPhysics(bool bSimulate)
                     if (RootPrim != this)
                     {
                         RootPrim->SetCollisionEnabled(RagdollSavedRootCollision);
-                        RootPrim->SetSimulatePhysics(RagdollSavedRootSimulate);
+                        RootPrim->SetPhysicsBodyMode(RagdollSavedRootBodyMode);
                     }
                 }
             }

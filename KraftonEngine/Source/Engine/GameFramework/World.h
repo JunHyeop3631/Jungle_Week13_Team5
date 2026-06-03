@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Object/Object.h"
 #include "Core/Types/RayTypes.h"
 #include "Core/Types/CollisionTypes.h"

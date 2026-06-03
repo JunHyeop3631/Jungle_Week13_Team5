@@ -368,13 +368,18 @@ void UWorld::Tick(float DeltaTime, ELevelTick TickType)
 		return;
 	}
 
+	TickManager.GatherTickFunctions(this, TickType);
+	TickManager.TickGroup(DeltaTime, TickType, TG_PrePhysics);
+	TickManager.TickGroup(DeltaTime, TickType, TG_DuringPhysics);
+
 	if (bHasBegunPlay && PhysicsScene)
 	{
 		SCOPE_STAT_CAT("PhysicsScene", "1_WorldTick");
 		PhysicsScene->Simulate(DeltaTime);
 	}
 
-	TickManager.Tick(this, DeltaTime, TickType);
+	TickManager.TickGroup(DeltaTime, TickType, TG_PostPhysics);
+	TickManager.TickGroup(DeltaTime, TickType, TG_PostUpdateWork);
 
 	if (bHasBegunPlay && ClothScene)
 	{

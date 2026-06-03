@@ -3,6 +3,7 @@
 #include "Animation/AnimInstance.h"
 #include "Component/Shape/CapsuleComponent.h"
 #include "Component/SceneComponent.h"
+#include "Component/PrimitiveComponent.h"
 #include "Component/Primitive/SkeletalMeshComponent.h"
 #include "Core/Types/PropertyTypes.h"
 #include "Core/TickFunction.h"
@@ -12,6 +13,7 @@
 #include "Math/Quat.h"
 #include "Math/Rotator.h"
 #include "Object/Reflection/ObjectFactory.h"
+#include "Physics/IPhysicsScene.h"
 #include "Serialization/Archive.h"
 
 #include <algorithm>
@@ -168,6 +170,8 @@ void UCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick Tick
 	{
 		PhysOrientToMovement(DeltaTime);
 	}
+
+	SyncUpdatedPhysicsBody();
 }
 
 void UCharacterMovementComponent::PhysOrientToMovement(float DeltaTime)
@@ -334,6 +338,28 @@ bool UCharacterMovementComponent::TraceFloor(FHitResult& OutHit) const
 	// 인식되지 않는다.
 	return World->PhysicsRaycastByObjectTypes(Start, Dir, MaxDist, OutHit,
 		ObjectTypeBit(ECollisionChannel::WorldStatic), Owner);
+}
+
+void UCharacterMovementComponent::SyncUpdatedPhysicsBody()
+{
+	UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(GetUpdatedComponent());
+	if (!Primitive || Primitive->GetPhysicsBodyMode() != EPhysicsBodyMode::Kinematic)
+	{
+		return;
+	}
+
+	AActor* OwnerActor = GetOwner();
+	UWorld* World = OwnerActor ? OwnerActor->GetWorld() : nullptr;
+	IPhysicsScene* Scene = World ? World->GetPhysicsScene() : nullptr;
+	if (!Scene)
+	{
+		return;
+	}
+
+	Scene->SetComponentWorldTransform(
+		Primitive,
+		FTransform(Primitive->GetWorldLocation(), Primitive->GetWorldRotation(), FVector(1.0f, 1.0f, 1.0f)),
+		/*bTeleport*/ false);
 }
 
 float UCharacterMovementComponent::GetCapsuleHalfHeight() const

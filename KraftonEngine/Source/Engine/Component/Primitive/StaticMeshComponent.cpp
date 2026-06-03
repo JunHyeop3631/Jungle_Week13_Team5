@@ -194,15 +194,19 @@ void UStaticMeshComponent::SetMobility(EComponentMobility InMobility)
 {
 	if (Mobility == InMobility) return;
 	Mobility = InMobility;
-	// bSimulatePhysics를 동기화하면 NotifyPhysicsBodyDirty가 PhysX Body를 재빌드
-	SetSimulatePhysics(InMobility == EComponentMobility::Dynamic);
+	SetPhysicsBodyMode(InMobility == EComponentMobility::Dynamic
+		? EPhysicsBodyMode::Dynamic
+		: EPhysicsBodyMode::Static);
 }
 
 void UStaticMeshComponent::CreatePhysicsState()
 {
-	// Mobility → bSimulatePhysics (Static=false → PxRigidStatic, Dynamic=true → PxRigidDynamic)
+	// Mobility → PhysicsBodyMode (Static=PxRigidStatic, Dynamic=PxRigidDynamic)
 	// AggregateGeom은 이미 에디터 편집 시 실시간으로 업데이트됨.
-	bSimulatePhysics = (Mobility == EComponentMobility::Dynamic);
+	PhysicsBodyMode = (Mobility == EComponentMobility::Dynamic)
+		? EPhysicsBodyMode::Dynamic
+		: EPhysicsBodyMode::Static;
+	bSimulatePhysics = PhysicsBodyMode == EPhysicsBodyMode::Dynamic;
 
 	// 3. Physics scene에 등록. BeginPlay 이후면 RebuildBody로 기존 actor 교체,
 	//    이전이면 데이터 준비만 — BeginPlay에서 RegisterComponent가 자동 호출됨.

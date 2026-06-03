@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "MovementComponent.h"
 #include "Core/Types/CollisionTypes.h"   // FHitResult
@@ -99,6 +99,7 @@ protected:
 
 	// capsule 중심에서 down raycast — bHit + WorldHitLocation 사용.
 	bool  TraceFloor(FHitResult& OutHit) const;
+	void  SyncUpdatedPhysicsBody();
 	float GetCapsuleHalfHeight() const;
 
 	FVector       AccumulatedInput = FVector(0.0f, 0.0f, 0.0f);

@@ -14,6 +14,7 @@ void ACharacter::InitDefaultComponents(const FString& SkeletalMeshFileName)
 {
 	// 1) Capsule — Root. CharacterMovement 의 UpdatedComponent 가 이걸 가리킴.
 	CapsuleComponent = AddComponent<UCapsuleComponent>();
+	CapsuleComponent->SetPhysicsBodyMode(EPhysicsBodyMode::Kinematic);
 	SetRootComponent(CapsuleComponent);
 
 	// 2) SkeletalMesh — Capsule 의 자식.
@@ -37,6 +38,10 @@ void ACharacter::PostDuplicate()
 	Super::PostDuplicate();
 	// 컴포넌트 트리 재발견 — Duplicate 후 멤버 포인터 복원.
 	CapsuleComponent  = Cast<UCapsuleComponent>(GetRootComponent());
+	if (CapsuleComponent)
+	{
+		CapsuleComponent->SetPhysicsBodyMode(EPhysicsBodyMode::Kinematic);
+	}
 	Mesh              = GetComponentByClass<USkeletalMeshComponent>();
 	CharacterMovement = GetComponentByClass<UCharacterMovementComponent>();
 }

@@ -63,6 +63,19 @@ enum class ECollisionEnabled : uint8
 };
 
 // ============================================================
+// EPhysicsBodyMode — PhysX actor type / transform ownership
+// ============================================================
+UENUM()
+enum class EPhysicsBodyMode : uint8
+{
+	Static = 0,     // PxRigidStatic. 움직이지 않는 월드 지오메트리.
+	Kinematic = 1,  // PxRigidDynamic + eKINEMATIC. 게임 코드가 transform 을 제출.
+	Dynamic = 2,    // PxRigidDynamic. PhysX solver 가 transform 을 소유.
+
+	COUNT
+};
+
+// ============================================================
 // FCollisionResponseContainer — 채널별 응답 테이블
 // ============================================================
 USTRUCT()
