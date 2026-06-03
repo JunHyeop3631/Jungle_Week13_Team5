@@ -55,7 +55,7 @@
             "ObjectId" : 4,
             "Properties" : {
               "AngularDamping" : 0.050000,
-              "CachedEditRotator" : [89.899124, -0.000000, 0.000000],
+              "CachedEditRotator" : [89.901085, -0.000000, 0.000000],
               "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
               "CollisionEnabled" : 0,
               "LinearDamping" : 0.010000,
@@ -164,8 +164,8 @@
         }],
       "ObjectId" : 6,
       "Properties" : {
-        "PendingActorLocation" : [0.770933, 9.273977, 6.583174],
-        "PendingActorRotation" : [0.000000, -81.938393, 0.000000],
+        "PendingActorLocation" : [-0.585659, -3.812363, 6.583174],
+        "PendingActorRotation" : [0.000000, -81.938385, 0.000000],
         "PendingActorScale" : [1.000000, 1.000000, 1.000000],
         "PendingActorVisible" : true,
         "PendingTagsString" : "",
@@ -291,7 +291,7 @@
         "ObjectId" : 7,
         "Properties" : {
           "AngularDamping" : 0.050000,
-          "CachedEditRotator" : [0.000000, -81.938393, 0.000000],
+          "CachedEditRotator" : [0.000000, -81.938385, 0.000000],
           "CapsuleHalfHeight" : 2.010000,
           "CapsuleRadius" : 1.010000,
           "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
@@ -300,7 +300,7 @@
           "Mass" : 900000.000000,
           "ObjectType" : 2,
           "PhysicsBodyMode" : 1,
-          "RelativeTransform.Location" : [0.770933, 9.273977, 6.583174],
+          "RelativeTransform.Location" : [-0.585659, -3.812363, 6.583174],
           "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
           "ResponseContainer" : {
             "Responses[0]" : 2,
@@ -2558,6 +2558,43 @@
               "bTickEnable" : true
             },
             "bHiddenInComponentTree" : true
+          }, {
+            "Children" : [],
+            "ClassName" : "UBillboardComponent",
+            "ObjectId" : 75,
+            "Properties" : {
+              "AngularDamping" : 0.050000,
+              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
+              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+              "CollisionEnabled" : 0,
+              "LinearDamping" : 0.010000,
+              "Mass" : 1.000000,
+              "MaterialSlot" : "Content/Material/Editor/DirectionalLight.mat",
+              "ObjectType" : 0,
+              "PhysicsBodyMode" : 0,
+              "RelativeTransform.Location" : [0.000000, 0.000000, 0.000000],
+              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
+              "ResponseContainer" : {
+                "Responses[0]" : 2,
+                "Responses[1]" : 2,
+                "Responses[2]" : 2,
+                "Responses[3]" : 2,
+                "Responses[4]" : 2
+              },
+              "TranslucentSortPriority" : 0,
+              "bAutoActivate" : true,
+              "bCastShadow" : true,
+              "bCastShadowAsTwoSided" : false,
+              "bEditorOnly" : true,
+              "bEnableGravity" : true,
+              "bGenerateOverlapEvents" : false,
+              "bHiddenInComponentTree" : true,
+              "bIsActive" : true,
+              "bIsBillboard" : true,
+              "bIsVisible" : true,
+              "bTickEnable" : true
+            },
+            "bHiddenInComponentTree" : true
           }],
         "ClassName" : "UDirectionalLightComponent",
         "ObjectId" : 14,
@@ -2585,7 +2622,7 @@
       "ClassName" : "AHeightFogActor",
       "Name" : "AHeightFogActor_3",
       "NonSceneComponents" : [],
-      "ObjectId" : 75,
+      "ObjectId" : 76,
       "Properties" : {
         "PendingActorLocation" : [-8.043232, -21.609188, -30.360502],
         "PendingActorRotation" : [-0.000000, 0.000000, 0.000000],
@@ -2596,43 +2633,6 @@
       },
       "RootComponent" : {
         "Children" : [{
-            "Children" : [],
-            "ClassName" : "UBillboardComponent",
-            "ObjectId" : 77,
-            "Properties" : {
-              "AngularDamping" : 0.050000,
-              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
-              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
-              "CollisionEnabled" : 0,
-              "LinearDamping" : 0.010000,
-              "Mass" : 1.000000,
-              "MaterialSlot" : "Content/Material/Editor/HeightFog.mat",
-              "ObjectType" : 0,
-              "PhysicsBodyMode" : 0,
-              "RelativeTransform.Location" : [0.000000, 0.000000, 0.000000],
-              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
-              "ResponseContainer" : {
-                "Responses[0]" : 2,
-                "Responses[1]" : 2,
-                "Responses[2]" : 2,
-                "Responses[3]" : 2,
-                "Responses[4]" : 2
-              },
-              "TranslucentSortPriority" : 0,
-              "bAutoActivate" : true,
-              "bCastShadow" : true,
-              "bCastShadowAsTwoSided" : false,
-              "bEditorOnly" : true,
-              "bEnableGravity" : true,
-              "bGenerateOverlapEvents" : false,
-              "bHiddenInComponentTree" : true,
-              "bIsActive" : true,
-              "bIsBillboard" : true,
-              "bIsVisible" : true,
-              "bTickEnable" : true
-            },
-            "bHiddenInComponentTree" : true
-          }, {
             "Children" : [],
             "ClassName" : "UBillboardComponent",
             "ObjectId" : 78,
@@ -3039,9 +3039,83 @@
               "bTickEnable" : true
             },
             "bHiddenInComponentTree" : true
+          }, {
+            "Children" : [],
+            "ClassName" : "UBillboardComponent",
+            "ObjectId" : 89,
+            "Properties" : {
+              "AngularDamping" : 0.050000,
+              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
+              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+              "CollisionEnabled" : 0,
+              "LinearDamping" : 0.010000,
+              "Mass" : 1.000000,
+              "MaterialSlot" : "Content/Material/Editor/HeightFog.mat",
+              "ObjectType" : 0,
+              "PhysicsBodyMode" : 0,
+              "RelativeTransform.Location" : [0.000000, 0.000000, 0.000000],
+              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
+              "ResponseContainer" : {
+                "Responses[0]" : 2,
+                "Responses[1]" : 2,
+                "Responses[2]" : 2,
+                "Responses[3]" : 2,
+                "Responses[4]" : 2
+              },
+              "TranslucentSortPriority" : 0,
+              "bAutoActivate" : true,
+              "bCastShadow" : true,
+              "bCastShadowAsTwoSided" : false,
+              "bEditorOnly" : true,
+              "bEnableGravity" : true,
+              "bGenerateOverlapEvents" : false,
+              "bHiddenInComponentTree" : true,
+              "bIsActive" : true,
+              "bIsBillboard" : true,
+              "bIsVisible" : true,
+              "bTickEnable" : true
+            },
+            "bHiddenInComponentTree" : true
+          }, {
+            "Children" : [],
+            "ClassName" : "UBillboardComponent",
+            "ObjectId" : 90,
+            "Properties" : {
+              "AngularDamping" : 0.050000,
+              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
+              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+              "CollisionEnabled" : 0,
+              "LinearDamping" : 0.010000,
+              "Mass" : 1.000000,
+              "MaterialSlot" : "Content/Material/Editor/HeightFog.mat",
+              "ObjectType" : 0,
+              "PhysicsBodyMode" : 0,
+              "RelativeTransform.Location" : [0.000000, 0.000000, 0.000000],
+              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
+              "ResponseContainer" : {
+                "Responses[0]" : 2,
+                "Responses[1]" : 2,
+                "Responses[2]" : 2,
+                "Responses[3]" : 2,
+                "Responses[4]" : 2
+              },
+              "TranslucentSortPriority" : 0,
+              "bAutoActivate" : true,
+              "bCastShadow" : true,
+              "bCastShadowAsTwoSided" : false,
+              "bEditorOnly" : true,
+              "bEnableGravity" : true,
+              "bGenerateOverlapEvents" : false,
+              "bHiddenInComponentTree" : true,
+              "bIsActive" : true,
+              "bIsBillboard" : true,
+              "bIsVisible" : true,
+              "bTickEnable" : true
+            },
+            "bHiddenInComponentTree" : true
           }],
         "ClassName" : "UHeightFogComponent",
-        "ObjectId" : 76,
+        "ObjectId" : 77,
         "Properties" : {
           "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
           "FogCutoffDistance" : 0.000000,
@@ -3063,7 +3137,7 @@
       "ClassName" : "ADirectionalLightActor",
       "Name" : "ADirectionalLightActor_16",
       "NonSceneComponents" : [],
-      "ObjectId" : 89,
+      "ObjectId" : 91,
       "Properties" : {
         "PendingActorLocation" : [-58.278881, -25.314240, 19.629145],
         "PendingActorRotation" : [40.600040, 48.818043, 115.083313],
@@ -3074,80 +3148,6 @@
       },
       "RootComponent" : {
         "Children" : [{
-            "Children" : [],
-            "ClassName" : "UBillboardComponent",
-            "ObjectId" : 91,
-            "Properties" : {
-              "AngularDamping" : 0.050000,
-              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
-              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
-              "CollisionEnabled" : 0,
-              "LinearDamping" : 0.010000,
-              "Mass" : 1.000000,
-              "MaterialSlot" : "Content/Material/Editor/DirectionalLight.mat",
-              "ObjectType" : 0,
-              "PhysicsBodyMode" : 0,
-              "RelativeTransform.Location" : [0.000000, 0.000000, 0.000000],
-              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
-              "ResponseContainer" : {
-                "Responses[0]" : 2,
-                "Responses[1]" : 2,
-                "Responses[2]" : 2,
-                "Responses[3]" : 2,
-                "Responses[4]" : 2
-              },
-              "TranslucentSortPriority" : 0,
-              "bAutoActivate" : true,
-              "bCastShadow" : true,
-              "bCastShadowAsTwoSided" : false,
-              "bEditorOnly" : true,
-              "bEnableGravity" : true,
-              "bGenerateOverlapEvents" : false,
-              "bHiddenInComponentTree" : true,
-              "bIsActive" : true,
-              "bIsBillboard" : true,
-              "bIsVisible" : true,
-              "bTickEnable" : true
-            },
-            "bHiddenInComponentTree" : true
-          }, {
-            "Children" : [],
-            "ClassName" : "UBillboardComponent",
-            "ObjectId" : 92,
-            "Properties" : {
-              "AngularDamping" : 0.050000,
-              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
-              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
-              "CollisionEnabled" : 0,
-              "LinearDamping" : 0.010000,
-              "Mass" : 1.000000,
-              "MaterialSlot" : "Content/Material/Editor/DirectionalLight.mat",
-              "ObjectType" : 0,
-              "PhysicsBodyMode" : 0,
-              "RelativeTransform.Location" : [0.000000, 0.000000, 0.000000],
-              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
-              "ResponseContainer" : {
-                "Responses[0]" : 2,
-                "Responses[1]" : 2,
-                "Responses[2]" : 2,
-                "Responses[3]" : 2,
-                "Responses[4]" : 2
-              },
-              "TranslucentSortPriority" : 0,
-              "bAutoActivate" : true,
-              "bCastShadow" : true,
-              "bCastShadowAsTwoSided" : false,
-              "bEditorOnly" : true,
-              "bEnableGravity" : true,
-              "bGenerateOverlapEvents" : false,
-              "bHiddenInComponentTree" : true,
-              "bIsActive" : true,
-              "bIsBillboard" : true,
-              "bIsVisible" : true,
-              "bTickEnable" : true
-            },
-            "bHiddenInComponentTree" : true
-          }, {
             "Children" : [],
             "ClassName" : "UBillboardComponent",
             "ObjectId" : 93,
@@ -3517,9 +3517,120 @@
               "bTickEnable" : true
             },
             "bHiddenInComponentTree" : true
+          }, {
+            "Children" : [],
+            "ClassName" : "UBillboardComponent",
+            "ObjectId" : 103,
+            "Properties" : {
+              "AngularDamping" : 0.050000,
+              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
+              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+              "CollisionEnabled" : 0,
+              "LinearDamping" : 0.010000,
+              "Mass" : 1.000000,
+              "MaterialSlot" : "Content/Material/Editor/DirectionalLight.mat",
+              "ObjectType" : 0,
+              "PhysicsBodyMode" : 0,
+              "RelativeTransform.Location" : [0.000000, 0.000000, 0.000000],
+              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
+              "ResponseContainer" : {
+                "Responses[0]" : 2,
+                "Responses[1]" : 2,
+                "Responses[2]" : 2,
+                "Responses[3]" : 2,
+                "Responses[4]" : 2
+              },
+              "TranslucentSortPriority" : 0,
+              "bAutoActivate" : true,
+              "bCastShadow" : true,
+              "bCastShadowAsTwoSided" : false,
+              "bEditorOnly" : true,
+              "bEnableGravity" : true,
+              "bGenerateOverlapEvents" : false,
+              "bHiddenInComponentTree" : true,
+              "bIsActive" : true,
+              "bIsBillboard" : true,
+              "bIsVisible" : true,
+              "bTickEnable" : true
+            },
+            "bHiddenInComponentTree" : true
+          }, {
+            "Children" : [],
+            "ClassName" : "UBillboardComponent",
+            "ObjectId" : 104,
+            "Properties" : {
+              "AngularDamping" : 0.050000,
+              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
+              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+              "CollisionEnabled" : 0,
+              "LinearDamping" : 0.010000,
+              "Mass" : 1.000000,
+              "MaterialSlot" : "Content/Material/Editor/DirectionalLight.mat",
+              "ObjectType" : 0,
+              "PhysicsBodyMode" : 0,
+              "RelativeTransform.Location" : [0.000000, 0.000000, 0.000000],
+              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
+              "ResponseContainer" : {
+                "Responses[0]" : 2,
+                "Responses[1]" : 2,
+                "Responses[2]" : 2,
+                "Responses[3]" : 2,
+                "Responses[4]" : 2
+              },
+              "TranslucentSortPriority" : 0,
+              "bAutoActivate" : true,
+              "bCastShadow" : true,
+              "bCastShadowAsTwoSided" : false,
+              "bEditorOnly" : true,
+              "bEnableGravity" : true,
+              "bGenerateOverlapEvents" : false,
+              "bHiddenInComponentTree" : true,
+              "bIsActive" : true,
+              "bIsBillboard" : true,
+              "bIsVisible" : true,
+              "bTickEnable" : true
+            },
+            "bHiddenInComponentTree" : true
+          }, {
+            "Children" : [],
+            "ClassName" : "UBillboardComponent",
+            "ObjectId" : 105,
+            "Properties" : {
+              "AngularDamping" : 0.050000,
+              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
+              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+              "CollisionEnabled" : 0,
+              "LinearDamping" : 0.010000,
+              "Mass" : 1.000000,
+              "MaterialSlot" : "Content/Material/Editor/DirectionalLight.mat",
+              "ObjectType" : 0,
+              "PhysicsBodyMode" : 0,
+              "RelativeTransform.Location" : [0.000000, 0.000000, 0.000000],
+              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
+              "ResponseContainer" : {
+                "Responses[0]" : 2,
+                "Responses[1]" : 2,
+                "Responses[2]" : 2,
+                "Responses[3]" : 2,
+                "Responses[4]" : 2
+              },
+              "TranslucentSortPriority" : 0,
+              "bAutoActivate" : true,
+              "bCastShadow" : true,
+              "bCastShadowAsTwoSided" : false,
+              "bEditorOnly" : true,
+              "bEnableGravity" : true,
+              "bGenerateOverlapEvents" : false,
+              "bHiddenInComponentTree" : true,
+              "bIsActive" : true,
+              "bIsBillboard" : true,
+              "bIsVisible" : true,
+              "bTickEnable" : true
+            },
+            "bHiddenInComponentTree" : true
           }],
         "ClassName" : "UDirectionalLightComponent",
-        "ObjectId" : 90,
+        "ObjectId" : 92,
         "Properties" : {
           "CachedEditRotator" : [40.600040, 48.818043, 115.083313],
           "Intensity" : 1.000000,
@@ -3544,114 +3655,9 @@
       "ClassName" : "ALuaCharacter",
       "Name" : "ALuaCharacter_5",
       "NonSceneComponents" : [],
-      "ObjectId" : 103,
-      "Properties" : {
-        "PendingActorLocation" : [1.480407, -5.519020, 2.571133],
-        "PendingActorRotation" : [-0.000000, 82.444992, 0.000000],
-        "PendingActorScale" : [1.000000, 1.000000, 1.000000],
-        "PendingActorVisible" : true,
-        "PendingTagsString" : "",
-        "bAutoPossessPlayer" : true,
-        "bNeedsTick" : true,
-        "bUseControllerRotationPitch" : false,
-        "bUseControllerRotationRoll" : false,
-        "bUseControllerRotationYaw" : false
-      },
-      "RootComponent" : {
-        "Children" : [{
-            "Children" : [],
-            "ClassName" : "USkeletalMeshComponent",
-            "ObjectId" : 105,
-            "Properties" : {
-              "AngularDamping" : 0.050000,
-              "AnimInstance" : {
-                "ClassName" : "None"
-              },
-              "AnimInstanceClass" : "None",
-              "AnimationData" : {
-                "AnimToPlayPath" : "None",
-                "PlayRate" : 1.000000,
-                "bLooping" : true,
-                "bPlaying" : true
-              },
-              "AnimationMode" : 0,
-              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
-              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
-              "CollisionEnabled" : 3,
-              "LinearDamping" : 0.010000,
-              "Mass" : 1.000000,
-              "MaterialSlots" : ["Content/Material/Auto/head.mat", "Content/Material/Auto/outline_bodice.mat", "Content/Material/Auto/emotes.mat", "Content/Material/Auto/emotes2.mat", "Content/Material/Auto/body.mat", "Content/Material/Auto/outline_socks.mat", "Content/Material/Auto/boots.mat", "Content/Material/Auto/outline_boots.mat", "Content/Material/Auto/cloth.mat", "Content/Material/Auto/outline_cloth.mat", "Content/Material/Auto/cube.mat", "Content/Material/Auto/hair_back.mat", "Content/Material/Auto/outline_hair.mat", "Content/Material/Auto/hair_front.mat", "Content/Material/Auto/skirt.mat", "Content/Material/Auto/outline_skirt.mat"],
-              "ObjectType" : 0,
-              "PhysicsAssetPath" : "Content/Data/hitori/hitori_SkeletalMesh_Physics.uasset",
-              "PhysicsBodyMode" : 0,
-              "RelativeTransform.Location" : [0.000000, 0.000000, -0.785662],
-              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
-              "ResponseContainer" : {
-                "Responses[0]" : 2,
-                "Responses[1]" : 2,
-                "Responses[2]" : 2,
-                "Responses[3]" : 2,
-                "Responses[4]" : 2
-              },
-              "SkeletalMeshPath" : "Content/Data/hitori/hitori_SkeletalMesh.uasset",
-              "TranslucentSortPriority" : 0,
-              "bAutoActivate" : true,
-              "bCastShadow" : true,
-              "bCastShadowAsTwoSided" : false,
-              "bEditorOnly" : false,
-              "bEnableGravity" : true,
-              "bGenerateOverlapEvents" : true,
-              "bHiddenInComponentTree" : false,
-              "bIsActive" : true,
-              "bIsVisible" : true,
-              "bShowPhysicsBodies" : true,
-              "bTickEnable" : true
-            }
-          }],
-        "ClassName" : "UCapsuleComponent",
-        "ObjectId" : 104,
-        "Properties" : {
-          "AngularDamping" : 0.050000,
-          "CachedEditRotator" : [-0.000000, 82.444992, 0.000000],
-          "CapsuleHalfHeight" : 0.900000,
-          "CapsuleRadius" : 0.500000,
-          "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
-          "CollisionEnabled" : 3,
-          "LinearDamping" : 0.010000,
-          "Mass" : 1.000000,
-          "ObjectType" : 1,
-          "PhysicsBodyMode" : 0,
-          "RelativeTransform.Location" : [1.480407, -5.519020, 2.571133],
-          "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
-          "ResponseContainer" : {
-            "Responses[0]" : 2,
-            "Responses[1]" : 2,
-            "Responses[2]" : 2,
-            "Responses[3]" : 2,
-            "Responses[4]" : 2
-          },
-          "ShapeColor" : [0.000000, 1.000000, 0.000000, 1.000000],
-          "TranslucentSortPriority" : 0,
-          "bAutoActivate" : true,
-          "bCastShadow" : false,
-          "bCastShadowAsTwoSided" : false,
-          "bDrawOnlyIfSelected" : false,
-          "bEditorOnly" : false,
-          "bEnableGravity" : true,
-          "bGenerateOverlapEvents" : true,
-          "bHiddenInComponentTree" : false,
-          "bIsActive" : true,
-          "bIsVisible" : false,
-          "bTickEnable" : true
-        }
-      }
-    }, {
-      "ClassName" : "ALuaCharacter",
-      "Name" : "ALuaCharacter_5_Copy",
-      "NonSceneComponents" : [],
       "ObjectId" : 106,
       "Properties" : {
-        "PendingActorLocation" : [2.278682, -5.419020, 2.462810],
+        "PendingActorLocation" : [-2.747620, -42.294735, 2.571133],
         "PendingActorRotation" : [-0.000000, 82.444992, 0.000000],
         "PendingActorScale" : [1.000000, 1.000000, 1.000000],
         "PendingActorVisible" : true,
@@ -3709,7 +3715,7 @@
               "bHiddenInComponentTree" : false,
               "bIsActive" : true,
               "bIsVisible" : true,
-              "bShowPhysicsBodies" : true,
+              "bShowPhysicsBodies" : false,
               "bTickEnable" : true
             }
           }],
@@ -3725,8 +3731,8 @@
           "LinearDamping" : 0.010000,
           "Mass" : 1.000000,
           "ObjectType" : 1,
-          "PhysicsBodyMode" : 1,
-          "RelativeTransform.Location" : [2.278682, -5.419020, 2.462810],
+          "PhysicsBodyMode" : 0,
+          "RelativeTransform.Location" : [-2.747620, -42.294735, 2.571133],
           "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
           "ResponseContainer" : {
             "Responses[0]" : 2,
@@ -3752,11 +3758,11 @@
       }
     }, {
       "ClassName" : "ALuaCharacter",
-      "Name" : "ALuaCharacter_5_Copy_Copy",
+      "Name" : "ALuaCharacter_5_Copy",
       "NonSceneComponents" : [],
       "ObjectId" : 109,
       "Properties" : {
-        "PendingActorLocation" : [0.496369, -5.319020, 2.380550],
+        "PendingActorLocation" : [-1.738559, -42.416233, 2.462810],
         "PendingActorRotation" : [-0.000000, 82.444992, 0.000000],
         "PendingActorScale" : [1.000000, 1.000000, 1.000000],
         "PendingActorVisible" : true,
@@ -3814,7 +3820,7 @@
               "bHiddenInComponentTree" : false,
               "bIsActive" : true,
               "bIsVisible" : true,
-              "bShowPhysicsBodies" : true,
+              "bShowPhysicsBodies" : false,
               "bTickEnable" : true
             }
           }],
@@ -3831,7 +3837,112 @@
           "Mass" : 1.000000,
           "ObjectType" : 1,
           "PhysicsBodyMode" : 1,
-          "RelativeTransform.Location" : [0.496369, -5.319020, 2.380550],
+          "RelativeTransform.Location" : [-1.738559, -42.416233, 2.462810],
+          "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
+          "ResponseContainer" : {
+            "Responses[0]" : 2,
+            "Responses[1]" : 2,
+            "Responses[2]" : 2,
+            "Responses[3]" : 2,
+            "Responses[4]" : 2
+          },
+          "ShapeColor" : [0.000000, 1.000000, 0.000000, 1.000000],
+          "TranslucentSortPriority" : 0,
+          "bAutoActivate" : true,
+          "bCastShadow" : false,
+          "bCastShadowAsTwoSided" : false,
+          "bDrawOnlyIfSelected" : false,
+          "bEditorOnly" : false,
+          "bEnableGravity" : true,
+          "bGenerateOverlapEvents" : true,
+          "bHiddenInComponentTree" : false,
+          "bIsActive" : true,
+          "bIsVisible" : false,
+          "bTickEnable" : true
+        }
+      }
+    }, {
+      "ClassName" : "ALuaCharacter",
+      "Name" : "ALuaCharacter_5_Copy_Copy",
+      "NonSceneComponents" : [],
+      "ObjectId" : 112,
+      "Properties" : {
+        "PendingActorLocation" : [-3.606310, -40.958458, 2.380550],
+        "PendingActorRotation" : [-0.000000, 82.444992, 0.000000],
+        "PendingActorScale" : [1.000000, 1.000000, 1.000000],
+        "PendingActorVisible" : true,
+        "PendingTagsString" : "",
+        "bAutoPossessPlayer" : true,
+        "bNeedsTick" : true,
+        "bUseControllerRotationPitch" : false,
+        "bUseControllerRotationRoll" : false,
+        "bUseControllerRotationYaw" : false
+      },
+      "RootComponent" : {
+        "Children" : [{
+            "Children" : [],
+            "ClassName" : "USkeletalMeshComponent",
+            "ObjectId" : 114,
+            "Properties" : {
+              "AngularDamping" : 0.050000,
+              "AnimInstance" : {
+                "ClassName" : "None"
+              },
+              "AnimInstanceClass" : "None",
+              "AnimationData" : {
+                "AnimToPlayPath" : "None",
+                "PlayRate" : 1.000000,
+                "bLooping" : true,
+                "bPlaying" : true
+              },
+              "AnimationMode" : 0,
+              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
+              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+              "CollisionEnabled" : 3,
+              "LinearDamping" : 0.010000,
+              "Mass" : 1.000000,
+              "MaterialSlots" : ["Content/Material/Auto/head.mat", "Content/Material/Auto/outline_bodice.mat", "Content/Material/Auto/emotes.mat", "Content/Material/Auto/emotes2.mat", "Content/Material/Auto/body.mat", "Content/Material/Auto/outline_socks.mat", "Content/Material/Auto/boots.mat", "Content/Material/Auto/outline_boots.mat", "Content/Material/Auto/cloth.mat", "Content/Material/Auto/outline_cloth.mat", "Content/Material/Auto/cube.mat", "Content/Material/Auto/hair_back.mat", "Content/Material/Auto/outline_hair.mat", "Content/Material/Auto/hair_front.mat", "Content/Material/Auto/skirt.mat", "Content/Material/Auto/outline_skirt.mat"],
+              "ObjectType" : 0,
+              "PhysicsAssetPath" : "Content/Data/hitori/hitori_SkeletalMesh_Physics.uasset",
+              "PhysicsBodyMode" : 0,
+              "RelativeTransform.Location" : [0.000000, 0.000000, -0.785662],
+              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
+              "ResponseContainer" : {
+                "Responses[0]" : 2,
+                "Responses[1]" : 2,
+                "Responses[2]" : 2,
+                "Responses[3]" : 2,
+                "Responses[4]" : 2
+              },
+              "SkeletalMeshPath" : "Content/Data/hitori/hitori_SkeletalMesh.uasset",
+              "TranslucentSortPriority" : 0,
+              "bAutoActivate" : true,
+              "bCastShadow" : true,
+              "bCastShadowAsTwoSided" : false,
+              "bEditorOnly" : false,
+              "bEnableGravity" : true,
+              "bGenerateOverlapEvents" : true,
+              "bHiddenInComponentTree" : false,
+              "bIsActive" : true,
+              "bIsVisible" : true,
+              "bShowPhysicsBodies" : false,
+              "bTickEnable" : true
+            }
+          }],
+        "ClassName" : "UCapsuleComponent",
+        "ObjectId" : 113,
+        "Properties" : {
+          "AngularDamping" : 0.050000,
+          "CachedEditRotator" : [-0.000000, 82.444992, 0.000000],
+          "CapsuleHalfHeight" : 0.900000,
+          "CapsuleRadius" : 0.500000,
+          "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+          "CollisionEnabled" : 3,
+          "LinearDamping" : 0.010000,
+          "Mass" : 1.000000,
+          "ObjectType" : 1,
+          "PhysicsBodyMode" : 1,
+          "RelativeTransform.Location" : [-3.606310, -40.958458, 2.380550],
           "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
           "ResponseContainer" : {
             "Responses[0]" : 2,
@@ -3859,9 +3970,9 @@
       "ClassName" : "AStaticMeshActor",
       "Name" : "AStaticMeshActor_8",
       "NonSceneComponents" : [],
-      "ObjectId" : 112,
+      "ObjectId" : 115,
       "Properties" : {
-        "PendingActorLocation" : [2.930090, 6.119453, 1.899394],
+        "PendingActorLocation" : [2.122744, -6.424447, 3.694156],
         "PendingActorRotation" : [-0.000000, 0.000000, 0.000000],
         "PendingActorScale" : [0.500000, 0.500000, 0.500000],
         "PendingActorVisible" : true,
@@ -3871,7 +3982,7 @@
       "RootComponent" : {
         "Children" : [],
         "ClassName" : "UStaticMeshComponent",
-        "ObjectId" : 113,
+        "ObjectId" : 116,
         "Properties" : {
           "AngularDamping" : 0.050000,
           "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
@@ -3883,7 +3994,7 @@
           "Mobility" : 1,
           "ObjectType" : 1,
           "PhysicsBodyMode" : 2,
-          "RelativeTransform.Location" : [2.930090, 6.119453, 1.899394],
+          "RelativeTransform.Location" : [2.122744, -6.424447, 3.694156],
           "RelativeTransform.Scale" : [0.500000, 0.500000, 0.500000],
           "ResponseContainer" : {
             "Responses[0]" : 2,
@@ -3911,9 +4022,9 @@
       "ClassName" : "AStaticMeshActor",
       "Name" : "AStaticMeshActor_8_Copy",
       "NonSceneComponents" : [],
-      "ObjectId" : 114,
+      "ObjectId" : 117,
       "Properties" : {
-        "PendingActorLocation" : [-1.717910, 5.045057, 1.953420],
+        "PendingActorLocation" : [-6.962191, -7.861698, 3.872838],
         "PendingActorRotation" : [-0.000000, 0.000000, 0.000000],
         "PendingActorScale" : [0.500000, 0.500000, 0.500000],
         "PendingActorVisible" : true,
@@ -3923,7 +4034,7 @@
       "RootComponent" : {
         "Children" : [],
         "ClassName" : "UStaticMeshComponent",
-        "ObjectId" : 115,
+        "ObjectId" : 118,
         "Properties" : {
           "AngularDamping" : 0.050000,
           "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
@@ -3935,7 +4046,7 @@
           "Mobility" : 1,
           "ObjectType" : 1,
           "PhysicsBodyMode" : 2,
-          "RelativeTransform.Location" : [-1.717910, 5.045057, 1.953420],
+          "RelativeTransform.Location" : [-6.962191, -7.861698, 3.872838],
           "RelativeTransform.Scale" : [0.500000, 0.500000, 0.500000],
           "ResponseContainer" : {
             "Responses[0]" : 2,
@@ -3963,10 +4074,10 @@
       "ClassName" : "AStaticMeshActor",
       "Name" : "AStaticMeshActor_8_Copy_Copy",
       "NonSceneComponents" : [],
-      "ObjectId" : 116,
+      "ObjectId" : 119,
       "Properties" : {
-        "PendingActorLocation" : [-0.830187, 2.887003, 1.756735],
-        "PendingActorRotation" : [-0.000000, -167.333954, 0.000000],
+        "PendingActorLocation" : [-5.037477, -7.214321, 3.266866],
+        "PendingActorRotation" : [-0.000000, -167.333939, 0.000000],
         "PendingActorScale" : [0.500000, 0.500000, 0.500000],
         "PendingActorVisible" : true,
         "PendingTagsString" : "",
@@ -3975,10 +4086,10 @@
       "RootComponent" : {
         "Children" : [],
         "ClassName" : "UStaticMeshComponent",
-        "ObjectId" : 117,
+        "ObjectId" : 120,
         "Properties" : {
           "AngularDamping" : 0.050000,
-          "CachedEditRotator" : [-0.000000, -167.333954, 0.000000],
+          "CachedEditRotator" : [-0.000000, -167.333939, 0.000000],
           "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
           "CollisionEnabled" : 2,
           "LinearDamping" : 0.010000,
@@ -3987,7 +4098,7 @@
           "Mobility" : 1,
           "ObjectType" : 1,
           "PhysicsBodyMode" : 2,
-          "RelativeTransform.Location" : [-0.830187, 2.887003, 1.756735],
+          "RelativeTransform.Location" : [-5.037477, -7.214321, 3.266866],
           "RelativeTransform.Scale" : [0.500000, 0.500000, 0.500000],
           "ResponseContainer" : {
             "Responses[0]" : 2,
@@ -4012,102 +4123,13 @@
         }
       }
     }, {
-      "ClassName" : "ABoxActor",
-      "Name" : "ABoxActor_50",
-      "NonSceneComponents" : [],
-      "ObjectId" : 118,
-      "Properties" : {
-        "PendingActorLocation" : [1.251780, 1.098199, 0.303626],
-        "PendingActorRotation" : [-0.000000, 0.000000, 0.000000],
-        "PendingActorScale" : [14.300143, 14.295578, 1.000000],
-        "PendingActorVisible" : true,
-        "PendingTagsString" : "",
-        "bNeedsTick" : true
-      },
-      "RootComponent" : {
-        "Children" : [{
-            "Children" : [],
-            "ClassName" : "UStaticMeshComponent",
-            "ObjectId" : 120,
-            "Properties" : {
-              "AngularDamping" : 0.050000,
-              "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
-              "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
-              "CollisionEnabled" : 0,
-              "LinearDamping" : 0.010000,
-              "Mass" : 1.000000,
-              "MaterialSlots" : ["None"],
-              "Mobility" : 0,
-              "ObjectType" : 0,
-              "PhysicsBodyMode" : 0,
-              "RelativeTransform.Location" : [-0.018942, 0.000000, 0.000000],
-              "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
-              "ResponseContainer" : {
-                "Responses[0]" : 2,
-                "Responses[1]" : 2,
-                "Responses[2]" : 2,
-                "Responses[3]" : 2,
-                "Responses[4]" : 2
-              },
-              "StaticMeshPath" : "Content/Data/BasicShape/Cube_StaticMesh.uasset",
-              "TranslucentSortPriority" : 0,
-              "bAutoActivate" : true,
-              "bCastShadow" : true,
-              "bCastShadowAsTwoSided" : false,
-              "bEditorOnly" : false,
-              "bEnableGravity" : true,
-              "bGenerateOverlapEvents" : false,
-              "bHiddenInComponentTree" : false,
-              "bIsActive" : true,
-              "bIsVisible" : true,
-              "bShowPhysicsBodies" : false,
-              "bTickEnable" : true
-            }
-          }],
-        "ClassName" : "UBoxComponent",
-        "ObjectId" : 119,
-        "Properties" : {
-          "AngularDamping" : 0.050000,
-          "BoxExtent" : [1.000000, 1.000000, 1.000000],
-          "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
-          "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
-          "CollisionEnabled" : 3,
-          "LinearDamping" : 0.010000,
-          "Mass" : 1.000000,
-          "ObjectType" : 1,
-          "PhysicsBodyMode" : 0,
-          "RelativeTransform.Location" : [1.251780, 1.098199, 0.303626],
-          "RelativeTransform.Scale" : [14.300143, 14.295578, 1.000000],
-          "ResponseContainer" : {
-            "Responses[0]" : 2,
-            "Responses[1]" : 2,
-            "Responses[2]" : 2,
-            "Responses[3]" : 2,
-            "Responses[4]" : 2
-          },
-          "ShapeColor" : [0.000000, 1.000000, 0.000000, 1.000000],
-          "TranslucentSortPriority" : 0,
-          "bAutoActivate" : true,
-          "bCastShadow" : false,
-          "bCastShadowAsTwoSided" : false,
-          "bDrawOnlyIfSelected" : false,
-          "bEditorOnly" : false,
-          "bEnableGravity" : true,
-          "bGenerateOverlapEvents" : false,
-          "bHiddenInComponentTree" : false,
-          "bIsActive" : true,
-          "bIsVisible" : true,
-          "bTickEnable" : true
-        }
-      }
-    }, {
       "ClassName" : "AStaticMeshActor",
       "Name" : "AStaticMeshActor_8_Copy_Copy_Copy",
       "NonSceneComponents" : [],
       "ObjectId" : 121,
       "Properties" : {
-        "PendingActorLocation" : [2.119065, 4.739853, 1.856735],
-        "PendingActorRotation" : [-0.000000, -167.333939, 0.000000],
+        "PendingActorLocation" : [3.911989, -5.803135, 3.843809],
+        "PendingActorRotation" : [-0.000000, -167.333923, 0.000000],
         "PendingActorScale" : [0.500000, 0.500000, 0.500000],
         "PendingActorVisible" : true,
         "PendingTagsString" : "",
@@ -4119,7 +4141,7 @@
         "ObjectId" : 122,
         "Properties" : {
           "AngularDamping" : 0.050000,
-          "CachedEditRotator" : [-0.000000, -167.333939, 0.000000],
+          "CachedEditRotator" : [-0.000000, -167.333923, 0.000000],
           "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
           "CollisionEnabled" : 2,
           "LinearDamping" : 0.010000,
@@ -4128,7 +4150,7 @@
           "Mobility" : 1,
           "ObjectType" : 1,
           "PhysicsBodyMode" : 2,
-          "RelativeTransform.Location" : [2.119065, 4.739853, 1.856735],
+          "RelativeTransform.Location" : [3.911989, -5.803135, 3.843809],
           "RelativeTransform.Scale" : [0.500000, 0.500000, 0.500000],
           "ResponseContainer" : {
             "Responses[0]" : 2,
@@ -4158,8 +4180,8 @@
       "NonSceneComponents" : [],
       "ObjectId" : 123,
       "Properties" : {
-        "PendingActorLocation" : [-6.540716, -0.154401, 7.176900],
-        "PendingActorRotation" : [-0.000000, -89.999992, 0.000000],
+        "PendingActorLocation" : [-7.481465, -8.296528, 8.684422],
+        "PendingActorRotation" : [-0.000000, -89.999985, 0.000000],
         "PendingActorScale" : [1.000000, 1.000000, 1.000000],
         "PendingActorVisible" : true,
         "PendingTagsString" : "",
@@ -4181,14 +4203,14 @@
               "Gravity" : [0.000000, 0.000000, -980.000000],
               "LinearDamping" : 0.010000,
               "Mass" : 1.000000,
-              "MaterialSlot" : "Content/Material/Auto/03_-_Default.mat",
+              "MaterialSlot" : "Content/Material/Auto/material_14.mat",
               "NumColumns" : 20,
               "NumRows" : 20,
               "ObjectType" : 0,
               "PhaseStiffness" : 0.500000,
               "PhysicsBodyMode" : 0,
               "PinMode" : 1,
-              "RelativeTransform.Location" : [-0.000000, -0.073425, 0.000000],
+              "RelativeTransform.Location" : [-0.088394, -0.073425, 0.000000],
               "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
               "RenderColor" : [0.750000, 0.850000, 1.000000, 1.000000],
               "ResponseContainer" : {
@@ -4226,7 +4248,7 @@
         "ObjectId" : 124,
         "Properties" : {
           "AngularDamping" : 0.050000,
-          "CachedEditRotator" : [-0.000000, -89.999992, 0.000000],
+          "CachedEditRotator" : [-0.000000, -89.999985, 0.000000],
           "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
           "CollisionEnabled" : 0,
           "LinearDamping" : 0.010000,
@@ -4235,7 +4257,7 @@
           "Mobility" : 0,
           "ObjectType" : 0,
           "PhysicsBodyMode" : 0,
-          "RelativeTransform.Location" : [-6.540716, -0.154401, 7.176900],
+          "RelativeTransform.Location" : [-7.481465, -8.296528, 8.684422],
           "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
           "ResponseContainer" : {
             "Responses[0]" : 2,
@@ -4265,8 +4287,8 @@
       "NonSceneComponents" : [],
       "ObjectId" : 126,
       "Properties" : {
-        "PendingActorLocation" : [8.972447, -0.054401, 7.171987],
-        "PendingActorRotation" : [-0.000000, 89.999992, 0.000000],
+        "PendingActorLocation" : [5.724560, -9.410550, 8.229540],
+        "PendingActorRotation" : [-0.000000, 89.999985, 0.000000],
         "PendingActorScale" : [1.000000, 1.000000, 1.000000],
         "PendingActorVisible" : true,
         "PendingTagsString" : "",
@@ -4288,7 +4310,7 @@
               "Gravity" : [0.000000, 0.000000, -980.000000],
               "LinearDamping" : 0.010000,
               "Mass" : 1.000000,
-              "MaterialSlot" : "Content/Material/Auto/cookie.mat",
+              "MaterialSlot" : "Content/Material/Auto/material_8.mat",
               "NumColumns" : 20,
               "NumRows" : 20,
               "ObjectType" : 0,
@@ -4333,7 +4355,7 @@
         "ObjectId" : 127,
         "Properties" : {
           "AngularDamping" : 0.050000,
-          "CachedEditRotator" : [-0.000000, 89.999992, 0.000000],
+          "CachedEditRotator" : [-0.000000, 89.999985, 0.000000],
           "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
           "CollisionEnabled" : 0,
           "LinearDamping" : 0.010000,
@@ -4342,7 +4364,7 @@
           "Mobility" : 0,
           "ObjectType" : 0,
           "PhysicsBodyMode" : 0,
-          "RelativeTransform.Location" : [8.972447, -0.054401, 7.171987],
+          "RelativeTransform.Location" : [5.724560, -9.410550, 8.229540],
           "RelativeTransform.Scale" : [1.000000, 1.000000, 1.000000],
           "ResponseContainer" : {
             "Responses[0]" : 2,
@@ -4366,6 +4388,162 @@
           "bTickEnable" : true
         }
       }
+    }, {
+      "ClassName" : "AStaticMeshActor",
+      "Name" : "AStaticMeshActor_8",
+      "NonSceneComponents" : [],
+      "ObjectId" : 129,
+      "Properties" : {
+        "PendingActorLocation" : [0.000000, 19.371902, 1.673327],
+        "PendingActorRotation" : [0.000000, -92.520218, 0.000000],
+        "PendingActorScale" : [0.300000, 0.300000, 0.300000],
+        "PendingActorVisible" : true,
+        "PendingTagsString" : "",
+        "bNeedsTick" : true
+      },
+      "RootComponent" : {
+        "Children" : [],
+        "ClassName" : "UStaticMeshComponent",
+        "ObjectId" : 130,
+        "Properties" : {
+          "AngularDamping" : 0.050000,
+          "CachedEditRotator" : [0.000000, -92.520218, 0.000000],
+          "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+          "CollisionEnabled" : 3,
+          "LinearDamping" : 0.010000,
+          "Mass" : 1.000000,
+          "MaterialSlots" : ["Content/Material/Auto/hw_dixing.mat", "Content/Material/Auto/hw_peijing_02.001.mat", "Content/Material/Auto/hw_peijing_01.mat", "Content/Material/Auto/hw_peijing_02.mat", "Content/Material/Auto/hw_dixing_02.mat"],
+          "Mobility" : 0,
+          "ObjectType" : 0,
+          "PhysicsBodyMode" : 0,
+          "RelativeTransform.Location" : [0.000000, 19.371902, 1.673327],
+          "RelativeTransform.Scale" : [0.300000, 0.300000, 0.300000],
+          "ResponseContainer" : {
+            "Responses[0]" : 2,
+            "Responses[1]" : 2,
+            "Responses[2]" : 2,
+            "Responses[3]" : 2,
+            "Responses[4]" : 2
+          },
+          "StaticMeshPath" : "Content/Data/11_StaticMesh.uasset",
+          "TranslucentSortPriority" : 0,
+          "bAutoActivate" : true,
+          "bCastShadow" : true,
+          "bCastShadowAsTwoSided" : false,
+          "bEditorOnly" : false,
+          "bEnableGravity" : true,
+          "bGenerateOverlapEvents" : false,
+          "bHiddenInComponentTree" : false,
+          "bIsActive" : true,
+          "bIsVisible" : true,
+          "bShowPhysicsBodies" : false,
+          "bTickEnable" : true
+        }
+      }
+    }, {
+      "ClassName" : "AStaticMeshActor",
+      "Name" : "AStaticMeshActor_8_Copy_Copy_Copy_2",
+      "NonSceneComponents" : [],
+      "ObjectId" : 131,
+      "Properties" : {
+        "PendingActorLocation" : [-1.618636, -12.634910, 3.366866],
+        "PendingActorRotation" : [-0.000000, -167.333923, 0.000000],
+        "PendingActorScale" : [0.500000, 0.500000, 0.500000],
+        "PendingActorVisible" : true,
+        "PendingTagsString" : "",
+        "bNeedsTick" : true
+      },
+      "RootComponent" : {
+        "Children" : [],
+        "ClassName" : "UStaticMeshComponent",
+        "ObjectId" : 132,
+        "Properties" : {
+          "AngularDamping" : 0.050000,
+          "CachedEditRotator" : [-0.000000, -167.333923, 0.000000],
+          "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+          "CollisionEnabled" : 2,
+          "LinearDamping" : 0.010000,
+          "Mass" : 1.000000,
+          "MaterialSlots" : ["Content/Material/Auto/07_-_Default.mat", "Content/Material/Auto/01_-_Default.mat", "Content/Material/Auto/02_-_Default.mat", "Content/Material/Auto/03_-_Default.mat"],
+          "Mobility" : 1,
+          "ObjectType" : 1,
+          "PhysicsBodyMode" : 2,
+          "RelativeTransform.Location" : [-1.618636, -12.634910, 3.366866],
+          "RelativeTransform.Scale" : [0.500000, 0.500000, 0.500000],
+          "ResponseContainer" : {
+            "Responses[0]" : 2,
+            "Responses[1]" : 2,
+            "Responses[2]" : 2,
+            "Responses[3]" : 2,
+            "Responses[4]" : 2
+          },
+          "StaticMeshPath" : "Content/Data/SkullBottle/SkullBottle_StaticMesh.uasset",
+          "TranslucentSortPriority" : 0,
+          "bAutoActivate" : true,
+          "bCastShadow" : true,
+          "bCastShadowAsTwoSided" : false,
+          "bEditorOnly" : false,
+          "bEnableGravity" : true,
+          "bGenerateOverlapEvents" : false,
+          "bHiddenInComponentTree" : false,
+          "bIsActive" : true,
+          "bIsVisible" : true,
+          "bShowPhysicsBodies" : false,
+          "bTickEnable" : true
+        }
+      }
+    }, {
+      "ClassName" : "AStaticMeshActor",
+      "Name" : "AStaticMeshActor_8_Copy_2",
+      "NonSceneComponents" : [],
+      "ObjectId" : 133,
+      "Properties" : {
+        "PendingActorLocation" : [-0.763321, -14.851248, 3.794156],
+        "PendingActorRotation" : [-0.000000, 0.000000, 0.000000],
+        "PendingActorScale" : [0.500000, 0.500000, 0.500000],
+        "PendingActorVisible" : true,
+        "PendingTagsString" : "",
+        "bNeedsTick" : true
+      },
+      "RootComponent" : {
+        "Children" : [],
+        "ClassName" : "UStaticMeshComponent",
+        "ObjectId" : 134,
+        "Properties" : {
+          "AngularDamping" : 0.050000,
+          "CachedEditRotator" : [-0.000000, 0.000000, 0.000000],
+          "CenterOfMassOffset" : [0.000000, 0.000000, 0.000000],
+          "CollisionEnabled" : 2,
+          "LinearDamping" : 0.010000,
+          "Mass" : 1.000000,
+          "MaterialSlots" : ["Content/Material/Auto/07_-_Default.mat", "Content/Material/Auto/01_-_Default.mat", "Content/Material/Auto/02_-_Default.mat", "Content/Material/Auto/03_-_Default.mat"],
+          "Mobility" : 1,
+          "ObjectType" : 1,
+          "PhysicsBodyMode" : 2,
+          "RelativeTransform.Location" : [-0.763321, -14.851248, 3.794156],
+          "RelativeTransform.Scale" : [0.500000, 0.500000, 0.500000],
+          "ResponseContainer" : {
+            "Responses[0]" : 2,
+            "Responses[1]" : 2,
+            "Responses[2]" : 2,
+            "Responses[3]" : 2,
+            "Responses[4]" : 2
+          },
+          "StaticMeshPath" : "Content/Data/SkullBottle/SkullBottle_StaticMesh.uasset",
+          "TranslucentSortPriority" : 0,
+          "bAutoActivate" : true,
+          "bCastShadow" : true,
+          "bCastShadowAsTwoSided" : false,
+          "bEditorOnly" : false,
+          "bEnableGravity" : true,
+          "bGenerateOverlapEvents" : false,
+          "bHiddenInComponentTree" : false,
+          "bIsActive" : true,
+          "bIsVisible" : true,
+          "bShowPhysicsBodies" : false,
+          "bTickEnable" : true
+        }
+      }
     }],
   "ClassName" : "UWorld",
   "ContextHandle" : "NewScene",
@@ -4375,9 +4553,9 @@
   "PerspectiveCamera" : {
     "FOV" : 1.047198,
     "FarClip" : 1000.000000,
-    "Location" : [0.433000, 14.601699, 3.987203],
+    "Location" : [-2.209298, -32.789539, 9.197127],
     "NearClip" : 0.100000,
-    "Rotation" : [0.000000, 5.149640, -452.862305]
+    "Rotation" : [0.000000, 24.799105, -460.362152]
   },
   "Version" : 2,
   "WorldSettings" : {
