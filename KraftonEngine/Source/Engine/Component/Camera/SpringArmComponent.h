@@ -63,16 +63,37 @@ public:
 	UPROPERTY(Edit, Save, Category="SpringArm", DisplayName="Probe Size", Min=0.0f, Max=100.0f, Speed=0.01f)
 	float ProbeSize = 0.12f;               // hit 지점에서 ProbeSize 만큼 안쪽에 정지
 
+	// Bone-follow 옵션 — 켜면 ParentComponent 대신 owner 의 SkeletalMesh 본을 따라간다.
+	// 래그돌/애니메이션은 본 스키닝(SetBoneLocalTransforms)만 갱신하고 메시 컴포넌트 트랜스폼은
+	// 캡슐(root)에 묶인 채라, 흐물거리는 바디를 카메라로 추적하려면 본을 직접 따라가야 한다
+	// (메시에 reparent 만으론 메시 컴포넌트 트랜스폼=캡슐 이라 효과 없음).
+	// 위치는 본을 따르고 회전은 bUsePawnControlRotation 이 그대로 우선한다 (3인칭 death-cam 패턴).
+	UPROPERTY(Edit, Save, Category="SpringArm", DisplayName="Use Bone Target")
+	bool bUseBoneTarget = false;
+	// 따라갈 본 이름. 비우면 root 본(index 0) 사용 — 래그돌 root body 추적과 동일.
+	UPROPERTY(Edit, Save, Category="SpringArm", DisplayName="Target Bone Name")
+	FString TargetBoneName;
+
 	// Control rotation 사용 옵션 (UE 패턴). true 면 부모 (capsule) 의 world rotation 대신
 	// owner APawn 의 ControlRotation 을 desired rotation 으로 사용 — mouse look 이 capsule
 	// 회전 안 건드리고 카메라만 움직이는 ThirdPerson 패턴.
-	// bInheritPitch/Yaw/Roll 가 각 axis 별로 — false 면 그 axis 는 capsule rotation 사용.
+	// bInheritPitch/Yaw/Roll : true 면 그 axis = ControlRotation, false 면 그 axis = 부모(capsule/본) 회전.
+	// ※ 넘어질 때 카메라가 도는 게 싫으면 Inherit Roll 을 켜라 — roll = ControlRotation.Roll(=0) 로 고정돼
+	//    부모가 굴러도 카메라가 배럴롤 하지 않는다 (셋 다 켜면 회전이 부모와 완전 분리됨).
+	UPROPERTY(Edit, Save, Category="SpringArm", DisplayName="Use Pawn Control Rotation")
 	bool bUsePawnControlRotation = true;
+	UPROPERTY(Edit, Save, Category="SpringArm", DisplayName="Inherit Pitch")
 	bool bInheritPitch           = true;
+	UPROPERTY(Edit, Save, Category="SpringArm", DisplayName="Inherit Yaw")
 	bool bInheritYaw             = true;
+	UPROPERTY(Edit, Save, Category="SpringArm", DisplayName="Inherit Roll")
 	bool bInheritRoll            = false;
 
 private:
+	// bUseBoneTarget 일 때 따라갈 본의 world 위치/회전을 채운다.
+	// 실패 시 false 반환 — 호출측이 ParentComponent 로 fallback.
+	bool ResolveBoneWorldTransform(FVector& OutLoc, FQuat& OutRot) const;
+
 	// 매 Tick 에 갱신되는 보간 상태 — 부착점 (parent + TargetOffset) 위치/회전.
 	FVector LaggedAttachLoc = FVector(0.0f, 0.0f, 0.0f);
 	FQuat LaggedAttachRot;

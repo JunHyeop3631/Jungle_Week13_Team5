@@ -4,8 +4,11 @@
 #include "GameFramework/AActor.h"
 #include "GameFramework/Pawn/Pawn.h"
 #include "GameFramework/World.h"
+#include "Component/Primitive/SkinnedMeshComponent.h"
+#include "Component/Primitive/SkeletalMeshComponent.h"
 #include "Core/Types/CollisionTypes.h"
 #include "Math/Rotator.h"
+#include "Math/Transform.h"
 #include <algorithm>
 #include <cmath>
 
@@ -26,13 +29,30 @@ void USpringArmComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		return;
 	}
 
-	// (1) 부모 World transform 추출. 두 개 분리:
-	//   - ParentActualRot: capsule 의 실제 world rotation (RelativeRotation 환산용 — 불변).
-	//   - DesiredParentRot: SpringArm 이 사용할 desired rotation (control rotation 적용 후).
+	// (1) 부모 World transform 추출. 세 개 분리:
+	//   - ParentActualRot/ParentWorldLoc: ParentComponent 의 실제 world (아래 (5) relative 환산용 — 불변).
+	//   - AttachSourceLoc/Rot: SpringArm 이 "따라갈" 대상. 기본은 ParentComponent, bUseBoneTarget 이면 본.
+	//   - DesiredParentRot: 실제 사용할 desired rotation (control rotation 적용 후).
 	const FMatrix& ParentWorld = ParentComponent->GetWorldMatrix();
 	const FVector ParentWorldLoc = ParentComponent->GetWorldLocation();
 	const FQuat   ParentActualRot  = ParentWorld.ToQuat().GetNormalized();
-	FQuat         DesiredParentRot = ParentActualRot;
+
+	// 따라갈 대상(attach source). bUseBoneTarget 이면 owner SkeletalMesh 의 본(=래그돌 시 PhysX body
+	// write-back 결과)을 추적하고, 실패하면 ParentComponent 로 fallback.
+	// ★ (5) relative 환산은 여전히 ParentComponent 기준이어야 하므로 ParentActualRot/Loc 은 절대 덮지 않는다.
+	FVector AttachSourceLoc = ParentWorldLoc;
+	FQuat   AttachSourceRot = ParentActualRot;
+	if (bUseBoneTarget)
+	{
+		FVector BoneLoc;
+		FQuat   BoneRot;
+		if (ResolveBoneWorldTransform(BoneLoc, BoneRot))
+		{
+			AttachSourceLoc = BoneLoc;
+			AttachSourceRot = BoneRot;
+		}
+	}
+	FQuat DesiredParentRot = AttachSourceRot;
 
 	// bUsePawnControlRotation — capsule rotation 대신 owner APawn 의 ControlRotation 을
 	// (선택된 axis 별로) 사용. mouse look 이 capsule 안 건드리고 카메라만 회전하는 패턴.
@@ -49,8 +69,8 @@ void USpringArmComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		}
 	}
 
-	// (2) Desired attach point — 부모 위치 + desired 회전 기준 TargetOffset 적용.
-	const FVector DesiredAttachLoc = ParentWorldLoc + DesiredParentRot.RotateVector(TargetOffset);
+	// (2) Desired attach point — attach source 위치 + desired 회전 기준 TargetOffset 적용.
+	const FVector DesiredAttachLoc = AttachSourceLoc + DesiredParentRot.RotateVector(TargetOffset);
 	const FQuat DesiredAttachRot = DesiredParentRot;
 
 	// (3) Lag 적용 — 첫 Tick 은 desired 로 초기화 (아직 비교할 prev 없음).
@@ -138,4 +158,37 @@ void USpringArmComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	SetRelativeLocation(RelLoc);
 	SetRelativeRotation(RelRot);
+}
+
+bool USpringArmComponent::ResolveBoneWorldTransform(FVector& OutLoc, FQuat& OutRot) const
+{
+	// 따라갈 SkinnedMesh 찾기: ParentComponent 가 곧 메시면 그걸, 아니면 owner 액터에서 검색
+	// (LuaCharacter 처럼 SpringArm 과 SkeletalMesh 가 capsule 아래 형제인 경우 대응).
+	USkinnedMeshComponent* Mesh = Cast<USkinnedMeshComponent>(ParentComponent);
+	if (!Mesh)
+	{
+		if (AActor* OwnerActor = GetOwner())
+		{
+			Mesh = OwnerActor->GetComponentByClass<USkeletalMeshComponent>();
+		}
+	}
+	if (!Mesh)
+	{
+		return false;
+	}
+
+	// 본 world transform — 런타임엔 SetBoneLocalTransforms 가 채운 live 포즈(래그돌/애니)를 반환.
+	// 비우면 root 본(index 0). 래그돌 write-back 이 본에 반영돼 있으므로 곧 root body 추적.
+	FTransform BoneWorld;
+	const bool bGot = TargetBoneName.empty()
+		? Mesh->GetBoneWorldTransformByIndex(0, BoneWorld)
+		: Mesh->GetBoneWorldTransformByName(TargetBoneName, BoneWorld);
+	if (!bGot)
+	{
+		return false;
+	}
+
+	OutLoc = BoneWorld.Location;
+	OutRot = BoneWorld.Rotation.GetNormalized();
+	return true;
 }

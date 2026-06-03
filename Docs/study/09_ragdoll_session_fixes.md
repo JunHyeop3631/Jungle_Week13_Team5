@@ -3,6 +3,7 @@
 > 이 문서는 한 작업 세션에서 ragdoll(패시브 래그돌)을 안정화하기 위해 적용한 **모든 수정 로직**을 정리한 것이다.
 > 아키텍처 배경은 [08_ragdoll_skinning_physics.md](08_ragdoll_skinning_physics.md)(본·바디·스키닝·피직스 관계)를 함께 참고.
 > 경로는 `KraftonEngine/` 접두어 생략. 라인 번호는 변동되므로 **심볼명 기준**으로 찾을 것.
+> **2026-06-03 갱신**: 당시 "미커밋"이던 #5(same-actor 필터)·#7(캡슐 kinematic 시작)이 **모두 커밋됨**(워킹트리 변경 없음 확인). 커스텀 필터셰이더가 scene에 배선되어 활성([05](05_runtime_and_collision.md) 2.7, [07](07_glossary_and_gaps.md) 3.3). §5-1의 형제 콜라이더 disable 로직은 **이동 컴포넌트 비활성**으로 재설계됐다(아래 갱신 참조).
 
 ---
 
@@ -14,9 +15,9 @@
 | 2 | PIE/레벨에서 body 디버그 와이어 안 보임 | `Mesh->PhysicsAsset` 직접 접근(런타임 null) | `GetPhysicsAsset()`(override 우선)로 통일 | 커밋 `03105410` |
 | 3 | 본 사이 늘어남/찢어짐 | D6 Locked 조인트에 projection 없음 | projection 시도 → flying과 무관 판명 → 비활성 | 제거됨(비활성) |
 | 4 | R 연타 토글 시 contact 콜백 crash | release된 actor를 deref(UAF) | `onContact`에 removed-actor/shape 가드 | 커밋 `fcf6ee17` |
-| 5 | 캡슐 ↔ 래그돌 바디 중복 충돌 → flying | 같은 액터 컴포넌트 간 충돌 미차단 | filter shader **same-actor 제외** | 미커밋 |
+| 5 | 캡슐 ↔ 래그돌 바디 중복 충돌 → flying | 같은 액터 컴포넌트 간 충돌 미차단 | filter shader **same-actor 제외** (`KraftonRagdollFilterShader`) | ✅ 커밋됨 |
 | 6 | ragdoll에서 원래 상태로 복귀 불필요 | — | Lua 단방향 진입(`enter_ragdoll`) | 커밋 `fcf6ee17` |
-| 7 | 시작 시 캡슐-메시 정렬 어긋남(밖→안) | 캡슐 `bSimulatePhysics=true` + 공중 배치 → 낙하·movement 충돌 | 캡슐 kinematic 시작 → 착지(Walking) 후 dynamic | 미커밋 |
+| 7 | 시작 시 캡슐-메시 정렬 어긋남(밖→안) | 캡슐 `bSimulatePhysics=true` + 공중 배치 → 낙하·movement 충돌 | 캡슐 kinematic 시작 → 착지(Walking) 후 dynamic | ✅ 커밋됨(`8421926a` 등) |
 
 > 보조 수단(진입 시 형제 콜라이더 disable + movement 정지)도 만들었으나, #5의 same-actor 필터가 근본 해결이라 이제 **중복(belt-and-suspenders)** 이다.
 
@@ -91,12 +92,14 @@ if (Pair.flags & (PxContactPairFlag::eREMOVED_SHAPE_0 | PxContactPairFlag::eREMO
 ## 5. 캡슐 중복 충돌 / flying — same-actor 충돌 제외 (핵심)
 
 ### 5-1. 1차 접근: 진입 시 형제 콜라이더 disable + movement 정지
-`SkeletalMeshComponent`에 추가:
+`SkeletalMeshComponent`에 추가했던 1차 접근:
 - `DisableOwnerCollisionForRagdoll()` — 소유 액터의 형제 `UPrimitiveComponent` collision off + `UMovementComponent` 정지.
-- `RestoreOwnerCollisionAfterRagdoll()` — 종료 시 복원. **dangling 방지:** 저장 포인터를 직접 deref하지 않고 Owner의 현재 `GetComponents()`에 살아있는 것만 복원.
-- `SetSimulatingPhysics(true)` 훅 + **reorder**: 콜라이더 disable을 `InstantiatePhysicsAssetBodies` **이전**으로 이동(진입 실패 시 원복). (World::Tick이 Simulate→Tick 순서라 이 시점에 끄면 다음 Simulate부터 빠진 상태 보장.)
+- `RestoreOwnerCollisionAfterRagdoll()` — 종료 시 복원.
+- `SetSimulatingPhysics(true)` 훅 + **reorder**: 콜라이더 disable을 `InstantiatePhysicsAssetBodies` **이전**으로 이동.
 
 → flying은 일시적으로 잡혔으나, **main 병합 후 재발**.
+
+> **2026-06-03 현재 코드 상태**: 위 두 함수는 **그 이름으로 더 이상 존재하지 않는다**. same-actor 필터(5-3)가 콜라이더 충돌을 근본 차단하므로, **형제 콜라이더 collision off는 폐지**되고 이름이 **`DeactivateOwnerMovementForRagdoll()`(`SkeletalMeshComponent.cpp:1157`) / `RestoreOwnerMovementAfterRagdoll()`(`:1194`)**로 바뀌어 **`UMovementComponent` 비활성만** 남았다(코드 주석 `:1168~1172`이 "콜라이더는 더 이상 끄지 않는다"를 명시). dangling 방지(저장 포인터 직접 deref 금지, 현재 `GetComponents()` 기준 복원) 원칙은 유지.
 
 ### 5-2. bisection: 코드 vs 데이터
 `SkeletalMeshComponent.cpp/.h`를 pre-merge(`fcf6ee17`)로 되돌려도 flying 지속 → **병합된 코드는 무죄, 데이터(씬의 캡슐)가 원인** 확정.
@@ -117,11 +120,12 @@ if (FilterData0.word3 != 0 && FilterData0.word3 == FilterData1.word3 && !(bRagdo
     && !PxFilterObjectIsTrigger(Attributes0) && !PxFilterObjectIsTrigger(Attributes1))
     return PxFilterFlag::eSUPPRESS;
 ```
-override 경로(`bOverrideFilterData=true`)의 `word3`도 owner UUID로 통일(정책 일관성, owner 없는 플로어는 0).
+override 경로(`bOverrideFilterData=true`)의 `word3`도 owner UUID로 통일(정책 일관성, owner 없는 플로어는 0, `PhysXRuntime.cpp:1620`).
 
 **개념 정리:** 한 액터의 컴포넌트들(이동용 캡슐 + 시각/래그돌 메시)은 **하나의 개체**이고 서로 **겹치도록 설계**된다(캡슐이 몸을 감쌈). 따라서 그들 간 물리 충돌은 항상 아티팩트 → **same-actor 제외가 유일하게 옳은 해법**(위치 보정 불가/무의미). 위치·스케일과 무관하게 동작.
 
-**상태:** **미커밋** (PhysXRuntime.cpp). self-collision **ON** 모드에선 `SetRagdollBodyFilter`가 word3를 0으로 덮으므로 그 경로에도 owner UUID를 넣어야 완전 robust(후속). 현재 OFF 케이스는 해결.
+**상태(2026-06-03):** ✅ **커밋됨**. `KraftonRagdollFilterShader`가 scene `SceneDesc.filterShader`에 배선(`PhysXRuntime.cpp:970`, 본체 `:327~398`)되어 활성. same-actor `eSUPPRESS`는 `:341~345`.
+**후속 진행:** self-collision **ON** 모드의 per-pair 비활성은 이제 배선됨 — `InstantiatePhysicsAssetBodies`(`SkeletalMeshComponent.cpp:984~1007`)가 `IsCollisionDisabled`를 읽어 `SetRagdollBodyFilter`로 그룹/ignore-mask를 넣고, ON 경로에선 `word3`를 0으로 덮어 그룹 로직(`eKILL` `:361~366`)이 지배한다([07](07_glossary_and_gaps.md) 3.3).
 
 ---
 
@@ -188,15 +192,15 @@ flying 재발 진단 중, main 병합으로 들어온 ragdoll 관련 변경(우�
 
 ---
 
-## 10. 최종 미커밋 변경 목록
+## 10. 변경 목록 (2026-06-03 — 당시 미커밋분 전부 커밋됨)
 
-| 파일 | 변경 | 재빌드 |
+| 파일 | 변경 | 상태 |
 |---|---|---|
-| `Source/Engine/Physics/PhysXRuntime.cpp` | filter shader same-actor 제외 (+ override word3) | 필요 |
-| `Source/Engine/Lua/LuaScriptManager.cpp` | `UCharacterMovementComponent` 바인딩 + `GetCharacterMovement` | 필요 |
-| `Content/Script/ULevel_3_ASkeletalMeshActor_3.lua` | 캡슐 kinematic 시작 → 착지 후 dynamic | 불필요(스크립트) |
+| `Source/Engine/Physics/PhysXRuntime.cpp` | filter shader same-actor 제외 (+ override word3) | ✅ 커밋(워킹트리 클린) |
+| `Source/Engine/Lua/LuaScriptManager.cpp` | `UCharacterMovementComponent` 바인딩 + `GetCharacterMovement` | ✅ 커밋 |
+| `Content/Script/ULevel_3_ASkeletalMeshActor_3.lua` | 캡슐 kinematic 시작 → 착지 후 dynamic | ✅ 커밋(스크립트) |
 
-**후속 후보**
-- self-collision ON 모드: `SetRagdollBodyFilter`에도 owner UUID(word3) 채우기.
-- 진입 시 형제 콜라이더 disable 로직: same-actor 필터로 대체됐으므로 중복 — 정리 여부 결정.
-- 캡슐 dynamic 필요성 재검토(영구 kinematic이면 movement-physics 충돌 자체가 사라짐).
+**후속 진행/잔여**
+- ~~self-collision ON 모드: per-pair 비활성 배선~~ → **완료**: `IsCollisionDisabled` → `SetRagdollBodyFilter`(`SkeletalMeshComponent.cpp:984~1007`). ON 경로는 `word3=0`으로 그룹/ignore-mask 로직이 지배(5-3).
+- ~~진입 시 형제 콜라이더 disable 로직 정리~~ → **완료**: 콜라이더 disable 폐지, `DeactivateOwnerMovementForRagdoll`(이동만 비활성)로 재설계(5-1 갱신).
+- 캡슐 dynamic 필요성 재검토(영구 kinematic이면 movement-physics 충돌 자체가 사라짐) — 잔여.

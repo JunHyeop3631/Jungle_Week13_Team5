@@ -1,6 +1,7 @@
 # 03. 앵커 / 조인트 프레임 (이 엔진의 핵심 설계)
 
-> 라인 번호는 확인 시점(2026-06-01) 스냅샷. 심볼명으로 재확인. 행벡터 곱 규약은 [06](06_coordinate_math.md) 필수 선행.
+> 라인 번호는 확인 시점(2026-06-03) 스냅샷. 심볼명으로 재확인. 행벡터 곱 규약은 [06](06_coordinate_math.md) 필수 선행.
+> 에디터 물리 코드는 `MeshEditorWidget.Physics.cpp` → `PhysicsEditorWidget.cpp`로 분리됐다([00](00_overview.md) 규칙4).
 
 ---
 
@@ -32,11 +33,11 @@ FQuat   ParentAnchorRot = FQuat();   // identity
 ```
 
 ### 2.2 앵커 산정: `AutoGen_ComputeConstraintAnchorLocal`
-`MeshEditorWidget.Physics.cpp:128` (자동생성·수동 우클릭 경로 공유):
+`PhysicsEditorWidget.cpp:110` (익명 네임스페이스, 자동생성·수동 우클릭 경로 공유):
 ```cpp
 const FMatrix Rel = Child.GetReferenceGlobalPose() * Parent.GetReferenceGlobalPose().GetInverse();
 OutPos = Rel.GetLocation();
-OutRot = (OutPos.Length() > eps) ? AutoGen_AlignXToDir(OutPos) : FQuat::Identity;
+OutRot = (OutPos.Length() > kAutoGenEps) ? AutoGen_AlignXToDir(OutPos) : FQuat::Identity;
 ```
 **유도 (행벡터 규약, [06](06_coordinate_math.md))**:
 - 어떤 점 `p`를 자식 로컬→월드: `p · ChildGlobal`. 월드→부모 로컬: `· ParentGlobal⁻¹`.
@@ -45,20 +46,21 @@ OutRot = (OutPos.Length() > eps) ? AutoGen_AlignXToDir(OutPos) : FQuat::Identity
 - `OutRot = AlignXToDir(OutPos)`: 프레임 **X축을 부모→자식 방향**(=뼈 축)에 정렬 → twist가 뼈 축 둘레 회전이 되게 한다([02](02_d6_joint_theory.md)).
 - 길이 0(겹친 본) → identity 회전(degenerate 방어).
 
-> 자동생성에서의 호출 (`MeshEditorWidget.Physics.cpp:1324`)은 `Bones[b]`=자식, `Bones[anc]`=바디 보유 최근접 조상=부모. 수동 경로(`CreateConstraintWith`, `:498`)도 동일 헬퍼 사용 → 앵커 산정이 한 곳으로 통일된다.
+> 자동생성에서의 호출 (`PhysicsEditorWidget.cpp:1345`)은 `Bones[b]`=자식, `Bones[anc]`=바디 보유 최근접 조상=부모(조상 탐색 `:1332~1333`). 수동 경로(`CreateConstraintWith` 람다, `:470`; 헬퍼 호출 `:480`)도 동일 헬퍼 사용 → 앵커 산정이 한 곳으로 통일된다.
 
 ### 2.3 인스턴스화의 3단 프레임 변환 (핵심)
-`InstantiatePhysicsAssetBodies` (`SkeletalMeshComponent.cpp:854`):
+`InstantiatePhysicsAssetBodies` (`SkeletalMeshComponent.cpp:947~955`):
 ```cpp
-const FTransform ParentLocalFrame = MakeUnitScaleTransform(Setup->ParentAnchorPos, Setup->ParentAnchorRot);   // ①
+const FTransform ParentLocalFrame = MakeUnitScaleTransform(Setup->ParentAnchorPos * PhysicsAssetScale, Setup->ParentAnchorRot);   // ① ★ 앵커 위치도 스케일 베이크
 const FTransform JointWorldFrame  = MakeWorldTransform(ParentLocalFrame, ParentBodyWorld);                    // ②
 ...
 ConstraintDesc.ParentLocalFrame = ParentLocalFrame;                                                          // 부모에 그대로
 ConstraintDesc.ChildLocalFrame  = MakeRelativeTransform(JointWorldFrame, ChildBodyWorld);                    // ③
 ```
-헬퍼(`SkeletalMeshComponent.cpp:59,64`):
-- `MakeWorldTransform(L, PW)` = `L.ToMatrix() · PW.ToMatrix()`  → local→world
-- `MakeRelativeTransform(W, PW)` = `W.ToMatrix() · PW.ToMatrix().GetInverse()` → world→local
+- ★ 신규: 앵커 위치도 `* PhysicsAssetScale`로 컴포넌트 스케일을 베이크한다(셰이프와 동일 정책, [01](01_rigid_body_setup.md) 2.3). scale=1이면 no-op.
+헬퍼(`SkeletalMeshComponent.cpp:64,69`):
+- `MakeWorldTransform(L, PW)` = `L.ToMatrix() · PW.ToMatrix()`  → local→world (`:69~72`)
+- `MakeRelativeTransform(W, PW)` = `W.ToMatrix() · PW.ToMatrix().GetInverse()` → world→local (`:64~67`)
 
 **3단 흐름**
 | 단계 | 식 | 좌표계 |
@@ -77,10 +79,10 @@ ConstraintDesc.ChildLocalFrame  = MakeRelativeTransform(JointWorldFrame, ChildBo
 - 두 변환 모두 같은 행벡터 곱 순서(`A · B⁻¹` = "A를 B 로컬로")를 쓰므로 규약이 일관된다.
 
 ### 2.5 바디 미존재 시 skip
-조인트는 **양쪽 바디가 다 있어야** 만든다 (`SkeletalMeshComponent.cpp:831`):
+조인트는 **양쪽 바디가 다 있어야** 만든다 (`SkeletalMeshComponent.cpp:928~934`):
 ```cpp
 FBodyInstance* ParentBody = GetBodyInstanceByBoneIndex(FindBoneIndex(Setup->ParentBoneName));
 FBodyInstance* ChildBody  = GetBodyInstanceByBoneIndex(FindBoneIndex(Setup->ChildBoneName));
 if (!ParentBody || !ChildBody) { UE_LOG("... constraint skipped: body not found ..."); continue; }
 ```
-- 작은 본이 바디 생성에서 걸러지면, 그 본을 끼는 조인트는 조용히 skip되고 로그만 남는다. (자동생성이 "바디 보유 최근접 조상"을 부모로 고르는 이유 — 중간의 바디 없는 본을 건너뛰어 끊김 없는 사슬을 만든다, `MeshEditorWidget.Physics.cpp:1310`.)
+- 작은 본이 바디 생성에서 걸러지면, 그 본을 끼는 조인트는 조용히 skip되고 로그만 남는다. (자동생성이 "바디 보유 최근접 조상"을 부모로 고르는 이유 — 중간의 바디 없는 본을 건너뛰어 끊김 없는 사슬을 만든다, `PhysicsEditorWidget.cpp:1332~1333`.)

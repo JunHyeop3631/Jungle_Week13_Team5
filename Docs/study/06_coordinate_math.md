@@ -1,7 +1,7 @@
 # 06. 좌표·수학 레퍼런스
 
-> 라인 번호는 **확인 시점(2026-06-01) 스냅샷**이며, 항상 심볼명을 함께 적는다. 실제 위치는 심볼로 재확인할 것.
-> 이 문서는 나머지 문서(01~05)가 의존하는 수학 규약을 한곳에 모은다.
+> 라인 번호는 **확인 시점(2026-06-03) 스냅샷**이며, 항상 심볼명을 함께 적는다. 실제 위치는 심볼로 재확인할 것.
+> 이 문서는 나머지 문서(01~05)가 의존하는 수학 규약을 한곳에 모은다. (Matrix/Quat/PhysXHelpers/SkeletalMeshAsset의 핵심 라인은 이번 스냅샷에서 거의 그대로다.)
 
 ---
 
@@ -60,8 +60,8 @@ inline PxQuat ToPxQuat(const FQuat& Q){ return PxQuat(Q.X, Q.Y, Q.Z, Q.W); }    
 inline PxTransform ToPxTransform(const FTransform& T){ return PxTransform(ToPxVec3(T.Location), ToPxQuat(T.Rotation)); } // :28
 ```
 - **성분 그대로 복사**한다. 전역 축 remap·핸드니스 플립이 **없다** → 엔진 월드 좌표 == PhysX 월드 좌표.
-- 스케일은 버려진다(PhysX `PxTransform`은 위치+회전만). 래그돌 경로는 항상 unit scale로 만든다(`MakeUnitScaleTransform`, `SkeletalMeshComponent.cpp:54`).
-- 월드 규약: **+X 정면, +Y 우, +Z 상**. 중력은 `(0, 0, -9.81)` (`PhysXRuntime.cpp:361`) → -Z. (`PhysicsTypes.h:220` 주석도 "+X forward, +Y right, +Z up" 명시.)
+- 스케일은 버려진다(PhysX `PxTransform`은 위치+회전만). 래그돌 경로는 항상 unit scale로 만든다(`MakeUnitScaleTransform`, `SkeletalMeshComponent.cpp:59`). 단, 컴포넌트 스케일은 셰이프/앵커 치수에 베이크하고 write-back에서 글로벌을 scale-1로 정규화한다([01](01_rigid_body_setup.md) 2.3, [08](08_ragdoll_skinning_physics.md) 5장).
+- 월드 규약: **+X 정면, +Y 우, +Z 상**. 중력은 `(0, 0, -9.81)` (`PhysXRuntime.cpp:968`) → -Z. (`PhysicsTypes.h`의 "+X forward, +Y right, +Z up" 주석은 이제 차량 `WheelCenterOffsets` 문맥의 `:237`로 이동했다 — 과거 `:220`의 독립 규약 주석은 사라짐. 규약 자체는 동일.)
 
 ### 2.4 본 포즈의 row-vector 누적
 `FSkeletalMesh::NormalizeBonePoseData` (`Source/Engine/Mesh/Skeletal/SkeletalMeshAsset.h:208`):
@@ -84,22 +84,23 @@ Bone.ReferenceGlobalPose = (Bone.ParentIndex >= 0 && Bone.ParentIndex < BoneInde
 | 래그돌 바디 (`GeneratePhysicsBodies`) | shape `Rotation = AutoGen_AlignXToDir(본방향)` → X를 본방향에 정렬 | 추가 보정 불필요 |
 | 엔진 `UCapsuleComponent` (래그돌 아님) | **로컬 Z** 장축 | `BuildBodyDescFromComponent`에서 Z→X 보정 |
 
-컴포넌트 경로의 보정 (`Source/Engine/Physics/PhysXRuntime.cpp:493`):
+컴포넌트 경로의 보정 (`Source/Engine/Physics/PhysXRuntime.cpp:1109~1110`):
 ```cpp
 // PhysX capsules are X-axis aligned; engine capsules use local Z as their long axis.
 ShapeDesc.LocalTransform.Rotation = FQuat::FromAxisAngle(FVector(0.0f, 1.0f, 0.0f), -PhysicsPi * 0.5f); // Y축 -90° → Z를 X로
 ```
-디버그 렌더는 **X 장축**으로 그린다 (`DbgWireCapsule`, `SkeletalMeshComponent.cpp:1108`):
+디버그 렌더는 **X 장축**으로 그린다 (`DbgWireCapsule`, `SkeletalMeshComponent.cpp:1558~1600`):
 ```cpp
-const FVector Axis = Rot.RotateVector(FVector(1,0,0)); // 긴축 = X (PhysX/AlignXToDir 규약)
+const FVector Axis = Rot.RotateVector(FVector(1,0,0)); // :1561 긴축 = X (PhysX/AlignXToDir 규약)
 ```
 - **교훈**: 래그돌 캡슐은 X 장축(AlignXToDir)으로 만들고 렌더도 X 장축으로 그린다 → 일치. 만약 렌더가 Z 장축을 가정하면 래그돌 캡슐이 옆으로 누워 보인다. (최근 커밋 `9d0d3f4e "debug capsule fix"`가 이 정렬을 맞춘 것으로 보인다 — 현재 코드는 X 장축으로 일치.)
-- `AutoGen_AlignXToDir` 주석도 동일 근거를 단다: `// PhysX 캡슐 로컬축 = X` (`MeshEditorWidget.Physics.cpp:109`).
+- `AutoGen_AlignXToDir` 주석도 동일 근거를 단다: `// PhysX 캡슐 로컬축 = X` (`PhysicsEditorWidget.cpp:92`).
 
 ## 부록 B. 자주 쓰는 변환 헬퍼 (런타임)
 `Source/Engine/Component/Primitive/SkeletalMeshComponent.cpp` 익명 네임스페이스:
-- `MakeWorldTransform(Local, ParentWorld)` (`:64`) = `FTransform(Local.ToMatrix() * ParentWorld.ToMatrix())` — local→world (행벡터).
-- `MakeRelativeTransform(World, ParentWorld)` (`:59`) = `FTransform(World.ToMatrix() * ParentWorld.ToMatrix().GetInverse())` — world→parent-local.
-- 이 둘이 03 문서의 앵커 3단 변환을 구성한다.
+- `MakeWorldTransform(Local, ParentWorld)` (`:69~72`) = `FTransform(Local.ToMatrix() * ParentWorld.ToMatrix())` — local→world (행벡터).
+- `MakeRelativeTransform(World, ParentWorld)` (`:64~67`) = `FTransform(World.ToMatrix() * ParentWorld.ToMatrix().GetInverse())` — world→parent-local.
+- `MakeUnitScaleTransform(Location, Rotation)` (`:59~62`) = `FTransform(Location, Rotation, FVector(1,1,1))` — scale 강제 1.
+- 이 셋이 03 문서의 앵커 3단 변환을 구성한다.
 
 > `[미확인]` `FTransform::ToMatrix()` 내부(스케일·회전·이동 합성 순서)는 본 학습에서 직접 읽지 않았다. 단, 위 두 헬퍼의 사용 결과(03 문서에서 초기 오차 0)가 행벡터 TRS와 일관됨을 확인했다.

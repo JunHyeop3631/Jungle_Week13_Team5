@@ -2,7 +2,7 @@
 
 > **대상**: 래그돌 write-back과 스키닝의 결합 구조 — "본·바디·스키닝·피직스가 하나의 좌표 변환 사슬로 엮여 있고, 애님과 피직스가 그 사슬을 서로 반대 방향으로 흐른다".
 > **선행 읽기**: [00](00_overview.md) 파이프라인 → [06](06_coordinate_math.md) 수학규약 → [05](05_runtime_and_collision.md) 런타임/write-back. 이 문서는 그 위에서 **스키닝과의 접점**과 **좌표공간 일관성 버그**를 다룬다.
-> **라인 번호는 확인 시점(2026-06-02) 스냅샷**이다. 인용마다 심볼명을 함께 적었으니 어긋나면 심볼로 재확인할 것. 엔진 소스 경로는 `KraftonEngine/Source/` 접두어 생략형.
+> **라인 번호는 확인 시점(2026-06-03) 스냅샷**이다. 인용마다 심볼명을 함께 적었으니 어긋나면 심볼로 재확인할 것. 엔진 소스 경로는 `KraftonEngine/Source/` 접두어 생략형.
 
 ---
 
@@ -40,7 +40,7 @@ Bind space ──InverseBind──▶ Bone-local ──BoneGlobal──▶ Compo
 Global[i] = Local[i] * Global[parent]      // 자식 로컬이 왼쪽 → 부모 먼저 누적
 ```
 
-본 배열이 **parent-first 정렬**이라 단순 순회로 부모 글로벌이 항상 먼저 채워진다 (`BuildBoneEditGlobalMatrices`, `SkinnedMeshComponent.cpp:940`, 누적식 `:958`).
+본 배열이 **parent-first 정렬**이라 단순 순회로 부모 글로벌이 항상 먼저 채워진다 (`BuildBoneEditGlobalMatrices`, `SkinnedMeshComponent.cpp:966`, 누적식 `:984`).
 
 ---
 
@@ -51,8 +51,8 @@ SkinMatrix[b] = InverseBindPose[b] * BoneGlobal[b]
 정점_변형     = Σ_b  weight_b · (정점_bind * SkinMatrix[b])
 ```
 
-- `BuildSkinMatrices` (`SkinnedMeshComponent.cpp:1325`), 수식은 `:1346` `Asset->Bones[b].GetInverseBindPose() * BoneGlobals[b]`.
-- 적용은 `UpdateCPUSkinning` (`:977`), 4본 가중 합 (`:1024~`).
+- `BuildSkinMatrices` (`SkinnedMeshComponent.cpp:1351`), 수식은 `:1371~1372` `Asset->Bones[b].GetInverseBindPose() * BoneGlobals[b]`.
+- 적용은 `UpdateCPUSkinning` (`:1003`), 4본 가중 합 (`:1050~1063`).
 
 `FBone`이 들고 있는 포즈들 (`Mesh/Skeletal/SkeletalMeshAsset.h:26-31`, 접근자 `:46-49`):
 - `SkinBindGlobalPose` — 바인드 시점의 본 글로벌
@@ -71,44 +71,47 @@ SkinMatrix[b] = InverseBindPose[b] * BoneGlobal[b]
 ## 4. 네 갈래 관계 (데이터 흐름)
 
 ### (A) Bone → Skinning : 항상 도는 본류
-`SetBoneLocalTransforms(LocalPose)` (`SkinnedMeshComponent.cpp:608`) → `RefreshSkinningAfterPoseChanged` (`:1103`) → 로컬 누적 글로벌 → `SkinMatrix = InverseBind * Global`. 애님·피직스 모두 **결국 이 문으로** 들어온다.
+`SetBoneLocalTransforms(LocalPose)` (`SkinnedMeshComponent.cpp:615`) → `RefreshSkinningAfterPoseChanged` (`:1129`) → 로컬 누적 글로벌 → `SkinMatrix = InverseBind * Global`. 애님·피직스 모두 **결국 이 문으로** 들어온다.
 
 ### (B) 애니메이션 → Bone : "순방향"
 `AnimInstance`가 본 **로컬 포즈**를 저자(authoring) → 누적 → 글로벌 → 스키닝. 작성은 로컬, 사용은 글로벌.
 
 ### (C) Bone ↔ Body : 양방향 변환 (피직스의 핵심)
 
-**Bone → Body (생성, 1회)** — `InstantiatePhysicsAssetBodies` (`SkeletalMeshComponent.cpp:725`):
+**Bone → Body (생성, 1회)** — `InstantiatePhysicsAssetBodies` (`SkeletalMeshComponent.cpp:774`):
 ```
 각 BodySetup:
   BoneIndex = FindBoneIndex(BodySetup.BoneName)
   바디를 GetBoneWorldTransformByIndex(BoneIndex) 위치에 생성      // 본의 현재 월드 자세에서 출발
-  BodyType = bSimulatePhysics ? Dynamic : Kinematic   (:792)
-  Bodies[BoneIndex] = 바디   (:815)                              // ★ 본 인덱스로 색인 → 역매핑이 공짜
+  BodyType = bSimulatePhysics ? Dynamic : Kinematic   (:854)
+  Bodies[BoneIndex] = 바디   (:877)                              // ★ 본 인덱스로 색인 → 역매핑이 공짜
+  BodyToBoneOffsets[BoneIndex] = BoneWorld * BodyWorld⁻¹  (:884) // ★ 신규: 본↔바디 오프셋(보통 identity)
 ```
 
-**Body → Bone (write-back, 매 틱)** — `ApplyPhysicsToBones` (`SkeletalMeshComponent.cpp:1166`): **"역방향"**.
+**Body → Bone (write-back, 매 틱)** — `ApplyPhysicsToBones` (`SkeletalMeshComponent.cpp:1386`): **"역방향"**.
 ```
 각 본(parent-first):
-  바디 있음 → BoneGlobal(comp-local) = BodyWorld * ComponentWorldInv   // 월드→컴포넌트  (:1214)
-              ↳ [★ 스케일 제거: scale-1 보장 — 5장]
-  바디 없음 → BoneGlobal = RefLocal * ParentGlobal                     // 레퍼런스 포즈로 부모 추종
-  LocalPose = BoneGlobal * ParentGlobal⁻¹                              // 글로벌→로컬 역산
-  → SetBoneLocalTransforms (=A 경로)
+  바디 있음 → BoneWorld = BodyToBoneOffsets[i] * BodyWorld         // (:1430~1433) ★ 오프셋 적용
+              BoneGlobal(comp-local) = BoneWorld * ComponentWorldInv   // 월드→컴포넌트  (:1436)
+              ↳ [★ 스케일 제거: 글로벌 단계 scale-1 보장 (:1445~1447) — 5장]
+  바디 없음 → (a) 풀린 자식 1개면 그 자식 ref-local로 부모 글로벌 복원 (:1455~1485)
+              (b) 나머지는 RefLocal * ParentGlobal               // 레퍼런스 포즈로 부모 추종 (:1487~1497)
+  LocalPose = BoneGlobal * ParentGlobal⁻¹                          // 글로벌→로컬 역산 (:1505~1507)
+  → SetBoneLocalTransforms (=A 경로) (:1512)
 ```
 - 애님은 **로컬을 만들어 글로벌로 쌓는데**, 피직스는 **월드 바디에서 글로벌을 얻어 로컬로 역산**한다. 정확히 반대 방향.
 - 바디는 보통 주요 관절 ~15-20개만 존재. **바디 없는 본**(손가락·표정뼈 등)은 레퍼런스 로컬로 **피직스로 움직이는 부모를 그대로 추종**. → 래그돌 = "굵은 골격은 물리, 잔뼈는 강체 추종".
 
 ### (D) Physics 상태 기계 — Kinematic ↔ Dynamic
-`TickComponent` 분기 (`SkeletalMeshComponent.cpp:1146`):
+`TickComponent` 분기 (`SkeletalMeshComponent.cpp:1361~1384`):
 ```
 bSimulatingPhysics == true  → ApplyPhysicsToBones  (애님 평가 skip)   ← 래그돌
                   == false  → EvaluateAnimInstance (정상 애님)        ← 평소
 ```
-- `SetSimulatingPhysics(true)` (`:1039`): 바디 없으면 lazy 생성 + `EnterRagdollState`(바디를 현재 본 월드로 teleport 후 **Dynamic**).
-- `SetSimulatingPhysics(false)`: 바디를 **Kinematic**으로 되돌리고 플래그 off → 애님 복귀 (바디 유지 → 재진입 저렴).
-- `EnterRagdollState` (`:990`)의 teleport 이유: kinematic 동안 쌓인 애님 포즈와 바디 자세의 격차로 인한 **튐** 방지.
-- `CreateRagdoll` (`:1030`) = `EnterRagdollState`만 호출 (바디가 이미 있다는 전제 — 에디터식). 런타임에는 인스턴스화까지 하는 `SetSimulatingPhysics(true)`가 상위호환.
+- `SetSimulatingPhysics(true)` (`:1222~1308`): 바디 없으면 lazy 생성 + `EnterRagdollState`(바디를 현재 본 월드로 teleport 후 **Dynamic**) + owner 루트 캡슐 teleport·진입 관성.
+- `SetSimulatingPhysics(false)` (`:1290~1307`): 바디를 **Kinematic**으로 되돌리고 플래그 off → 애님 복귀 (바디 유지 → 재진입 저렴).
+- `EnterRagdollState` (`:1062~1146`)의 teleport 이유: kinematic 동안 쌓인 애님 포즈와 바디 자세의 격차로 인한 **튐** 방지. teleport는 `BodyToBoneOffsets`를 되돌려 타깃 바디 월드를 계산하고(`:1096`), 진입 관성(`RagdollEntryLinearVelocity`)을 전 바디에 부여(`:1142`).
+- `CreateRagdoll` (`:1148~1155`) = `EnterRagdollState` 호출 후 성공 시 `bSimulatingPhysics=true` (바디가 이미 있다는 전제 — 에디터식). 런타임에는 인스턴스화까지 하는 `SetSimulatingPhysics(true)`가 상위호환.
 
 > Kinematic = "물리에 안 밀리고 위치를 지정"(애님이 운전), Dynamic = "중력·충돌로 물리가 운전". 래그돌은 운전대를 물리에게 넘기는 것.
 

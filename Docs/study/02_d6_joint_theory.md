@@ -1,6 +1,7 @@
 # 02. D6 joint 이론 (가장 깊게)
 
-> 라인 번호는 확인 시점(2026-06-01) 스냅샷. 심볼명으로 재확인. 좌표 규약은 [06](06_coordinate_math.md), 프레임 산정은 [03](03_anchor_frames.md) 참조.
+> 라인 번호는 확인 시점(2026-06-03) 스냅샷. 심볼명으로 재확인. 좌표 규약은 [06](06_coordinate_math.md), 프레임 산정은 [03](03_anchor_frames.md) 참조.
+> 에디터 물리 코드는 `MeshEditorWidget.Physics.cpp` → `PhysicsEditorWidget.cpp`로 분리됐다([00](00_overview.md) 규칙4).
 
 ---
 
@@ -49,14 +50,14 @@
 | `Limited` (=1) | `Limited` | `eLIMITED` |
 | `Free` (=2) | `Free` | `eFREE` |
 
-- 1단계: `ToPhysicsMotion(EConstraintMotion)` (`SkeletalMeshComponent.cpp:40`).
+- 1단계: `ToPhysicsMotion(EConstraintMotion)` (`SkeletalMeshComponent.cpp:45`).
 - 2단계: `PhysXHelpers::ToPxD6Motion(EPhysicsMotionType)` (`PhysXHelpers.h:38`).
-- 정의: `EConstraintMotion`(`PhysicsConstraintSetup.h:11`), `EPhysicsMotionType`(`PhysicsTypes.h:29`).
+- 정의: `EConstraintMotion`(`PhysicsConstraintSetup.h:11`), `EPhysicsMotionType`(`PhysicsTypes.h:30`).
 
 ### 2.2 축 ↔ PhysX D6 축 매핑
-UI 라벨 (`MeshEditorWidget.Physics.cpp:755`): `Twist (X)`, `Swing1 (Y)`, `Swing2 (Z)`. 런타임 set 호출과 정확히 대응한다:
+UI 라벨 (`PhysicsEditorWidget.cpp:776~778`): `Twist (X)`, `Swing1 (Y)`, `Swing2 (Z)`(`RenderConstraintDetails`의 `RenderAxis` 람다). 런타임 set 호출과 정확히 대응한다:
 
-`FPhysXRuntime::CreateD6Joint` (`PhysXRuntime.cpp:904`):
+`FPhysXRuntime::CreateD6Joint` (`PhysXRuntime.cpp:1650`):
 ```cpp
 PxD6Joint* Joint = PxD6JointCreate(*Physics,
     ParentActor, ToPxTransform(Desc.ParentLocalFrame),   // 부모 프레임 (03 문서)
@@ -74,20 +75,22 @@ Joint->setSwingLimit(PxJointLimitCone(Desc.Swing1LimitRadians, Desc.Swing2LimitR
 - 6축 모두 명시적으로 `setMotion` 호출 → 디폴트에 의존하지 않음.
 
 ### 2.3 linear 축은 한 덩어리로 제어
-자산엔 선형 축별 모드가 없고 `bLockLinearMotion`(bool) 하나뿐. 인스턴스화에서 X/Y/Z에 일괄 적용 (`SkeletalMeshComponent.cpp:864`):
+자산엔 선형 축별 모드가 없고 `bLockLinearMotion`(bool) 하나뿐. 인스턴스화에서 X/Y/Z에 일괄 적용 (`SkeletalMeshComponent.cpp:957~962`):
 ```cpp
 const EPhysicsMotionType LinearMotion = Setup->bLockLinearMotion ? EPhysicsMotionType::Locked : EPhysicsMotionType::Free;
 ConstraintDesc.LinearX = ConstraintDesc.LinearY = ConstraintDesc.LinearZ = LinearMotion;
 ```
 - 즉 선형은 **전부 Lock**(피벗 고정, 일반 관절) **또는 전부 Free**(슬라이드 허용, prismatic류). 부분 잠금·선형 한계거리는 자산 스키마에 없다 → [07](07_glossary_and_gaps.md).
 
-### 2.4 solver / breakable
-- **solver iteration**: `setSolverIterationCounts` 호출이 코드에 없음 → PhysX 기본 iteration 사용. scene 플래그는 `eENABLE_PCM`(접촉 매니폴드), `eENABLE_CCD`(연속충돌), `eENABLE_STABILIZATION`은 없음 (`PhysXCore.cpp:197~202`). → [05](05_runtime_and_collision.md).
-- **breakable joint**: 디스크립터에 `bBreakable/BreakForce/BreakTorque` 필드가 있고 `setBreakForce`까지 구현돼 있으나(`PhysXRuntime.cpp:941`), 래그돌 인스턴스화 경로는 이를 설정하지 않는다(`FPhysicsConstraintDesc` 기본 `bBreakable=false`) → 래그돌 조인트는 안 부러진다.
-- **drive(모터/스프링)**: `PxD6JointDrive`/`setDrive` 호출 **없음** → 조인트 구동(능동 토크)·소프트 복원력 미사용. → [07](07_glossary_and_gaps.md).
+### 2.4 solver / breakable / projection
+- **solver iteration**: `setSolverIterationCounts` 호출이 코드에 없음 → PhysX 기본 iteration 사용. scene 플래그는 `eENABLE_ACTIVE_ACTORS`/`eENABLE_CCD`/`eENABLE_PCM`(+`eREQUIRE_RW_LOCK`은 `#if KRAFTON_PHYSX_REQUIRE_RW_LOCK` 가드), `eENABLE_STABILIZATION`은 없음 (`PhysXCore.cpp:195~204`). → [05](05_runtime_and_collision.md).
+- **breakable joint**: 디스크립터에 `bBreakable/BreakForce/BreakTorque` 필드가 있고(`PhysicsTypes.h:176~178`, 기본 `bBreakable=false`) `setBreakForce`도 구현돼 있으나 `if (Desc.bBreakable)` 가드(`PhysXRuntime.cpp:1687`) 안의 `:1689`에서만 호출 → 래그돌 인스턴스화는 `bBreakable`을 켜지 않으므로 조인트는 안 부러진다.
+- **drive(모터/스프링)**: `PxD6JointDrive`/`setDrive` 호출 **없음**(grep 0건) → 조인트 구동(능동 토크)·소프트 복원력 미사용. → [07](07_glossary_and_gaps.md).
+- **projection**: `setConstraintFlag(ePROJECTION)`/`setProjection*Tolerance` 호출 **없음**(grep 0건). 과거 찢어짐 완화용으로 시도했다가 제거된 상태([09](09_ragdoll_session_fixes.md) 3장) — 현재 코드에 없음 확인.
+- **선형 한계거리**: `setLinearLimit` 호출 **없음** → 선형은 Lock/Free 이분법뿐(2.3).
 
 ### 2.5 래퍼 객체
-조인트 성공 시 `FConstraintInstance`로 감싸 보관 (`PhysXRuntime.cpp:946`): `ConstraintName/ParentBody/ChildBody/JointHandle{PxD6Joint*}/Desc/bValid`. 컴포넌트는 `Constraints` 배열에 push (`SkeletalMeshComponent.cpp:888`).
+조인트 성공 시 `FConstraintInstance`로 감싸 보관 (`PhysXRuntime.cpp:1692~1698`): `ConstraintName/ParentBody/ChildBody/JointHandle{PxD6Joint*}/Desc/bValid`, `Joints` 배열에 push(`:1700`). 컴포넌트는 `Constraints` 배열에 push (`SkeletalMeshComponent.cpp:981`).
 
 ### 2.6 등장 객체 매핑
 | 엔진 | PhysX |
